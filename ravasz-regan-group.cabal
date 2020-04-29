@@ -1,0 +1,105 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: b1676696e5eef320ca9f4741817e8580e13a1bd10fc2c442d902b406e0babe33
+
+name:           ravasz-regan-group
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
+homepage:       https://github.com/githubuser/ravasz-regan-group#readme
+bug-reports:    https://github.com/githubuser/ravasz-regan-group/issues
+author:         Peter Regan
+maintainer:     peter.regan@gmail.com
+copyright:      2019 Peter Regan
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/ravasz-regan-group
+
+library
+  exposed-modules:
+      Parsing
+      Lib
+      Types
+      ReadWrite
+  other-modules:
+      Verify
+      Paths_ravasz_regan_group
+  hs-source-dirs:
+      src
+  build-depends:
+      HaTeX
+    , Unique
+    , base >=4.7 && <5
+    , bytestring
+    , colour
+    , containers
+    , fgl
+    , hashable
+    , megaparsec
+    , monoidal-containers
+    , parser-combinators
+    , path
+    , safe-exceptions
+    , scientific
+    , split
+    , text
+    , unordered-containers
+    , validation
+    , vector
+    , versions
+  default-language: Haskell2010
+
+executable dynamicalCell
+  main-is: DynamicalCell.hs
+  other-modules:
+      Paths_ravasz_regan_group
+  hs-source-dirs:
+      dynamicalCell
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is DynamicalCell.dynamicalCell
+  build-depends:
+      base >=4.7 && <5
+    , megaparsec
+    , ravasz-regan-group
+    , text
+  default-language: Haskell2010
+
+executable dynamicalVerify
+  main-is: DynamicalVerify.hs
+  other-modules:
+      Paths_ravasz_regan_group
+  hs-source-dirs:
+      dynamicalVerify
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is DynamicalVerify.dynamicalVerify
+  build-depends:
+      base >=4.7 && <5
+    , megaparsec
+    , optparse-applicative
+    , path
+    , path-io
+    , pretty-simple
+    , ravasz-regan-group
+    , text
+  default-language: Haskell2010
+
+test-suite ravasz-regan-group-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_ravasz_regan_group
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , ravasz-regan-group
+  default-language: Haskell2010
