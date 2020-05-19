@@ -5,32 +5,32 @@ module Parsing
     ( modelFileParse ) 
       where
 
+import Types
+import Constants
+import Utilities
+import qualified Data.List as L
+import Data.Maybe (fromJust)
+import Data.Void
+import Data.Char (toLower, isSeparator)
+import Control.Monad (void)
 import Data.Colour
 import qualified Data.Text as T
-import qualified Data.Colour.Names as N
+import qualified Data.Colour.Names as C
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.Graph.Inductive.NodeMap as Grm
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import qualified Data.Hashable as Hash
-import Control.Monad (void)
 import Control.Monad.Combinators.Expr   -- from parser-combinators
 import Control.Applicative.Permutations -- from parser-combinators
 import Data.Validation
 import Data.List.Unique (repeated)
-import Data.List (transpose, sort, nub, sortOn, lookup, intersperse
-                  , foldl')
-import Data.Maybe (fromJust)
-import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
--- import Text.Megaparsec.Debug
-import Data.Char (toLower, isSeparator)
 import Data.Scientific
 import qualified Data.Versions as Ver
-import Types
 
 type Parser = Parsec Void T.Text
 
@@ -50,10 +50,6 @@ sc' = L.space space1' lineCmnt blockCmnt
   where
     lineCmnt  = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
-
--- Skip many Unicode separator characters, as well as tab, but not EOL. 
-spaceNoEol :: Parser ()
-spaceNoEol = skipMany (separatorChar <|> tab)
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
@@ -120,12 +116,13 @@ rword w = (lexeme . try) (chunk w *> notFollowedBy alphaNumChar)
 
 -- Parse an identifier
 identifier :: T.Text -> Parser T.Text
-identifier name = (lexeme . try) $ rword name >> colon >> (p >>= check)
+identifier name = lexeme $ rword name >> colon >> (p >>= check)
   where
     p       = T.pack <$> ((:) <$> letterChar <*> 
         (many (alphaNumChar <|> char '_')))
     check x = if x `elem` rws
-                then fail $ "Keyword " ++ show x ++ " cannot be a " ++ show name
+                then fail $ "Keyword " ++ show x ++ " cannot be a "
+                    ++ (T.unpack name)
                 else return x
 
 -- Parse an assignment
@@ -211,13 +208,13 @@ nodeStateCheck nodesWLinks
             dmNodes = fst <$> nodesWLinks
             extantNodeNames = (nodeName . nodeMeta) <$> dmNodes
             nodeGates = nodeGate <$> dmNodes
-            exprRefs = sort $ refdNodesStates $
+            exprRefs = L.sort $ refdNodesStates $
                 concatMap (fmap snd . gateAssigns) nodeGates
             exprNodes = fst <$> exprRefs
-            exprStates = (sort . snd) <$> exprRefs
+            exprStates = (L.sort . snd) <$> exprRefs
             nodes = gNodeName <$> nodeGates
             assigns = gateAssigns <$> nodeGates
-            nodeRefs = sort $ zip nodes $ (fst <$>) <$> assigns
+            nodeRefs = L.sort $ zip nodes $ (fst <$>) <$> assigns
             nodeStates = snd <$> nodeRefs
 
 -- Check that the for the NodeName associated with each DMLink there exists an
@@ -233,8 +230,8 @@ nodeLinkCheck nodesWLinks = case lSet == nSet of
       dmNodeNames = (nodeName . nodeMeta . fst) <$> nodesWLinks
       linkNodeNames = fst <$> (concat $ snd <$> nodesWLinks)
       err = NodeInlinkMismatch (nList, lList)
-      nList = sort $ Set.toList nSet
-      lList = sort $ Set.toList lSet
+      nList = L.sort $ Set.toList nSet
+      lList = L.sort $ Set.toList lSet
 
 -- Assemble the DMNodes & DMLinks into an fgl graph. The fromJust is justified
 -- because we have already ensured that every NodeName associated with a DMLink
@@ -253,7 +250,7 @@ modelGraphAssembler ns = return $ Gr.mkGraph grNodes grEdges
 
 -- Parse Model metadata
 modelConfigParse :: Parser ModelMeta
-modelConfigParse = between (symbol "ModelMetaData{") (symbol "ModelMetaData}") 
+modelConfigParse = between (symbol "ModelMetaData{") (symbol "ModelMetaData}")
    (runPermutation $ 
       ModelMeta <$> toPermutation (identifier "ModelName")
                 <*> toPermutation (versionParse "ModelVersion")
@@ -271,9 +268,12 @@ versionParse mVer = (lexeme . try) $ (rword mVer) >> colon >> Ver.semver'
 
 -- Parse a list of paper references          
 modelPaperParse :: Parser [T.Text]
-modelPaperParse = label "ModelPaper" (metaItem "ModelPaper") 
-    >>= (\x -> return $ T.strip <$> (T.splitOn "," x))
-
+modelPaperParse = do
+    symbol "ModelPaper"
+    colon'
+    paperKeys <- sepBy citeKeyParse comma
+    eol
+    return paperKeys
 
 -- Parse a list of (NodeName, NodeState) for BiasOrder*
 biasPairParse :: T.Text -> Parser [(NodeName, NodeState)]
@@ -284,24 +284,26 @@ biasPairParse bias = (lexeme . try)
         <* eol
     )
 
--- Parse a list of NodeNames for BiasOrder*
--- nodeNameListParse :: T.Text -> Parser [T.Text]
--- nodeNameListParse bias = (metaItem bias) 
---     >>= (\x -> return $ T.strip <$> (T.splitOn "," x))   
-
 -- Parse a Colour. 
 metaColor :: T.Text -> Parser LocalColor
-metaColor mColor = (lexeme . try) $ rword mColor >> colon >>
-    (N.readColourName =<< T.unpack <$> colorIdentifier)
+metaColor mColor = (metaItem mColor) >>= colorCheck
+
+colorCheck :: T.Text -> Parser LocalColor
+colorCheck ts
+    | lowered `elem` svgColors = C.readColourName (T.unpack lowered)
+    | ts == "" = return defaultColor
+    | otherwise = fail $ show $ ts <> " is not an SVG color. "
+        where lowered = T.toLower ts
 
 -- Check if a Text is the name of an SVG color, and return it if it is. 
-colorIdentifier :: Parser T.Text
-colorIdentifier = (lexeme . try) (c >>= check)
-    where
-        c       = (T.toLower . T.pack) <$> some letterChar
-        check x = if x `elem` svgColors
-                    then return x
-                    else fail $ show x ++ " is not an SVG color. "
+-- colorIdentifier :: Parser T.Text
+-- colorIdentifier = lexeme (c >>= check)
+--     where
+--         c       = T.pack <$> (some letterChar)
+--         check x = case lowered `elem` svgColors of
+--                     True  -> return lowered
+--                     False -> fail $ show $ x <> " is not an SVG color. "
+--                     where lowered = T.toLower x
 
 -- Parse a straight Text metadata item. 
 metaItem :: T.Text -> Parser T.Text
@@ -323,9 +325,9 @@ gateLinkCheck :: (DMNode, [(NodeName, DMLink)])
 gateLinkCheck parsed@((DMNode nMeta pNode), links) = 
     let gNode = gNodeName pNode
         assigns = gateAssigns pNode
-        linkInputs = sort $ fst <$> links
+        linkInputs = L.sort $ fst <$> links
         gExprs = snd <$> assigns
-        gateInputs = sort $ fst <$> (refdNodesStates gExprs)
+        gateInputs = L.sort $ fst <$> (refdNodesStates gExprs)
     in
     case gateInputs == linkInputs of
         True  -> return parsed
@@ -344,18 +346,6 @@ nodeNameCheck parsed@(pDMNode, links) =
         True  -> return parsed
         False -> fail $ show $ NodeMetaNameMismatch (gName, mName)
 
--- Parse the keys of a LaTeX "\cite{}" command. 
-citationParse :: Parser [T.Text]
-citationParse = fmap T.pack <$> (between (symbol "\\cite{") (symbol "}")
-    (sepBy1 (many (noneOf [',', '}'])) comma) )
-
-
--- Return a (possibly empty) list of citation key lists. 
-pullCitations :: T.Text -> Parser [[T.Text]]
-pullCitations aMeta = lexeme' (rword aMeta >> colon' >>
-    many (try (skipManyTill (noneOf ['\n', '\r']) citationParse)) <* 
-        (skipManyTill ((noneOf ['\n', '\r']) <?> "pullCitations") eol ))
-
 -- Parse a Note or Description, along with any embedded BibTeX citations. 
 extractCitations :: T.Text -> Parser (T.Text, [[T.Text]])
 extractCitations aMeta = do
@@ -363,71 +353,131 @@ extractCitations aMeta = do
     citations <- pullCitations aMeta
     return (lText, citations)
 
+-- Return a (possibly empty) list of citation key lists. 
+pullCitations :: T.Text -> Parser [[T.Text]]
+pullCitations aMeta = (lexeme' (rword aMeta >> colon' >>
+    many (try (skipManyTill (noneOf ['\n', '\r']) citationParse)) <* 
+        (skipManyTill ((noneOf ['\n', '\r']) <?> "pullCitations") eol )))
+            >>= check
+    where
+        check x = case kwSet == Set.empty of
+            True  -> return x 
+            False -> case Set.size kwSet of
+                1 -> fail $ "Keyword " ++ (show $ head $ Set.toList kwSet) ++
+                    " cannot be a citation key. "
+                _ -> fail $ "Keywords " ++ (show $ Set.toList kwSet) ++
+                    " cannot be a citation keys. "
+            where
+                kwSet = Set.filter (\x -> elem x rws) kSet
+                kSet = Set.unions $ Set.fromList <$> x
+
+-- Parse the keys of a LaTeX "\cite{}" command. 
+citationParse :: Parser [T.Text]
+citationParse = (between (symbol "\\cite{") (symbol "}")
+    (sepBy1 citeKeyParse' comma) )
+
 -- Parse Node metadata
 nodeConfigParse :: Parser NodeMeta
 nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}") 
      (runPermutation $ 
         NodeMeta <$> toPermutation (identifier "NodeName")
-                 <*> toPermutation parseNodeGenes
-                 <*> toPermutation parseNodeType
+                 <*> toPermutation nodeGenesParse
+                 <*> toPermutation nodeTypeParse
                  <*> toPermutation (metaColor "NodeColor")
-                 <*> toPermutation parseCoordinate
+                 <*> toPermutation coordinateParse
                  <*> ((,) <$> toPermutation (extractCitations "NodeDescription")
                            <*> toPermutation (extractCitations "NodeNotes")))
 
 
 -- Parse the (possibly empty) list of EntrezID genes associated with a node
-parseNodeGenes :: Parser [EntrezGeneID]
-parseNodeGenes = (lexeme . try) $ rword "NodeGenes" >> colon >>
+nodeGenesParse :: Parser [EntrezGeneID]
+nodeGenesParse = (lexeme . try) $ rword "NodeGenes" >> colon >>
     (sepBy integer comma)
 
 -- Parse the type of a node. 
-parseNodeType :: Parser NodeType
-parseNodeType = (lexeme . try) $ rword "NodeType" >> colon >>
-    (   Cell <$ rword "Cell"
-    <|> DM_Switch <$ rword "DM_Switch"
-    <|> Connector <$ rword "Connector"
-    <|> Environment <$ rword "Environment"
-    <|> Process <$ rword "Process"
-    <|> MRNA <$ rword "mRNA"
-    <|> Protein <$ rword "Protein"
-    <|> TFProtein <$ rword "TF_protein"
-    <|> Metabolite <$ rword "Metabolite"
-    <|> MacroStructure <$ rword "MacroStructure"
-    <|> Kinase <$ rword "Kinase"
-    <|> Phosphatase <$ rword "Phosphatase"
-    <|> ProteinComplex <$ rword "protein_complex"
-    <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
+nodeTypeParse :: Parser NodeType
+nodeTypeParse = (lexeme . try) $ rword "NodeType" >> 
+    (try
+        (colon >>
+            (   Cell <$ rword "Cell"
+            <|> DM_Switch <$ rword "DM_Switch"
+            <|> Connector <$ rword "Connector"
+            <|> Environment <$ rword "Environment"
+            <|> Process <$ rword "Process"
+            <|> MRNA <$ rword "mRNA"
+            <|> Protein <$ rword "Protein"
+            <|> TFProtein <$ rword "TF_protein"
+            <|> Metabolite <$ rword "Metabolite"
+            <|> MacroStructure <$ rword "MacroStructure"
+            <|> Kinase <$ rword "Kinase"
+            <|> Phosphatase <$ rword "Phosphatase"
+            <|> ProteinComplex <$ rword "protein_complex"
+            <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
+            )
+        ) 
+    <|>
+        (colon' >>
+            Undefined_NT <$ undefParse
+        )
     )
 
+-- a NodeType, LinkEffect, or LinkType may be undefined at this point. 
+undefParse :: Parser T.Text
+undefParse = T.pack <$> (someTill alphaNumChar eol)
+
 -- Parse the graphical position of a node. 
-parseCoordinate :: Parser (U.Vector Double)
-parseCoordinate = (lexeme . try) $ rword "NodeCoordinate" >> colon >>
+coordinateParse :: Parser (U.Vector Double)
+coordinateParse = (lexeme . try) $ rword "NodeCoordinate" >> colon >>
     ((U.fromList .  fmap toRealFloat) <$> sepBy number comma)
         
 -- Parse a DMLink
 dMLinkParse :: Parser (NodeName, DMLink)
 dMLinkParse = between (symbol "InLink{") (symbol "InLink}") (runPermutation $
   (,) <$> toPermutation (identifier "InputNode")
-      <*> (DMLink <$> toPermutation parseLinkEffect
-                  <*> toPermutation (identifier "LinkType")
-                  <*> ((,) <$> toPermutation (extractCitations "LinkDescription")
+      <*> (DMLink <$> toPermutation linkEffectParse
+                  <*> toPermutation linkTypeParse
+                  <*> ((,) <$> toPermutation (extractCitations"LinkDescription")
                            <*> toPermutation (extractCitations "LinkNotes"))))
 
-dMLinkParseNodeless :: Parser DMLink
-dMLinkParseNodeless = between (
-    symbol "InLink{") (symbol "InLink}") (runPermutation $
-        DMLink <$> toPermutation parseLinkEffect
-               <*> toPermutation (identifier "LinkType")
-               <*> ((,) <$> toPermutation (extractCitations "LinkDescription")
-                        <*> toPermutation (extractCitations "LinkNotes")))
-
 -- Parse the effect of a link. 
-parseLinkEffect :: Parser LinkEffect
-parseLinkEffect = (lexeme . try) $ rword "LinkEffect" >> colon >>
-    (   Activation  <$ rword "Activation"
-    <|> Repression  <$ rword "Repression"
-    <|> Neutral     <$ rword "Neutral"
+linkEffectParse :: Parser LinkEffect
+linkEffectParse = (metaItem "LinkEffect") >>= linkEffectCheck
+
+linkEffectCheck :: T.Text -> Parser LinkEffect
+linkEffectCheck ts = case ts of
+    "Activation"        -> return Activation
+    "Repression"        -> return Repression
+    "Context_Dependent" -> return Context_Dependent
+    ""                  -> return Inapt
+    _                   -> return Undefined_LE
+
+-- Parse the type of a link. 
+linkTypeParse :: Parser LinkType
+linkTypeParse = (lexeme . try) $ rword "LinkType" >>
+    (try   
+        (colon >>
+            (   Enforced_Env       <$ rword "Enforced_Env"
+            <|> Indirect           <$ rword "Indirect"
+            <|> Transcription      <$ rword "Transcription"
+            <|> Persistence        <$ rword "Persistence"
+            <|> Inhibitory_binding <$ rword "Inhibitory_binding"
+--          This has come before Phosphorylation, otherwise you will match on
+--          that and then get confused
+            <|> Phosphorylation_Localization
+                                   <$ rword "Phosphorylation_Localization"
+            <|> Phosphorylation    <$ rword "Phosphorylation"
+            <|> Degradation        <$ rword "Degradation"
+            <|> LinkProcess        <$ rword "Process"
+            <|> Dephosphorylation  <$ rword "Dephosphorylation"
+            <|> Protective_binding <$ rword "Protective_binding"
+            <|> Complex_formation  <$ rword "Complex_formation"
+            <|> Ubiquitination     <$ rword "Ubiquitination"
+            )
+        )
+    <|>
+        (colon' >>
+            Undefined_LT <$ undefParse
+        )
     )
 
 -- Parse a NodeGate
@@ -451,15 +501,15 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
                             <> T.unlines (tGatePrint:errs)
         where
             tGatePrint = (T.concat $
-                             intersperse (T.singleton '\t') $ tOrder <> [tName])
+                           L.intersperse (T.singleton '\t') $ tOrder <> [tName])
             tName = gNodeName tGate
             tpInputs = T.init <$> tOutputs
             lpInputs = T.init <$> lOutputs
-            tOutputs = sort (prettyGateEval tGate <$> tCombos)
+            tOutputs = L.sort (prettyGateEval tGate <$> tCombos)
 --          Evaluate the logical gate with the table gate order, to make the
 --          pretty representations match. This is OK, since we have already made
 --          sure that the input nodes are the same up to permutation. 
-            lOutputs = sort (prettyGateEval lGate' <$> lCombos)
+            lOutputs = L.sort (prettyGateEval lGate' <$> lCombos)
             tCombos = gateCombinations tExprs
             lCombos = gateCombinations lExprs
             tExprs = snd <$> (gateAssigns tGate)
@@ -474,9 +524,9 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
 -- both inputs exist, but whose outputs to that input are different. Call as:
 -- dropExIns tOutput lOutput
 accOutputMis :: [PrettyGateOutput] -> [PrettyGateOutput] -> [T.Text]
-accOutputMis ts ls = foldl' go [] tSplits
+accOutputMis ts ls = L.foldl' go [] tSplits
     where
-        go acc (key, state) = case lookup key lSplits of
+        go acc (key, state) = case L.lookup key lSplits of
               Nothing -> acc
               Just n  -> case n == state of
                   True  -> acc
@@ -624,7 +674,7 @@ intParse = do
     return n
 
 -- BibTeX is an old and layered format, but these parsers should get most of
--- what might be thrown at them. See http://www.bibtex.org/Format/ for details. 
+-- what might be thrown at them. See http://www.bibtex.org/Format/ for details.
 citeDictParse :: Parser CitationDictionary
 citeDictParse = between
     (symbol "CitationDictionary{")
@@ -642,7 +692,7 @@ citeUniqueCheck bes = case repeated (entryKey <$> bes) of
 citeEntryParse :: Parser BibTeXEntry
 citeEntryParse = do
     char '@'
-    entryType <- variable
+    entryType <- entryTypeParse
     symbol "{"
     entryKey <- citeKeyParse
     comma
@@ -650,12 +700,21 @@ citeEntryParse = do
     symbol "}"
     return $ BibTeXEntry entryKey entryType fields
 
+entryTypeParse :: Parser T.Text
+entryTypeParse = (lexeme . try) (p >>= check)
+  where
+    p       = T.pack <$> ((:) <$> letterChar <*> 
+        (many (alphaNumChar <|> char '_')))
+    check x = if x `elem` rws
+                then fail $ "Keyword " ++ show x ++ " cannot be a BibTeX record\
+                    \type. "
+                else return x
+
 citeKeyParse :: Parser BibTeXKey
-citeKeyParse = (lexeme . try) (p >>= check)
+citeKeyParse = lexeme' (p >>= check)
   where
     p       = T.pack <$> ((:) <$> (letterChar <|> char '_') <*> 
                     (many (alphaNumChar
-                           <|> char '_'
                            <|> (oneOf ("&;:-_.?+/" :: [Char]) <?> "citeKey")
                            )
                     )
@@ -665,17 +724,27 @@ citeKeyParse = (lexeme . try) (p >>= check)
                     "Keyword " ++ show x ++ " cannot be a citation key. "
                 else return x
 
+-- When we parse citations out of a Description or Note, the error reporting
+-- needs to be in pullCitations, or else the skipManyTill in that function will
+-- clobber and error I report here. Thus we need a version of citeKeyParse that
+-- doesn't check for Keywords. 
+citeKeyParse' :: Parser BibTeXKey
+citeKeyParse' = (lexeme . try) (T.pack <$> ((:) <$> (letterChar <|> char '_') <*> 
+    (many (alphaNumChar <|> (oneOf ("&;:-_.?+/" :: [Char]) <?> "citeKey")))))
+
+
+
 -- Parse a line in a BibTeX record
 citeFieldParse :: Parser (BibTeXField, BibTeXRecord)
-citeFieldParse = (lexeme . try) $ do
+citeFieldParse = lexeme $ do
     field <- bibVariable
     symbol "="
     record <- bibRecordParse
     return (field, record)
 
--- Parse a BibTeX assignment
+-- Parse a BibTeX assignment variable. 
 bibVariable :: Parser BibTeXField
-bibVariable = (lexeme . try) (p >>= check)
+bibVariable = lexeme (p >>= check)
   where
     p       = T.pack <$> ((:) <$> (letterChar <|> char '_') <*> 
         (many (alphaNumChar
@@ -691,7 +760,7 @@ bibRecordParse = (lexeme . try) (
     (T.pack <$> (some letterChar))
     -- Some fields have just digits and no enclosure. 
     <|> (T.pack <$> (some digitChar))
-    <|> (braces (bibSeq '}')) -- Some fields are recursively enclosed in braces. 
+    <|> (braces (bibSeq '}')) -- Some fields are recursively enclosed in braces.
     <|> (lexeme $ between (char '"') (char '"') (bibBlock '"'))
     )
 
@@ -712,237 +781,9 @@ bibBlock c = (lexeme . try) (
      <|> ((T.pack . (:[])) <$> (anySingleBut c))
      )
 
--- Make sure that the BibTeXKeys in a DMModel actually exist in the associated
--- CitationDictionary. 
-bibKeyCheck :: (DMModel, CitationDictionary)
-            -> Parser (DMModel, CitationDictionary)
-bibKeyCheck x@(mo, cd) = case filter (\(x, y) -> y == False) keyCheck of
-    []          -> return x
-    errs@(x:xs) -> fail $ show $ MissingCitations (fst <$> errs)
-    where
-        keyCheck = zip mKeys $ sequenceA (Map.member <$> mKeys) cd
-        mKeys = Set.toList $ citationsKeys mo
-
--- SVG Color Names:
-svgColors :: [T.Text]
-svgColors = ["aliceblue"
- ,"antiquewhite"
- ,"aqua"
- ,"aquamarine"
- ,"azure"
- ,"beige"
- ,"bisque"
- ,"black"
- ,"blanchedalmond"
- ,"blue"
- ,"blueviolet"
- ,"brown"
- ,"burlywood"
- ,"cadetblue"
- ,"chartreuse"
- ,"chocolate"
- ,"coral"
- ,"cornflowerblue"
- ,"cornsilk"
- ,"crimson"
- ,"cyan"
- ,"darkblue"
- ,"darkcyan"
- ,"darkgoldenrod"
- ,"darkgray"
- ,"darkgreen"
- ,"darkgrey"
- ,"darkkhaki"
- ,"darkmagenta"
- ,"darkolivegreen"
- ,"darkorange"
- ,"darkorchid"
- ,"darkred"
- ,"darksalmon"
- ,"darkseagreen"
- ,"darkslateblue"
- ,"darkslategray"
- ,"darkslategrey"
- ,"darkturquoise"
- ,"darkviolet"
- ,"deeppink"
- ,"deepskyblue"
- ,"dimgray"
- ,"dimgrey"
- ,"dodgerblue"
- ,"firebrick"
- ,"floralwhite"
- ,"forestgreen"
- ,"fuchsia"
- ,"gainsboro"
- ,"ghostwhite"
- ,"gold"
- ,"goldenrod"
- ,"gray"
- ,"grey"
- ,"green"
- ,"greenyellow"
- ,"honeydew"
- ,"hotpink"
- ,"indianred"
- ,"indigo"
- ,"ivory"
- ,"khaki"
- ,"lavender"
- ,"lavenderblush"
- ,"lawngreen"
- ,"lemonchiffon"
- ,"lightblue"
- ,"lightcoral"
- ,"lightcyan"
- ,"lightgoldenrodyellow"
- ,"lightgray"
- ,"lightgreen"
- ,"lightgrey"
- ,"lightpink"
- ,"lightsalmon"
- ,"lightseagreen"
- ,"lightskyblue"
- ,"lightslategray"
- ,"lightslategrey"
- ,"lightsteelblue"
- ,"lightyellow"
- ,"lime"
- ,"limegreen"
- ,"linen"
- ,"magenta"
- ,"maroon"
- ,"mediumaquamarine"
- ,"mediumblue"
- ,"mediumorchid"
- ,"mediumpurple"
- ,"mediumseagreen"
- ,"mediumslateblue"
- ,"mediumspringgreen"
- ,"mediumturquoise"
- ,"mediumvioletred"
- ,"midnightblue"
- ,"mintcream"
- ,"mistyrose"
- ,"moccasin"
- ,"navajowhite"
- ,"navy"
- ,"oldlace"
- ,"olive"
- ,"olivedrab"
- ,"orange"
- ,"orangered"
- ,"orchid"
- ,"palegoldenrod"
- ,"palegreen"
- ,"paleturquoise"
- ,"palevioletred"
- ,"papayawhip"
- ,"peachpuff"
- ,"peru"
- ,"pink"
- ,"plum"
- ,"powderblue"
- ,"purple"
- ,"red"
- ,"rosybrown"
- ,"royalblue"
- ,"saddlebrown"
- ,"salmon"
- ,"sandybrown"
- ,"seagreen"
- ,"seashell"
- ,"sienna"
- ,"silver"
- ,"skyblue"
- ,"slateblue"
- ,"slategray"
- ,"slategrey"
- ,"snow"
- ,"springgreen"
- ,"steelblue"
- ,"tan"
- ,"teal"
- ,"thistle"
- ,"tomato"
- ,"turquoise"
- ,"violet"
- ,"wheat"
- ,"white"
- ,"whitesmoke"
- ,"yellow"
- ,"yellowgreen"]
-
-rws :: [T.Text]
-rws = [ "ModelName"
-    , "FormatVersion"
-    , "ModelVersion"
-    , "ModelPaper"
-    , "Switch"
-    , "BiasOrderFirst"
-    , "BiasOrderLast"
-    , "NodeName"
-    , "NodeType"
-    , "NodeColor"
-    , "NodeCoordinate"
-    , "NodeGenes"
-    , "NodeDescription"
-    , "NodeNotes"
-    , "InputNode"
-    , "LinkEffect"
-    , "LinkType"
-    , "LinkDescription"
-    , "LinkNotes"
-    , "ReferenceNotes"
-    , "cite"
-    , "textbf"
-    , "textit"
-    , "Model"
-    , "ModelMapping"
-    , "ModelGraph"
-    , "Node"
-    , "InLink"
-    , "NodeGate"
-    , "DiscreteLogic"
-    , "TruthTable"
-    , "NodeMetaData"
-    , "CitationDictionary"
-    ]
-
-
--- Testing Functions:
-truthTableParseTest :: Parser ([NodeName],[[NodeState]])
-truthTableParseTest = between (symbol "TruthTable{")
-                          (symbol "TruthTable}")
-                           slurpTable
-                  >>= tableConsistencyCheckTest
-
-tableConsistencyCheckTest :: ([NodeName],[[NodeState]])
-                          -> Parser ([NodeName],[[NodeState]])
-tableConsistencyCheckTest (nodes, rows) = case mkTableGateTest (nodes, rows) of
-    Success tableGate -> return tableGate
-    Failure errs      -> fail $ show errs
-
-mkTableGateTest:: ([NodeName],[[NodeState]])
-            -> Validation [TableInvalid] ([NodeName],[[NodeState]])
-mkTableGateTest (nodes, rows)
-    | testErrors == [] = Success (nodes, rows)
-    | otherwise        = Failure testErrors
-    where 
-        cols = transpose rows
-        inputRows = map init rows
-        outputs = last cols
-        testResults = [ allOutputsPresent outputs
-                      , sufficientInputRows inputRows
-                      , noDupeInputs inputRows
-                      , rowsStrictlyIncreasing inputRows
-                      ]
-        testErrors = errorRollup testResults
-
-
 -- Sort a list by the order of elements in the list order
 sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
-sortWithOrder order = sortOn getOrder
+sortWithOrder order = L.sortOn getOrder
     where
         getOrder k = Map.lookupDefault (-1) k orderHashMap
         orderHashMap = Map.fromList (zip order [1..])

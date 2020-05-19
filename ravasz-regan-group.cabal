@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b1676696e5eef320ca9f4741817e8580e13a1bd10fc2c442d902b406e0babe33
+-- hash: 77bc92fa29c3e6532055925d2a64de5861949d9321d11d7f0f8902d1fd3eb581
 
 name:           ravasz-regan-group
 version:        0.1.0.0
@@ -28,11 +28,12 @@ source-repository head
 library
   exposed-modules:
       Parsing
-      Lib
       Types
       ReadWrite
+      Utilities
+      Constants
+      Publish
   other-modules:
-      Verify
       Paths_ravasz_regan_group
   hs-source-dirs:
       src
@@ -49,9 +50,9 @@ library
     , monoidal-containers
     , parser-combinators
     , path
+    , pretty-simple
     , safe-exceptions
     , scientific
-    , split
     , text
     , unordered-containers
     , validation
@@ -65,7 +66,7 @@ executable dynamicalCell
       Paths_ravasz_regan_group
   hs-source-dirs:
       dynamicalCell
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is DynamicalCell.dynamicalCell
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -main-is DynamicalCell.dynamicalCell
   build-depends:
       base >=4.7 && <5
     , megaparsec
@@ -79,7 +80,7 @@ executable dynamicalVerify
       Paths_ravasz_regan_group
   hs-source-dirs:
       dynamicalVerify
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is DynamicalVerify.dynamicalVerify
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -main-is DynamicalVerify.dynamicalVerify
   build-depends:
       base >=4.7 && <5
     , megaparsec
@@ -98,7 +99,7 @@ test-suite ravasz-regan-group-test
       Paths_ravasz_regan_group
   hs-source-dirs:
       test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N2
   build-depends:
       base >=4.7 && <5
     , ravasz-regan-group

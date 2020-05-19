@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 
 module Types where
 --     ( DMModel(..)
@@ -7,7 +8,8 @@ module Types where
 --     , PackageInfo(..)
 --     ) where
 
-import qualified Data.Colour as N
+import qualified Data.Colour as C
+import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
 import qualified Data.Graph.Inductive as Gr
@@ -17,16 +19,18 @@ import qualified Data.HashSet as Set
 import Data.Validation
 import qualified Data.List.Unique as Uniq
 import qualified Data.Versions as Ver
-import qualified Data.Hashable as Hash
 import qualified Data.List as L
-import Data.Foldable (foldl')
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
+import Data.Data
+import Utilities
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
 
-type LocalColor = N.Colour Double
+type LocalColor = C.Colour Double
+defaultColor :: LocalColor -- Erzsó red
+defaultColor = SC.sRGB24 148 17 0
 
 type FileFormatVersion = Ver.SemVer
 
@@ -41,7 +45,7 @@ data ModelLayer = ModelLayer { modelGraph   :: ModelGraph
 
 data ModelMeta = ModelMeta { modelName      :: T.Text
                            , modelVersion   :: Ver.SemVer
-                           , modelPaper     :: [T.Text]
+                           , modelPaper     :: [BibTeXKey]
                            , biasOrderFirst :: [(NodeName, NodeState)]
                            , biasOrderLast  :: [(NodeName, NodeState)]
                            , modelInfo :: LitInfo
@@ -55,7 +59,7 @@ type ModelMapping = [(NodeName, [NodeName])]
 type ModelGraph = Gr.Gr DMNode DMLink
 
 data DMLink = DMLink { linkEffect :: LinkEffect
-                     , linkType :: T.Text
+                     , linkType :: LinkType
                      , linkInfo :: LitInfo }
                        deriving (Show, Eq, Ord)
 
@@ -99,7 +103,10 @@ type LayerRange = Map.HashMap NodeName [NodeState]
 
 -- The first pair is a description, with accompanying list of \cites. 
 -- The second pair is a note, with accompanying list of \cites. 
-type LitInfo = ((T.Text, [[T.Text]]), (T.Text, [[T.Text]]))
+type LitInfo = ((Description, CitationLists), (Note, CitationLists))
+type Description = T.Text
+type Note = T.Text
+type CitationLists = [[T.Text]]
 
 -- The gates are initially implemented as dictionaries that I build while 
 -- parsing, since I don't know how to parse a regular function (i.e. one that 
@@ -119,7 +126,8 @@ type LitInfo = ((T.Text, [[T.Text]]), (T.Text, [[T.Text]]))
 type LogicalNodeGate = NodeGate
 type TableNodeGate = NodeGate
 
-data NodeType = Cell
+data NodeType = Undefined_NT
+              | Cell
               | DM_Switch
               | Connector
               | Environment
@@ -133,12 +141,30 @@ data NodeType = Cell
               | Kinase
               | Phosphatase
               | Ubiquitin_Ligase
-                deriving (Show, Eq)
+                deriving (Show, Eq, Data)
 
-data LinkEffect = Activation
+data LinkEffect = Undefined_LE
+                | Inapt
+                | Activation
                 | Repression
-                | Neutral
-                  deriving (Show, Eq, Ord)
+                | Context_Dependent
+                  deriving (Show, Eq, Ord, Data)
+
+data LinkType =   Undefined_LT
+                | Enforced_Env
+                | Indirect
+                | Transcription
+                | Persistence
+                | Inhibitory_binding
+                | Phosphorylation
+                | Phosphorylation_Localization
+                | Degradation
+                | LinkProcess
+                | Dephosphorylation
+                | Protective_binding
+                | Complex_formation
+                | Ubiquitination
+                  deriving (Show, Eq, Ord, Data)
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -251,7 +277,6 @@ mkGatePrint node = T.concat $ L.intersperse (T.singleton '\t') $ o <> [n]
         o = (gateOrder . nodeGate) node
         n = (nodeName . nodeMeta) node
 
-
 -- Error handling types
 
 data ModelInvalid = DuplicateCoarseMapNodes DuplicateCoarseMapNodes
@@ -322,6 +347,33 @@ type NodeInlinkMismatch = ([NodeName], [NodeName])
 data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys
     deriving (Show, Eq)
 type RepeatedKeys = [BibTeXKey]
+
+data PubInvalid =   PubMissingDesc MissingDescription
+                  | UndefinedNodeType UndefinedNodeType
+                  | UnspecifiedNodeColor UnspecifiedNodeColor
+                  | MissingCoord MissingCoord
+                  | CoordWrongDimension CoordWrongDimension
+                  | UndefinedLinkType UndefinedLinkType
+                  | UndefinedEffectType UndefinedEffectType
+                  | OrphanedModelCites OrphanedModelCites
+                  | ExcessDictCites ExcessDictCites
+    deriving (Show, Eq, Ord)
+
+ -- The name of the piece missing a description, and its associated type. 
+data MissingDescription = ModelD T.Text
+                        | NodeD T.Text
+                        | InLinkD T.Text
+                        deriving (Eq, Show, Ord)
+type UndefinedNodeType = NodeName 
+type UnspecifiedNodeColor = T.Text --Notice to pick an SVG color
+type MissingCoord = T.Text
+type CoordWrongDimension = T.Text
+-- Associated NodeName and a list possible types.
+type UndefinedLinkType = NodeName -- The associated Node
+type UndefinedEffectType = NodeName -- The associated Node
+type OrphanedModelCites = (T.Text, [BibTeXKey])
+type ExcessDictCites = (T.Text, [BibTeXKey])
+
 
 -- It would be very easy to assemble DMModels with nonsensical maps between
 -- model layers, so we never create a LayerBinding directly, only through his
@@ -744,18 +796,19 @@ modelLayers (LayerBinding _ mL dmM) = mL : (modelLayers dmM)
 layerNodes :: ModelLayer -> [DMNode]
 layerNodes = (snd <$>) . Gr.labNodes . modelGraph
 
--- Extract all the citation keys from a DMModel
-citationsKeys :: DMModel -> Set.HashSet BibTeXKey
-citationsKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys]
+-- Extract all the citation keys from a DMModel, include any ModelPapers. 
+modelCiteKeys :: DMModel -> Set.HashSet BibTeXKey
+modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
   where
     modelKeys = (Set.fromList . lRefs . modelInfo . modelMeta) ml
     linkKeys = (Set.fromList . concat . ((lRefs . linkInfo . Gr.edgeLabel) <$>)
                 . Gr.labEdges . modelGraph) ml
     nodeKeys = (Set.fromList . concat . ((lRefs . nodeInfo . nodeMeta . snd)
                 <$>) . Gr.labNodes . modelGraph) ml
+    mPaperKeys = (Set.fromList . modelPaper . modelMeta) ml
     lRefs ((x, xxs), (y, yys)) = (concat xxs) <> (concat yys)
-citationsKeys (LayerBinding mMap mLayer dmModel) =
-    (citationsKeys (Fine mLayer)) `Set.union` (citationsKeys dmModel)
+modelCiteKeys (LayerBinding mMap mLayer dmModel) =
+    (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 
 -- Extract all the names of the layers of  DMModel
 layerNames :: DMModel -> [T.Text]
@@ -767,65 +820,3 @@ layerNames (LayerBinding mMap mLayer dmModel) =
 coarseLayer :: DMModel -> ModelLayer
 coarseLayer (Fine ml) = ml
 coarseLayer (LayerBinding mMap mLayer dmModel) = mLayer
-
-
--- General purpose functions
-
--- Are the elements in a list strictly increasing?
-isStrictlyIncreasing :: (Ord a) => [a] -> Bool
-isStrictlyIncreasing [] = True
-isStrictlyIncreasing [x] = True
-isStrictlyIncreasing (x:y:xs) = x < y && isStrictlyIncreasing (y:xs)
-
--- Is List xs a subset of List ys? Not efficient. Do not use for n > 10000. 
-isSubset :: (Eq a) => [a] -> [a] -> Bool
-isSubset [] []     = True
-isSubset [] (y:ys) = True
-isSubset (x:xs) [] = False
-isSubset (x:xs) ys = elem x ys && isSubset xs (L.delete x ys)
-
--- Are 2 Lists the same up to permutations?
-arePermutes :: (Eq a) => [a] ->[a] -> Bool
-arePermutes xs ys = (isSubset xs ys) && (isSubset ys xs)
-
--- Are all the elements in a list identical?
-allTheSame :: (Eq a) => [a] -> Bool
-allTheSame [] = True
-allTheSame (x:xs) = all (== x) xs
-
--- Combine Validation Failures monoidally in the error. 
-errorRollup :: [Validation a b] -> [a]
-errorRollup = foldr ePop []
-                where ePop v es = case isFailure v of
-                                  True  -> ((\(Failure e) -> e) v) : es
-                                  False -> es
-
--- Delete all the items in xs list from ys. 
-deleteMult :: (Eq a) => [a] -> [a] -> [a]
-deleteMult _ [] = []
-deleteMult [] ys = ys
-deleteMult (x:xs) ys = deleteMult xs $ L.delete x ys
-
--- In a list of n HashSets, this finds any element in any set that occurs in
--- more than one set. 
-nIntersection :: (Eq a, Hash.Hashable a) => [Set.HashSet a] -> Set.HashSet a
-nIntersection = snd . go 
-    where go = foldl' rollingI (Set.empty, Set.empty)
-
-rollingI :: (Eq a, Hash.Hashable a) => 
-            (Set.HashSet a, Set.HashSet a)
-         ->  Set.HashSet a
-         -> (Set.HashSet a, Set.HashSet a)
-rollingI (sUnion, sDupes) s =
-    (sUnion `Set.union` s, (sUnion `Set.intersection` s) `Set.union` sDupes)
-
-isSuccess :: Validation a b -> Bool
-isSuccess (Success _) = True
-isSuccess (Failure _) = False
-
-isFailure :: Validation a b -> Bool
-isFailure (Failure _) = True
-isFailure (Success _) = False
-
-numTimes :: (Eq a) => a -> [a] -> Int
-numTimes x = length . (filter (== x))
