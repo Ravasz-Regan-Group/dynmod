@@ -1,5 +1,5 @@
 name:                ravasz-regan-group
-version:             0.1.0.0
+version:             0.2.0.0
 github:              "githubuser/ravasz-regan-group"
 license:             BSD3
 author:              "Peter Regan"
@@ -23,7 +23,8 @@ dependencies:
 - base >= 4.7 && < 5
 
 library:
-  source-dirs: src
+  source-dirs: 
+  - src
   exposed-modules:
   - Parsing
   - Types
@@ -31,7 +32,11 @@ library:
   - Utilities
   - Constants
   - Publish
-#  ghc-options:
+  - PDF
+  - Text.LaTeX.Packages.Booktabs
+  - Text.LaTeX.Packages.ColorTbl
+  ghc-options:
+  - -Wall
 #  - -O2
   dependencies :
   - megaparsec
@@ -53,30 +58,17 @@ library:
   - bytestring
   - path
   - pretty-simple
+  - mtl
 
 executables:
-  dynamicalCell:
-    main:                DynamicalCell.hs
-    source-dirs:         dynamicalCell
-
+  dynmod:
+    main:                DynMod.hs
+    source-dirs:         app
     ghc-options:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N3
-    - -main-is DynamicalCell.dynamicalCell
-#    - -O2
-    dependencies:
-    - ravasz-regan-group
-    - megaparsec
-    - text
-  dynamicalVerify:
-    main:                DynamicalVerify.hs
-    source-dirs:         dynamicalVerify
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N3
-    - -main-is DynamicalVerify.dynamicalVerify
+#    - -main-is DynamicalVerify.dynamicalVerify
 #    - -O2
     dependencies:
     - ravasz-regan-group
@@ -86,6 +78,9 @@ executables:
     - path
     - path-io
     - optparse-applicative
+    - fgl
+    - HaTeX
+    - mtl
 
 tests:
   ravasz-regan-group-test:

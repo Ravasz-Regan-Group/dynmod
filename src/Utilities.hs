@@ -2,7 +2,6 @@
 
 module Utilities where
 
-import Data.Foldable (foldl')
 import Data.Validation
 import qualified Data.HashSet as Set
 import qualified Data.Hashable as Hash
@@ -10,6 +9,25 @@ import qualified Text.Pretty.Simple as PS
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 import qualified Data.List as L
+import Data.Foldable (foldl')
+import Control.Applicative (liftA2)
+
+infixl 4 <<$>>, <<*>>, <<<$>>>
+
+(<<$>>) :: (Functor f1, Functor f2) => (a -> b) -> f1 (f2 a) -> f1 (f2 b)
+(<<$>>) = fmap . fmap
+
+(<<*>>) :: (Applicative f1, Applicative f2) =>
+           f1 (f2 (a -> b))
+        -> f1 (f2  a      )
+        -> f1 (f2       b )
+(<<*>>) = liftA2 (<*>)
+
+(<<<$>>>) :: (Functor f1, Functor f2, Functor f3) => 
+             (a -> b)
+          -> f1 (f2 (f3 a))
+          -> f1 (f2 (f3 b))
+(<<<$>>>) = fmap . fmap . fmap
 
 -- General purpose functions
 
@@ -20,14 +38,13 @@ sPShowNoColor = toStrict . PS.pShowNoColor
 -- Are the elements in a list strictly increasing?
 isStrictlyIncreasing :: (Ord a) => [a] -> Bool
 isStrictlyIncreasing [] = True
-isStrictlyIncreasing [x] = True
+isStrictlyIncreasing [_] = True
 isStrictlyIncreasing (x:y:xs) = x < y && isStrictlyIncreasing (y:xs)
 
 -- Is List xs a subset of List ys? Not efficient. Do not use for n > 10000. 
 isSubset :: (Eq a) => [a] -> [a] -> Bool
-isSubset [] []     = True
-isSubset [] (y:ys) = True
-isSubset (x:xs) [] = False
+isSubset [] _     = True
+isSubset (_:_) [] = False
 isSubset (x:xs) ys = elem x ys && isSubset xs (L.delete x ys)
 
 -- Are 2 Lists the same up to permutations?

@@ -8,6 +8,13 @@ module Types where
 --     , PackageInfo(..)
 --     ) where
 
+import Data.Data
+import Utilities
+import Text.LaTeX.Base.Class (fromLaTeX, commS, LaTeXC(..))
+import Text.LaTeX.Base.Commands (footnotesize)
+import Text.LaTeX.Base.Math (math)
+import Text.LaTeX.Base.Syntax (LaTeX(..))
+import Text.LaTeX.Base.Texy (Texy(..))
 import qualified Data.Colour as C
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
@@ -22,8 +29,6 @@ import qualified Data.Versions as Ver
 import qualified Data.List as L
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
-import Data.Data
-import Utilities
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
@@ -80,8 +85,6 @@ data NodeMeta = NodeMeta { nodeName :: NodeName
 instance Ord NodeMeta where
     compare x y = compare (nodeName x) (nodeName y)
 
--- type NodeGate = (NodeName, [NodeStateAssign])
-
 -- Technically a NodeGate requires only a list of state assignments, since
 -- "input gate order" only really makes sense in the context of a truth table,
 -- which is not how we represent gates internally. However, most of the time
@@ -90,13 +93,17 @@ instance Ord NodeMeta where
 -- feedback in the form of table rows is very important. Thus, we need to hang
 -- on to the original order of nodes in that table representation. 
 -- Also, the NodeName is contained in the
--- NodeMetaDate, but from a human debugging point of view it seems wise to hang
+-- NodeMetaData, but from a human debugging point of view it seems wise to hang
 -- on to it.
 data NodeGate = NodeGate { gNodeName   :: NodeName
                          , gateAssigns :: [NodeStateAssign]
                          , gateOrder   :: [NodeName]
                          }
                          deriving (Show, Eq)
+
+displayStyle :: LaTeXC l => l
+displayStyle = commS "displaystyle"
+
 type NodeStateAssign = (NodeState, NodeExpr)
 type NodeRange = (NodeName, [NodeState])
 type LayerRange = Map.HashMap NodeName [NodeState]
@@ -141,7 +148,28 @@ data NodeType = Undefined_NT
               | Kinase
               | Phosphatase
               | Ubiquitin_Ligase
+              | Protease
+              | DNAase
                 deriving (Show, Eq, Data)
+
+instance Texy NodeType where
+    texy Undefined_NT = (fromLaTeX . TeXRaw) "Undefined_NT"
+    texy Cell             = (footnotesize . fromLaTeX . TeXRaw) "CLL"
+    texy DM_Switch        = (footnotesize . fromLaTeX . TeXRaw) "DMS"
+    texy Connector        = (footnotesize . fromLaTeX . TeXRaw) "CNN"
+    texy Environment      = (footnotesize . fromLaTeX . TeXRaw) "ENV"
+    texy Process          = (footnotesize . fromLaTeX . TeXRaw) "PRO"
+    texy MRNA             = (footnotesize . fromLaTeX . TeXRaw) "MRNA"
+    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "PRT"
+    texy TFProtein        = (footnotesize . fromLaTeX . TeXRaw) "TFP"
+    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "MTB"
+    texy MacroStructure   = (footnotesize . fromLaTeX . TeXRaw) "MSR"
+    texy ProteinComplex   = (footnotesize . fromLaTeX . TeXRaw) "PRC"
+    texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "KIN"
+    texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "PHT"
+    texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UBL"
+    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTA"
+    texy DNAase           = (footnotesize . fromLaTeX . TeXRaw) "DNA"
 
 data LinkEffect = Undefined_LE
                 | Inapt
@@ -150,10 +178,20 @@ data LinkEffect = Undefined_LE
                 | Context_Dependent
                   deriving (Show, Eq, Ord, Data)
 
+instance Texy LinkEffect where
+    texy Undefined_LE = "Undefined_LE"
+    texy Inapt = math $ commS "perp"
+    texy Activation = math $ commS "leftarrow"
+    -- from fdsymbol font
+    texy Repression = math $ commS "leftfootline"
+    -- from fdsymbol font
+    texy Context_Dependent = math $ commS "leftblackspoon" 
+
 data LinkType =   Undefined_LT
                 | Enforced_Env
                 | Indirect
                 | Transcription
+                | Translation
                 | Persistence
                 | Inhibitory_binding
                 | Phosphorylation
@@ -164,7 +202,27 @@ data LinkType =   Undefined_LT
                 | Protective_binding
                 | Complex_formation
                 | Ubiquitination
+                | GTP_loading
                   deriving (Show, Eq, Ord, Data)
+
+instance Texy LinkType where
+    texy Undefined_LT = (fromLaTeX . TeXRaw) "Undefined_LT"
+    texy Enforced_Env       = (footnotesize . fromLaTeX . TeXRaw) "ENV"
+    texy Indirect           = (footnotesize . fromLaTeX . TeXRaw) "IND"
+    texy Transcription      = (footnotesize . fromLaTeX . TeXRaw) "TSC"
+    texy Translation        = (footnotesize . fromLaTeX . TeXRaw) "TSL"
+    texy Persistence        = (footnotesize . fromLaTeX . TeXRaw) "PER"
+    texy Inhibitory_binding = (footnotesize . fromLaTeX . TeXRaw) "INB"
+    texy Phosphorylation    = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Phosphorylation_Localization =
+        (footnotesize . fromLaTeX . TeXRaw) "PL"
+    texy Degradation        = (footnotesize . fromLaTeX . TeXRaw) "DEG"
+    texy LinkProcess        = (footnotesize . fromLaTeX . TeXRaw) "LPR"
+    texy Dephosphorylation  = (footnotesize . fromLaTeX . TeXRaw) "DP"
+    texy Protective_binding = (footnotesize . fromLaTeX . TeXRaw) "ENV"
+    texy Complex_formation  = (footnotesize . fromLaTeX . TeXRaw) "COF"
+    texy Ubiquitination     = (footnotesize . fromLaTeX . TeXRaw) "UBQ"
+    texy GTP_loading        = (footnotesize . fromLaTeX . TeXRaw) "GTPL"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -189,6 +247,7 @@ data BibTeXEntry = BibTeXEntry {
                     , entryFields :: [(BibTeXField, BibTeXRecord)]
                     }
                     deriving (Show, Eq)
+
 type BibTeXField = T.Text
 type BibTeXRecord = T.Text
 
@@ -197,7 +256,16 @@ data NodeExpr
   | GateConst NodeName NodeState
   | Not NodeExpr
   | Binary BinOp NodeExpr NodeExpr
-  deriving (Show, Eq)
+  deriving (Eq)
+
+instance Show NodeExpr where
+    show (GateLit b) = show b
+    show (GateConst n s) = (show n) ++ ":" ++ (show s)
+    show (Not expr) = "not (" ++ (show expr) ++ ")"
+    show (Binary And expr1 expr2) =
+        "(" ++ (show expr1) ++ ")" ++ " and " ++ "(" ++ (show expr2) ++ ")"
+    show (Binary Or expr1 expr2) =
+        "(" ++ (show expr1) ++ ")" ++ " or " ++ "(" ++ (show expr2) ++ ")"
 
 data BinOp
   = And
@@ -277,6 +345,36 @@ mkGatePrint node = T.concat $ L.intersperse (T.singleton '\t') $ o <> [n]
         o = (gateOrder . nodeGate) node
         n = (nodeName . nodeMeta) node
 
+-- A DMNode and all of its InLinks. Useful in formating supplementary tables. 
+type InAdj = (DMNode, [(DMLink, NodeName)])
+
+-- Extract all of the DMNodes, along with their inbound DMLinks (and input
+-- NodeNames), from a ModelGraph. N.B. We include self-loops as in-links, as
+-- our context arose out of functions on boolean networks, where that is the
+-- norm. 
+inAdjs :: Gr.Gr DMNode DMLink -> [InAdj]
+inAdjs mG = inLinkPrep <$> contexts
+    where
+        inLinkPrep (ins, n, dmNode, outs) =
+            (dmNode, (linkNamePrep mG) <$> allIns)
+            where
+                allIns = (gLoop n outs) <> ins
+        gLoop i ass = case L.find ((\k (_, j) -> k == j) i) ass of
+            Nothing -> []
+            Just x  -> [x]
+        linkNamePrep gr (dmL, n) = (dmL, 
+                (nodeName . nodeMeta . thdOf4 . fromJust . fst)
+                (Gr.match n gr)
+            )
+        contexts = sequenceA ((flip Gr.context . fst) <$> graphNodes) mG
+        graphNodes = Gr.labNodes mG
+
+-- Given a list of InAdj and a NodeName, extract the corresponding
+-- entry, if it exists
+findInAdj :: NodeName -> [InAdj] -> Maybe InAdj
+findInAdj n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
+
+
 -- Error handling types
 
 data ModelInvalid = DuplicateCoarseMapNodes DuplicateCoarseMapNodes
@@ -285,6 +383,7 @@ data ModelInvalid = DuplicateCoarseMapNodes DuplicateCoarseMapNodes
                   | ExcessCoarseMapNodes ExcessCoarseMapNodes
                   | MissingCoarseMapNodes MissingCoarseMapNodes
                   | FineInMultipleCoarse FineInMultipleCoarse
+                  | DuplicatedNodeNames DuplicatedNodeNames
                   | MissingCitations MissingCitations
     deriving (Show, Eq)
 type DuplicateCoarseMapNodes = [NodeName]
@@ -293,9 +392,8 @@ type MissingFineMapNodes     = [NodeName]
 type ExcessCoarseMapNodes    = [NodeName]
 type MissingCoarseMapNodes   = [NodeName]
 type FineInMultipleCoarse    = [NodeName]
+type DuplicatedNodeNames     = [NodeName]
 type MissingCitations = [BibTeXKey]
-
--- Error Types
 
 data GateInvalid = InconsistentNames
                  | DuplicateAssigns
@@ -307,6 +405,7 @@ data GateInvalid = InconsistentNames
                  | TableExprInNodeMismatch TableExprInNodeMismatch
                  | TableExprStateMismatch TableExprStateMismatch
                  | TableExprOuputMismatch TableExprOuputMismatch
+                 | TableDisNameMismatch TableDisNameMismatch
     deriving (Show, Eq)
 
 -- If there are internal contradictions in a gate, this provides the relevant
@@ -318,6 +417,7 @@ type TableExprMismatch = (([ExprInput], [Maybe NodeState])
 type TableExprInNodeMismatch = ([NodeName], [NodeName])
 type TableExprStateMismatch = T.Text
 type TableExprOuputMismatch = (T.Text, [NodeStateAssign])
+type TableDisNameMismatch = (NodeName, NodeName)
 
 data TableInvalid = IncompleteOrOversizedRow
                   | InsufficientRows
@@ -332,14 +432,18 @@ data GateInLinkInvalid = GateInLinkMismatch GateInLinkMismatch
 type GateInLinkMismatch = ([NodeName], [NodeName])
 
 data NodeInvalid = NodeMetaNameMismatch NodeMetaNameMismatch
+                 | DuplicateDMLinks DuplicateDMLinks
     deriving (Show, Eq)
 type NodeMetaNameMismatch = (NodeName, NodeName) 
+type DuplicateDMLinks = [NodeName]
 
-data ModelLayerInvalid = NodeRefdNodesMismatch NodeRefdNodesMismatch
+data ModelLayerInvalid = 
+                    NodeRefdNodesMismatch NodeRefdNodesMismatch
                   | StatesRefdStatesMisMatch StatesRefdStatesMisMatch
                   | NodeInlinkMismatch NodeInlinkMismatch
      deriving (Show, Eq)
-type NodeRefdNodesMismatch = ([NodeName], [NodeName])
+type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
+                                        -- anynode
 type StatesRefdStatesMisMatch =
     ([(NodeName, [NodeState])], [(NodeName, [NodeState])])
 type NodeInlinkMismatch = ([NodeName], [NodeName])
@@ -369,8 +473,8 @@ type UnspecifiedNodeColor = T.Text --Notice to pick an SVG color
 type MissingCoord = T.Text
 type CoordWrongDimension = T.Text
 -- Associated NodeName and a list possible types.
-type UndefinedLinkType = NodeName -- The associated Node
-type UndefinedEffectType = NodeName -- The associated Node
+type UndefinedLinkType = (NodeName, NodeName) -- The associated Node
+type UndefinedEffectType = (NodeName, NodeName) -- The associated Node
 type OrphanedModelCites = (T.Text, [BibTeXKey])
 type ExcessDictCites = (T.Text, [BibTeXKey])
 
@@ -389,14 +493,14 @@ mkLayerBinding mMap mLayer mModel
     where
       errs        = errorRollup testResults
       testResults = [ noCoarseDupes $ fst <$> mMap
-                    , fineNodesmatch mapFineNodes modelNodes
+                    , fineNodesmatch mapFineNodes mNodes
                     , coarseNodesMatch  mapCoarseNodes graphNodes
                     , isMapSurjective mMap
                     ]
       mapFineNodes = Set.toList $ Set.unions mapFineSets
       mapCoarseNodes = Set.toList $ Set.fromList $ fst <$> mMap
       graphNodes = (nodeName . nodeMeta . snd) <$> graphGrNodes
-      modelNodes = (nodeName . nodeMeta . snd) <$> modelGrNodes
+      mNodes = (nodeName . nodeMeta . snd) <$> modelGrNodes
       mapFineSets = (Set.fromList . snd) <$> mMap
       graphGrNodes = (Gr.labNodes . modelGraph) mLayer
       modelGrNodes = (Gr.labNodes . modelGraph . coarseLayer) mModel
@@ -410,12 +514,12 @@ noCoarseDupes cs = case Uniq.repeated cs of
 -- Check that the fine-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the DMModel. 
 fineNodesmatch :: [NodeName] -> [NodeName] -> Validation ModelInvalid [NodeName]
-fineNodesmatch mapFineNodes modelNodes
-    | arePermutes mapFineNodes modelNodes = Success mapFineNodes
-    | isSubset mapFineNodes modelNodes    = Failure $ MissingFineMapNodes $
-                                            deleteMult mapFineNodes modelNodes
+fineNodesmatch mapFineNodes moNodes
+    | arePermutes mapFineNodes moNodes = Success mapFineNodes
+    | isSubset mapFineNodes moNodes    = Failure $ MissingFineMapNodes $
+                                            deleteMult mapFineNodes moNodes
     | otherwise                           = Failure $ ExcessFineMapNodes $
-                                            deleteMult modelNodes mapFineNodes
+                                            deleteMult moNodes mapFineNodes
 
 -- Check that the coarse-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the ModelGraph. This assumes that there are no
@@ -518,7 +622,7 @@ tableToLogical nodes inputRows outputs = tableNode
 --      Associate each input in each row with its corresponding node: 
         inputAssociations = zip (init nodes) <$> inputRows
 --      Yank out the name of the node whose gate this is: 
-        nodeName = last nodes
+        nName = last nodes
 --      Turn all the pairs of NodeName and NodeState into GateConsts: 
         inputExprList = fmap (fmap (uncurry GateConst)) inputAssociations
 --      AND together all the entries in each row: 
@@ -556,7 +660,7 @@ tableToLogical nodes inputRows outputs = tableNode
 --      whose gate we are constructing:
         collapsedOrs = fmap orAssignments extractedOutputs
 --      Create the final TableNodeGate:
-        tableNode = NodeGate nodeName collapsedOrs (init nodes)
+        tableNode = NodeGate nName collapsedOrs (init nodes)
         
 
 
@@ -597,13 +701,12 @@ isMonotonic ns = let st = states ns in
 
 -- Check that no two state assignments are ever both True under the same inputs.
 isConsistent :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]
-isConsistent gateAssigns
-  | aberrantIndices == [] = Success gateAssigns
+isConsistent gAssigns
+  | aberrantIndices == [] = Success gAssigns
   | otherwise             = Failure errs
     where 
         gateExprs :: [NodeExpr]
-        gateExprs = snd <$> gateAssigns
-        numExprs = length gateExprs
+        gateExprs = snd <$> gAssigns
         gateCombos = gateCombinations gateExprs
 --      These are the outputs from evaluating the expressions that define this
 --      gate against all the inputs that might possibly produce a true output
@@ -679,7 +782,7 @@ rowsStrictlyIncreasing inputs = case isStrictlyIncreasing inputs of
 noDupeInputs :: [[NodeState]]
              -> Validation TableInvalid [[NodeState]]
 noDupeInputs inputs =
-    let (uniqeElements, dupes, nonDuped) = Uniq.complex inputs
+    let (_, _, nonDuped) = Uniq.complex inputs
     in
     case inputs == nonDuped of
         True  -> Success inputs
@@ -690,29 +793,12 @@ noDupeInputs inputs =
 -- I'm not going to do it unless I have to. 
 duplicatedRowMap :: [[NodeState]] -> ([[Int]], [[NodeState]])
 duplicatedRowMap inputs = (coordinates, inputs)
-    where (uniqeElements, dupes, nonDuped) = Uniq.complex inputs
+    where (_, dupes, _) = Uniq.complex inputs
           coordinates = sequenceA (L.elemIndices <$> dupes) inputs
 
 
 
 -- | Helper Functions:
-
-infixl 4 <<$>>, <<*>>, <<<$>>>
-
-(<<$>>) :: (Functor f1, Functor f2) => (a -> b) -> f1 (f2 a) -> f1 (f2 b)
-(<<$>>) = fmap . fmap
-
-(<<*>>) :: (Applicative f1, Applicative f2) =>
-           f1 (f2 (a -> b))
-        -> f1 (f2  a      )
-        -> f1 (f2       b )
-(<<*>>) = liftA2 (<*>)
-
-(<<<$>>>) :: (Functor f1, Functor f2, Functor f3) => 
-             (a -> b)
-          -> f1 (f2 (f3 a))
-          -> f1 (f2 (f3 b))
-(<<<$>>>) = fmap . fmap . fmap
 
 -- This produces a list of ExprInputs which represent all the combinations of
 -- input states in which a node state assignment might be true. It is not all
@@ -738,7 +824,7 @@ refdNodesStates = MMap.toList . MMap.map L.nub . mconcat . fmap exprNodes
 exprNodes :: NodeExpr -> MMap.MonoidalMap NodeName [NodeState]
 exprNodes expr' = MMap.map (L.nub . ([0, 1] <>)) $ exprNodes' expr'
  where
-  exprNodes' (GateLit b) = MMap.empty
+  exprNodes' (GateLit _) = MMap.empty
   exprNodes' (GateConst nName nState) = MMap.singleton nName [nState]
   exprNodes' (Not expr) = exprNodes' expr
   exprNodes' (Binary And expr1 expr2) = (exprNodes' expr1) <> (exprNodes' expr2)
@@ -806,17 +892,17 @@ modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
     nodeKeys = (Set.fromList . concat . ((lRefs . nodeInfo . nodeMeta . snd)
                 <$>) . Gr.labNodes . modelGraph) ml
     mPaperKeys = (Set.fromList . modelPaper . modelMeta) ml
-    lRefs ((x, xxs), (y, yys)) = (concat xxs) <> (concat yys)
-modelCiteKeys (LayerBinding mMap mLayer dmModel) =
+    lRefs ((_, xxs), (_, yys)) = (concat xxs) <> (concat yys)
+modelCiteKeys (LayerBinding _ mLayer dmModel) =
     (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 
 -- Extract all the names of the layers of  DMModel
 layerNames :: DMModel -> [T.Text]
 layerNames (Fine ml) = [(modelName . modelMeta) ml]
-layerNames (LayerBinding mMap mLayer dmModel) =
+layerNames (LayerBinding _ mLayer dmModel) =
     ((modelName . modelMeta) mLayer) : (layerNames dmModel)
 
 -- peel off the coarsest (topmost) ModelLayer of a DMModel
 coarseLayer :: DMModel -> ModelLayer
 coarseLayer (Fine ml) = ml
-coarseLayer (LayerBinding mMap mLayer dmModel) = mLayer
+coarseLayer (LayerBinding _ mLayer _) = mLayer

@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 77bc92fa29c3e6532055925d2a64de5861949d9321d11d7f0f8902d1fd3eb581
+-- hash: b9fa995d70d2e61b62843ff191d00034fb40955e442e5d2046bfe81c233b2353
 
 name:           ravasz-regan-group
 version:        0.1.0.0
@@ -33,10 +33,15 @@ library
       Utilities
       Constants
       Publish
+      PDF
+      Text.LaTeX.Packages.Booktabs
+      Text.LaTeX.Packages.ColorTbl
   other-modules:
+      Text.LaTeX.DynMod.Extra
       Paths_ravasz_regan_group
   hs-source-dirs:
       src
+  ghc-options: -Wall
   build-depends:
       HaTeX
     , Unique
@@ -48,6 +53,7 @@ library
     , hashable
     , megaparsec
     , monoidal-containers
+    , mtl
     , parser-combinators
     , path
     , pretty-simple
@@ -60,30 +66,19 @@ library
     , versions
   default-language: Haskell2010
 
-executable dynamicalCell
-  main-is: DynamicalCell.hs
+executable dynmod
+  main-is: DynMod.hs
   other-modules:
       Paths_ravasz_regan_group
   hs-source-dirs:
-      dynamicalCell
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -main-is DynamicalCell.dynamicalCell
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N3
   build-depends:
-      base >=4.7 && <5
+      HaTeX
+    , base >=4.7 && <5
+    , fgl
     , megaparsec
-    , ravasz-regan-group
-    , text
-  default-language: Haskell2010
-
-executable dynamicalVerify
-  main-is: DynamicalVerify.hs
-  other-modules:
-      Paths_ravasz_regan_group
-  hs-source-dirs:
-      dynamicalVerify
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -main-is DynamicalVerify.dynamicalVerify
-  build-depends:
-      base >=4.7 && <5
-    , megaparsec
+    , mtl
     , optparse-applicative
     , path
     , path-io

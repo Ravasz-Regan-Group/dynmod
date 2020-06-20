@@ -11,9 +11,8 @@ import Utilities
 import qualified Data.List as L
 import Data.Maybe (fromJust)
 import Data.Void
-import Data.Char (toLower, isSeparator)
+import Data.Char (isSeparator)
 import Control.Monad (void)
-import Data.Colour
 import qualified Data.Text as T
 import qualified Data.Colour.Names as C
 import qualified Data.Vector.Unboxed as U
@@ -63,11 +62,13 @@ symbol = L.symbol sc
 symbol' :: T.Text -> Parser T.Text
 symbol' = L.symbol sc'
 
+-- | 'braces' parses something between parenthesis.
 
--- | 'braces' parses something between braces.
+-- braces :: Parser a -> Parser a
+-- braces = between (symbol "(") (symbol ")")
 
-braces :: Parser a -> Parser a
-braces = between (symbol "{") (symbol "}")
+-- braces' :: Parser a -> Parser a
+-- braces' = between (symbol' "(") (symbol' ")")
 
 -- | 'parens' parses something between parenthesis.
 
@@ -164,6 +165,17 @@ modelParse = between (symbol "Model{") (symbol "Model}")
         )
         <|> (Fine <$> modelLayerParse)
     )
+    >>= nodeDupeCheck
+
+-- Check that ALL NodeNames in the entire parsed DMModel are unique
+nodeDupeCheck :: DMModel -> Parser DMModel
+nodeDupeCheck dM
+    | repeats == [] = return dM
+    | otherwise = fail $ show $ DuplicatedNodeNames repeats
+    where
+        repeats = repeated ns
+        ns = (nodeName . nodeMeta) <$> (concatMap layerNodes layers)
+        layers = modelLayers dM  
 
 modelMappingCheck :: (ModelMapping, ModelLayer, DMModel) -> Parser DMModel
 modelMappingCheck (mMap, mLayer, mModel) =
@@ -180,13 +192,16 @@ modelMappingParse = between (symbol "ModelMapping{") (symbol "ModelMapping}") $
 modelLayerParse :: Parser ModelLayer
 modelLayerParse = runPermutation $
     ModelLayer <$> toPermutation modelGraphParse
-              <*> toPermutation modelConfigParse
+               <*> toPermutation modelConfigParse
 
 
 -- Parse the internal network of a particular model layer. 
 modelGraphParse :: Parser ModelGraph
 modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
-   (some nodeParse) >>= nodeStateCheck >>= nodeLinkCheck >>= modelGraphAssembler
+    some nodeParse
+    >>= nodeStateCheck
+    >>= nodeLinkCheck
+    >>= modelGraphAssembler
 
 -- Check that, for every node and state reference in every NodeExpr, that node
 -- exists in the DMModel layer that we are in, and has a NodeStateAssign for
@@ -194,30 +209,30 @@ modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
 nodeStateCheck :: [(DMNode, [(NodeName, DMLink)])]
                -> Parser [(DMNode, [(NodeName, DMLink)])]
 nodeStateCheck nodesWLinks
-    | (isSubset exprNodes nodes) && (isSubset exprStates nodeStates) =
+    | (isSubset exNodes nodes) && (isSubset exprStates nodeStates) =
         return nodesWLinks
-    | (not $ isSubset exprNodes nodes) && (isSubset exprStates nodeStates) =
-        fail $ show $ NodeRefdNodesMismatch (exprNodes, nodes)
-    | (isSubset exprNodes nodes) && (not $ isSubset exprStates nodeStates) =
+    | (not $ isSubset exNodes nodes) && (isSubset exprStates nodeStates) =
+        fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
+    | (isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates) =
         fail $ show $
-            StatesRefdStatesMisMatch (zip exprNodes exprStates, nodeRefs)
-    | (not $ isSubset exprNodes nodes) && (not $ isSubset exprStates nodeStates)
+            StatesRefdStatesMisMatch (zip exNodes exprStates, nodeRefs)
+    | (not $ isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates)
         = fail $ show $
-            StatesRefdStatesMisMatch (zip exprNodes exprStates, nodeRefs)
+            StatesRefdStatesMisMatch (zip exNodes exprStates, nodeRefs)
+    | otherwise = return nodesWLinks
         where
             dmNodes = fst <$> nodesWLinks
-            extantNodeNames = (nodeName . nodeMeta) <$> dmNodes
             nodeGates = nodeGate <$> dmNodes
             exprRefs = L.sort $ refdNodesStates $
                 concatMap (fmap snd . gateAssigns) nodeGates
-            exprNodes = fst <$> exprRefs
+            exNodes = fst <$> exprRefs
             exprStates = (L.sort . snd) <$> exprRefs
             nodes = gNodeName <$> nodeGates
             assigns = gateAssigns <$> nodeGates
             nodeRefs = L.sort $ zip nodes $ (fst <$>) <$> assigns
             nodeStates = snd <$> nodeRefs
 
--- Check that the for the NodeName associated with each DMLink there exists an
+-- Check that for the NodeName associated with each DMLink there exists an
 -- actual DMNode with that NodeName
 nodeLinkCheck :: [(DMNode, [(NodeName, DMLink)])]
                -> Parser [(DMNode, [(NodeName, DMLink)])]
@@ -228,7 +243,6 @@ nodeLinkCheck nodesWLinks = case lSet == nSet of
       nSet = Set.fromList dmNodeNames
       lSet = Set.fromList dmNodeNames
       dmNodeNames = (nodeName . nodeMeta . fst) <$> nodesWLinks
-      linkNodeNames = fst <$> (concat $ snd <$> nodesWLinks)
       err = NodeInlinkMismatch (nList, lList)
       nList = L.sort $ Set.toList nSet
       lList = L.sort $ Set.toList lSet
@@ -269,10 +283,10 @@ versionParse mVer = (lexeme . try) $ (rword mVer) >> colon >> Ver.semver'
 -- Parse a list of paper references          
 modelPaperParse :: Parser [T.Text]
 modelPaperParse = do
-    symbol "ModelPaper"
-    colon'
+    _ <- symbol "ModelPaper"
+    _ <- colon'
     paperKeys <- sepBy citeKeyParse comma
-    eol
+    _ <- eol
     return paperKeys
 
 -- Parse a list of (NodeName, NodeState) for BiasOrder*
@@ -316,15 +330,24 @@ nodeParse = (between (symbol "Node{") (symbol "Node}") (runPermutation $
              (,) <$> (DMNode <$> toPermutation nodeConfigParse
                              <*> toPermutation gateParse) 
                  <*> toPermutation (some dMLinkParse)))
-              >>= gateLinkCheck >>= nodeNameCheck
+              >>= linkDupeCheck
+              >>= gateLinkCheck 
+              >>= nodeNameCheck
+
+-- Make sure that no two InLinks in a Node have the same InputNode
+linkDupeCheck :: (DMNode, [(NodeName, DMLink)])
+              -> Parser (DMNode, [(NodeName, DMLink)])
+linkDupeCheck p@(_, ls)
+    | nDupes == [] = return p
+    | otherwise = fail $ show $ DuplicateDMLinks nDupes
+    where nDupes = repeated $ fst <$> ls
 
 -- Make sure that the InLinks in a Node match up with the input nodes in the 
 -- NodeGate. 
 gateLinkCheck :: (DMNode, [(NodeName, DMLink)])
               -> Parser (DMNode, [(NodeName, DMLink)])
-gateLinkCheck parsed@((DMNode nMeta pNode), links) = 
-    let gNode = gNodeName pNode
-        assigns = gateAssigns pNode
+gateLinkCheck parsed@((DMNode _ pNode), links) = 
+    let assigns = gateAssigns pNode
         linkInputs = L.sort $ fst <$> links
         gExprs = snd <$> assigns
         gateInputs = L.sort $ fst <$> (refdNodesStates gExprs)
@@ -337,9 +360,8 @@ gateLinkCheck parsed@((DMNode nMeta pNode), links) =
 -- NodeName from the parsed NodeMetaData
 nodeNameCheck :: (DMNode, [(NodeName, DMLink)])
               -> Parser (DMNode, [(NodeName, DMLink)])
-nodeNameCheck parsed@(pDMNode, links) = 
-    let pGate = nodeGate pDMNode
-        gName = (gNodeName . nodeGate) pDMNode
+nodeNameCheck parsed@(pDMNode, _) = 
+    let gName = (gNodeName . nodeGate) pDMNode
         mName = (nodeName . nodeMeta) pDMNode
     in
     case gName == mName of
@@ -368,7 +390,7 @@ pullCitations aMeta = (lexeme' (rword aMeta >> colon' >>
                 _ -> fail $ "Keywords " ++ (show $ Set.toList kwSet) ++
                     " cannot be a citation keys. "
             where
-                kwSet = Set.filter (\x -> elem x rws) kSet
+                kwSet = Set.filter (\y -> elem y rws) kSet
                 kSet = Set.unions $ Set.fromList <$> x
 
 -- Parse the keys of a LaTeX "\cite{}" command. 
@@ -391,28 +413,30 @@ nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}")
 
 -- Parse the (possibly empty) list of EntrezID genes associated with a node
 nodeGenesParse :: Parser [EntrezGeneID]
-nodeGenesParse = (lexeme . try) $ rword "NodeGenes" >> colon >>
+nodeGenesParse = lexeme $ rword "NodeGenes" >> colon >>
     (sepBy integer comma)
 
 -- Parse the type of a node. 
 nodeTypeParse :: Parser NodeType
-nodeTypeParse = (lexeme . try) $ rword "NodeType" >> 
+nodeTypeParse = lexeme $ rword "NodeType" >> 
     (try
         (colon >>
             (   Cell <$ rword "Cell"
-            <|> DM_Switch <$ rword "DM_Switch"
-            <|> Connector <$ rword "Connector"
-            <|> Environment <$ rword "Environment"
-            <|> Process <$ rword "Process"
-            <|> MRNA <$ rword "mRNA"
-            <|> Protein <$ rword "Protein"
-            <|> TFProtein <$ rword "TF_protein"
-            <|> Metabolite <$ rword "Metabolite"
-            <|> MacroStructure <$ rword "MacroStructure"
-            <|> Kinase <$ rword "Kinase"
-            <|> Phosphatase <$ rword "Phosphatase"
-            <|> ProteinComplex <$ rword "protein_complex"
+            <|> DM_Switch        <$ rword "DM_Switch"
+            <|> Connector        <$ rword "Connector"
+            <|> Environment      <$ rword "Environment"
+            <|> Process          <$ rword "Process"
+            <|> MRNA             <$ rword "mRNA"
+            <|> Protein          <$ rword "Protein"
+            <|> TFProtein        <$ rword "TF_protein"
+            <|> Metabolite       <$ rword "Metabolite"
+            <|> MacroStructure   <$ rword "MacroStructure"
+            <|> Kinase           <$ rword "Kinase"
+            <|> Phosphatase      <$ rword "Phosphatase"
+            <|> ProteinComplex   <$ rword "protein_complex"
             <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
+            <|> Protease         <$ rword "Protease"
+            <|> DNAase           <$ rword "DNAase"
             )
         ) 
     <|>
@@ -423,7 +447,7 @@ nodeTypeParse = (lexeme . try) $ rword "NodeType" >>
 
 -- a NodeType, LinkEffect, or LinkType may be undefined at this point. 
 undefParse :: Parser T.Text
-undefParse = T.pack <$> (someTill alphaNumChar eol)
+undefParse = T.pack <$> (someTill (alphaNumChar <|> char '_') eol)
 
 -- Parse the graphical position of a node. 
 coordinateParse :: Parser (U.Vector Double)
@@ -435,7 +459,7 @@ dMLinkParse :: Parser (NodeName, DMLink)
 dMLinkParse = between (symbol "InLink{") (symbol "InLink}") (runPermutation $
   (,) <$> toPermutation (identifier "InputNode")
       <*> (DMLink <$> toPermutation linkEffectParse
-                  <*> toPermutation linkTypeParse
+                  <*> toPermutation (linkTypeParse <?> "LinkType")
                   <*> ((,) <$> toPermutation (extractCitations"LinkDescription")
                            <*> toPermutation (extractCitations "LinkNotes"))))
 
@@ -453,12 +477,13 @@ linkEffectCheck ts = case ts of
 
 -- Parse the type of a link. 
 linkTypeParse :: Parser LinkType
-linkTypeParse = (lexeme . try) $ rword "LinkType" >>
+linkTypeParse = lexeme $ rword "LinkType" >>
     (try   
         (colon >>
             (   Enforced_Env       <$ rword "Enforced_Env"
             <|> Indirect           <$ rword "Indirect"
             <|> Transcription      <$ rword "Transcription"
+            <|> Translation        <$ rword "Translation"
             <|> Persistence        <$ rword "Persistence"
             <|> Inhibitory_binding <$ rword "Inhibitory_binding"
 --          This has come before Phosphorylation, otherwise you will match on
@@ -472,6 +497,7 @@ linkTypeParse = (lexeme . try) $ rword "LinkType" >>
             <|> Protective_binding <$ rword "Protective_binding"
             <|> Complex_formation  <$ rword "Complex_formation"
             <|> Ubiquitination     <$ rword "Ubiquitination"
+            <|> GTP_loading        <$ rword "GTP_loading"
             )
         )
     <|>
@@ -485,7 +511,8 @@ gateParse :: Parser NodeGate
 gateParse = gatePairParse >>= tableDisCheck
 
 -- If we parse a logical expression AND a table, make sure they give the same
--- output for all possible inputs. 
+-- output for all possible inputs. Also, make sure that the table & discrete
+-- have the same gNodeName. 
 tableDisCheck :: (Maybe LogicalNodeGate, Maybe TableNodeGate) -> Parser NodeGate
 tableDisCheck (Just lG, Nothing) = return lG
 tableDisCheck (Nothing, Just tG) = return tG
@@ -495,10 +522,13 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
         False -> fail $ show $ TableExprStateMismatch $
                         T.unlines (tGatePrint:(deleteMult tpInputs lpInputs))
         True -> case accOutputMis tOutputs lOutputs of
-            []   -> return $ lGate'
-            errs -> fail $ T.unpack
-                        $ "TableExprOuputMismatch (Table, Logical): \n"
-                            <> T.unlines (tGatePrint:errs)
+            errs@(_:_) -> fail $ T.unpack
+                                $ "TableExprOuputMismatch (Table, Logical): \n"
+                                    <> T.unlines (tGatePrint:errs)
+            [] | lName == tName -> return lGate'
+               | otherwise -> fail $ show $ TableDisNameMismatch (tNm, lName)
+                where lName = gNodeName lGate
+                      tNm = gNodeName tGate
         where
             tGatePrint = (T.concat $
                            L.intersperse (T.singleton '\t') $ tOrder <> [tName])
@@ -518,11 +548,12 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             lGateAssigns = gateAssigns lGate
             tOrder = gateOrder tGate
             lGate' = NodeGate lNodeName lGateAssigns tOrder
+tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
 
 -- When the inputs of a logical gate are a subset of its corresponding table
 -- we want to accumulate from the two PrettyGateOutput lists those rows where
 -- both inputs exist, but whose outputs to that input are different. Call as:
--- dropExIns tOutput lOutput
+-- accOutputMis tOutput lOutput
 accOutputMis :: [PrettyGateOutput] -> [PrettyGateOutput] -> [T.Text]
 accOutputMis ts ls = L.foldl' go [] tSplits
     where
@@ -575,7 +606,7 @@ parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
 gateConsistencyCheck :: [(NodeName, NodeStateAssign)]
                      -> Parser LogicalNodeGate
 gateConsistencyCheck nPairs = case mkLogicalGate nPairs of
-    Success nodeGate -> return nodeGate
+    Success nGate -> return nGate
     Failure errs      -> fail $ "Error(s) in gate assignment: " <> show errs
 
 
@@ -661,7 +692,7 @@ parseTableRow n = do
     inputs <- count (n - 1) (intParse <?> show IncompleteOrOversizedRow)
     output <- L.decimal
     skipMany (symbol " " <|> (T.singleton <$> tab))
-    eol
+    _ <- eol
     return (inputs ++ [output])
 
 -- This is for the very specific case where, when parsing Truth Tables, I need
@@ -687,18 +718,18 @@ citeDictParse = between
 citeUniqueCheck :: [BibTeXEntry] -> Parser [BibTeXEntry]
 citeUniqueCheck bes = case repeated (entryKey <$> bes) of
     []          -> return bes
-    errs@(x:xs) -> fail $ show $ RepeatedKeys errs
+    errs -> fail $ show $ RepeatedKeys errs
 
 citeEntryParse :: Parser BibTeXEntry
 citeEntryParse = do
-    char '@'
-    entryType <- entryTypeParse
-    symbol "{"
-    entryKey <- citeKeyParse
-    comma
-    fields <- sepEndBy1 citeFieldParse comma 
-    symbol "}"
-    return $ BibTeXEntry entryKey entryType fields
+    _ <- char '@'
+    eType <- entryTypeParse
+    _ <- symbol "{"
+    eKey <- citeKeyParse
+    _ <- comma
+    fields <- some citeFieldParse 
+    _ <- symbol "}"
+    return $ BibTeXEntry eKey eType fields
 
 entryTypeParse :: Parser T.Text
 entryTypeParse = (lexeme . try) (p >>= check)
@@ -729,8 +760,9 @@ citeKeyParse = lexeme' (p >>= check)
 -- clobber and error I report here. Thus we need a version of citeKeyParse that
 -- doesn't check for Keywords. 
 citeKeyParse' :: Parser BibTeXKey
-citeKeyParse' = (lexeme . try) (T.pack <$> ((:) <$> (letterChar <|> char '_') <*> 
-    (many (alphaNumChar <|> (oneOf ("&;:-_.?+/" :: [Char]) <?> "citeKey")))))
+citeKeyParse' = (lexeme . try) (T.pack <$> ((:) <$> (letterChar <|> char '_')
+    <*> (many (alphaNumChar <|> (oneOf ("&;:-_.?+/" :: [Char])
+        <?> "citeKey")))))
 
 
 
@@ -738,7 +770,7 @@ citeKeyParse' = (lexeme . try) (T.pack <$> ((:) <$> (letterChar <|> char '_') <*
 citeFieldParse :: Parser (BibTeXField, BibTeXRecord)
 citeFieldParse = lexeme $ do
     field <- bibVariable
-    symbol "="
+    _ <- symbol "="
     record <- bibRecordParse
     return (field, record)
 
@@ -755,35 +787,17 @@ bibVariable = lexeme (p >>= check)
                 else return x
 
 bibRecordParse :: Parser BibTeXRecord
-bibRecordParse = (lexeme . try) (
-    -- Some fields have just letters and no enclosures.
-    (T.pack <$> (some letterChar))
-    -- Some fields have just digits and no enclosure. 
-    <|> (T.pack <$> (some digitChar))
-    <|> (braces (bibSeq '}')) -- Some fields are recursively enclosed in braces.
-    <|> (lexeme $ between (char '"') (char '"') (bibBlock '"'))
-    )
+bibRecordParse = ((lexeme . try) $ 
+    T.pack <$> (someTill (anySingle <?> "bibRecordParse") eol)) >>= commaCheck
 
-bibSeq :: Char -> Parser T.Text
-bibSeq c = (lexeme . try) (T.concat <$> (many $ bibBlock c))
-
-bibBlock :: Char -> Parser T.Text
-bibBlock c = (lexeme . try) (
-      ((\start middle end -> (T.singleton start) <> middle <> (T.singleton end))
-                        <$> (char '{') <*> (bibSeq '}') <*> (char '}')
-      )
-     <|> (T.pack <$> (sequenceA [ char '\\'
-                                , (oneOf ("_{}[]$|'`^&%\".,~# " :: [Char])
-                                        <?> "bibBlock")
-                                   <|> letterChar]
-                     )
-         )
-     <|> ((T.pack . (:[])) <$> (anySingleBut c))
-     )
+commaCheck :: BibTeXRecord -> Parser BibTeXRecord
+commaCheck r = case T.last r of
+    ',' -> return $ T.init r
+    _   -> return r
 
 -- Sort a list by the order of elements in the list order
 sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
 sortWithOrder order = L.sortOn getOrder
     where
         getOrder k = Map.lookupDefault (-1) k orderHashMap
-        orderHashMap = Map.fromList (zip order [1..])
+        orderHashMap = Map.fromList (zip order ([1..] :: [Int]))

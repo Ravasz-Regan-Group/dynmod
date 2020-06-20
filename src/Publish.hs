@@ -46,13 +46,16 @@ prettyPublish (Failure errs) = stripped
 -- current possible NodeTypes to the front, so we don't list them all for each
 -- UndefinedNodeType. 
 nTypePrep :: [PubInvalid] -> T.Text
-nTypePrep errs = errorText <> (sPShowNoColor nodes)
+nTypePrep errs
+  | numErrs == 0 = ""
+  | otherwise    = errorText <> (sPShowNoColor nodes)
     where
         nodes = (\(UndefinedNodeType x) -> x) <$> nTypeErrs
-        errorText = " A NodeType must be one of:\n" <> typesList <> presentText
-        presentText = if (length nTypeErrs) == 1 
-            then "\n This Node's NodeType is undefined:\n"
-            else "\n The following Nodes have undefined NodeTypes:\n"
+        errorText =" A NodeType must be one of:\n" <> typesList <> presentText
+        presentText
+          | numErrs == 1 = "\n This Node's NodeType is undefined:\n"
+          | otherwise    = "\n The following Nodes have undefined NodeTypes:\n"
+        numErrs = length nTypeErrs
         typesList = sPShowNoColor optionList
         optionList = (\(AlgRep xs) -> tail xs) algReps
         algReps = dataTypeRep (dataTypeOf (undefined :: NodeType))
@@ -66,15 +69,20 @@ isUndefinedNodeType _                     = False
 -- current possible LinkTypes to the front, so we don't list them all for each
 -- UndefinedLinkType. 
 lTypePrep :: [PubInvalid] -> T.Text
-lTypePrep errs = errorText <> (sPShowNoColor links)
+lTypePrep errs
+  | numErrs == 0 = ""
+  | otherwise    = errorText <> (sPShowNoColor links)
     where
-        links = (\(UndefinedLinkType x) -> x) <$> lTypeErrs
+        links = linkFormat <$> lTypeErrs
+        linkFormat (UndefinedLinkType (f, t)) = t <> " (InputNode " <> f <> ")"
+        linkFormat _ = ""
         errorText = "A LinkType must be one of:\n" <> typesList <> presentText
         presentText = if (length lTypeErrs) == 1 
           then "\n There is an InLink in this Node whose LinkType is undefined\
                     \:\n"
           else "\n There are Inlinks in the following Nodes whose LinkTypes \
                     \are undefined\n"
+        numErrs = length lTypeErrs
         typesList = sPShowNoColor $
             (\xs -> if xs == a then b else xs) <$> optionText
         b = "Process"
@@ -92,21 +100,27 @@ isUndefinedLinkType _                     = False
 -- current possible LinkEffects to the front, so we don't list them all for each
 -- UndefinedEffectType. 
 lEffectPrep :: [PubInvalid] -> T.Text
-lEffectPrep errs = errorText <> (sPShowNoColor effects)
+lEffectPrep errs
+  | numErrs == 0 = ""
+  | otherwise    = errorText <> (sPShowNoColor effects)
     where
-        effects = (\(UndefinedEffectType x) -> x) <$> lEffectErrs
-        errorText = "A LinkEffect must be one of:\n"
-                    <> typesList
-                    <> presentText
-        presentText = if (length lEffectErrs) == 1 
-          then "\n There is an InLink in this Node whose LinkEffect is \
-                    \undefined:\n"
-          else "\n There are Inlinks in the following Nodes whose LinkEffects \
-                    \are undefined\n"
-        typesList = sPShowNoColor optionList
-        optionList =  (\(AlgRep xs) -> drop 2 xs) algReps
-        algReps = dataTypeRep (dataTypeOf (undefined :: LinkEffect))
-        lEffectErrs = filter isUndefinedEffectType errs
+      effects = effectFormat <$> lEffectErrs
+      effectFormat (UndefinedEffectType (f, t)) = t <>
+        " (InputNode " <> f <> ")"
+      effectFormat _ = ""
+      errorText = "A LinkEffect must be one of:\n"
+                  <> typesList
+                  <> presentText
+      presentText = if (length lEffectErrs) == 1 
+        then "\n There is an InLink in this Node whose LinkEffect is \
+                  \undefined:\n"
+        else "\n There are Inlinks in the following Nodes whose LinkEffects \
+                  \are undefined\n"
+      numErrs = length lEffectErrs
+      typesList = sPShowNoColor optionList
+      optionList =  (\(AlgRep xs) -> drop 2 xs) algReps
+      algReps = dataTypeRep (dataTypeOf (undefined :: LinkEffect))
+      lEffectErrs = filter isUndefinedEffectType errs
 
 isUndefinedEffectType :: PubInvalid -> Bool
 isUndefinedEffectType (UndefinedEffectType _) = True
@@ -147,6 +161,7 @@ mkPublishCiteDict mKeys cd
     | (mUniques /= Set.empty) && (cdUniques == Set.empty) = Failure [errM]
     | (mUniques == Set.empty) && (cdUniques /= Set.empty) = Failure [errCD]
     | (mUniques /= Set.empty) && (cdUniques /= Set.empty) = Failure [errM,errCD]
+    | otherwise = Success cd
     where
         mUniques  = Set.difference mKeys cdKeys
         cdUniques = Set.difference cdKeys mKeys
@@ -266,32 +281,39 @@ mkNodeCoordPublish nN nV
 mkPublishLink :: ModelGraph
               -> Gr.LEdge DMLink 
               -> Validation [PubInvalid] (Gr.LEdge DMLink)
-mkPublishLink mG e@(fromN, toN, dmL) = (,,) <$> (pure fromN) <*> (pure toN) <*>
+mkPublishLink mG (fromN, toN, dmL) = (,,) <$> (pure fromN) <*> (pure toN) <*>
     (
-        DMLink <$> (mkLinkEffectPublish nName lEffect) 
-               <*> (mkLinkTypePublish nName lType)
-               <*> (mkDescPublish (InLinkD nName) lInfo)
+        DMLink <$> (mkLinkEffectPublish fromNodeName toNodeName lEffect) 
+               <*> (mkLinkTypePublish fromNodeName toNodeName lType)
+               <*> (mkDescPublish (InLinkD toNodeName) lInfo)
     )
     where
         lEffect = linkEffect dmL
         lType = linkType dmL
         lInfo = linkInfo dmL
-        nName = (nodeName . nodeMeta . thdOf4 . fromJust . fst) nDecomp
-        nDecomp = Gr.match (sndOf3 e) mG
+        fromNodeName = getnName fromNodeDecomp
+        fromNodeDecomp = Gr.match fromN mG
+        toNodeName = getnName toNodeDecomp
+        toNodeDecomp = Gr.match toN mG
+        getnName = nodeName . nodeMeta . thdOf4 . fromJust . fst
 
 mkLinkEffectPublish :: NodeName
+                    -> NodeName
                     -> LinkEffect
                     -> Validation [PubInvalid] LinkEffect
-mkLinkEffectPublish nN lE = case lE of
+mkLinkEffectPublish fromNodeN toNodeN lE = case lE of
     Undefined_LE -> Failure [err]
     _            -> Success lE
     where
-        err = UndefinedEffectType nN
+        err = UndefinedEffectType (fromNodeN, toNodeN)
 
-mkLinkTypePublish :: NodeName -> LinkType -> Validation [PubInvalid] LinkType
-mkLinkTypePublish nN lT = case lT of
+mkLinkTypePublish :: NodeName
+                  -> NodeName
+                  -> LinkType
+                  -> Validation [PubInvalid] LinkType
+mkLinkTypePublish fromNodeN toNodeN lT = case lT of
     Undefined_LT -> Failure [err]
     _            -> Success lT
     where
-        err = UndefinedLinkType nN
+        err = UndefinedLinkType (fromNodeN, toNodeN)
         
