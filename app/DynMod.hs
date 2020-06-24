@@ -7,11 +7,12 @@ import Types
 import Publish
 import Utilities
 import qualified ReadWrite as RW
-import PDF
+import SuppMat
 import Text.LaTeX.Base.Render (render)
 import qualified Options.Applicative as O
 import Path
 import Path.IO
+import Data.Validation (Validation(..))
 import qualified Data.Text.IO as TIO
 import qualified Data.Text.Lazy.IO as LTIO
 import qualified Data.Text.Lazy as LT
@@ -42,8 +43,9 @@ main = do
                         citeDict = (snd . snd) parsed
                         layers = modelLayers dmModel
                         tts = layerTTs <$> layers
+                        bNPs = mkBooleanNet dmModel
                     putStrLn "Good parse"
-                    ttWrite mFilePath tts
+                    ttWrite mFilePath tts bNPs
                     when (pubWarn input)
                         (pubWWrite mFilePath (dmModel, citeDict))
                     when (graphDetail input)
@@ -56,21 +58,27 @@ main = do
                             $ PS.pShowNoColor $ dmModel
  
 
--- Write TT files to disk, as extracted from an rrms file, in a
+-- Write TT & BooleanNet files to disk, as extracted from an rrms file, in a
 -- directory with the rrms' name. 
-ttWrite :: Path Abs File -> ModelTTFiles -> IO ()
-ttWrite mFilePath fs = do
+ttWrite :: Path Abs File -> ModelTTFiles -> [(ModelName, BooleanNet)] -> IO ()
+ttWrite mFilePath fs bNetPs = do
     (pathNoExt, ext) <- splitExtension mFilePath
-    let files = snd <<$>> (snd <$> fs)
-        fileNames = (T.unpack . fst) <<$>> (snd <$> fs)
+    let ttFiles = snd <<$>> (snd <$> fs)
+        ttFileNames = (T.unpack . fst) <<$>> (snd <$> fs)
+        bNFiles = snd <$> bNetPs
+        bNFileNames = (T.unpack . fst) <$> bNetPs
     topDir <- parseAbsDir $ fromAbsFile pathNoExt
-    fileNameRels <- mapM (mapM parseRelFile) fileNames
-    fileNamesWExt <- mapM (mapM (addExtension ".csv")) fileNameRels
+    ttFileNameRels <- mapM (mapM parseRelFile) ttFileNames
+    ttFileNamesWExt <- mapM (mapM (addExtension ".csv")) ttFileNameRels
+    bNFileNameRels <- mapM parseRelFile bNFileNames
+    bNFileNamesWExt <- mapM (addExtension ".booleannet") bNFileNameRels
     layerDirs <- mapM parseRelDir ((T.unpack . fst) <$> fs)
-    let dirs = (topDir </>) <$> layerDirs
-    mapM_ ensureDir dirs
-    let paths = zipWith (<$>) ((</>) <$> dirs) fileNamesWExt
-    zipWithM_ (zipWithM_ RW.writeFile) paths files
+    let ttDirs = (topDir </>) <$> layerDirs
+    mapM_ ensureDir ttDirs
+    let ttPaths = zipWith (<$>) ((</>) <$> ttDirs) ttFileNamesWExt
+        bNPaths = (topDir </>) <$> bNFileNamesWExt
+    zipWithM_ (zipWithM_ RW.writeFile) ttPaths ttFiles
+    zipWithM_ RW.writeFile bNPaths bNFiles
 
 -- Write publication warnings to disk
 pubWWrite :: Path Abs File -> (DMModel, CitationDictionary) -> IO ()
@@ -82,8 +90,15 @@ pubWWrite file x = do
     warningFileName <- parseRelFile fWarningStr
     let warningFile = dir </> warningFileName
     warningFileNameWExt <- addExtension ".txt" warningFile
-    let warnings = (prettyPublish . mkPublish) x
-    RW.writeFile warningFileNameWExt warnings
+    let warnings =  mkPublish x
+        prettyWarnings = prettyPublish warnings
+        areWarnings x = case x of
+            Failure _ -> False
+            Success _ -> True
+    putStrLn $ case warnings of
+        Failure _ -> "See Metadata Warnings"
+        Success _ -> "No Warnings"
+    RW.writeFile warningFileNameWExt prettyWarnings
 
 -- Write DMNode coordinates & colors to a file
 graphDetailWrite :: Path Abs File -> DMModel -> IO ()
@@ -120,25 +135,9 @@ renderSupp f (dmM, cd) = do
     texFileWExt <- addExtension ".tex" file
     bibFileWExt <- addExtension ".bib" bFile
     RW.writeFile texFileWExt texText
-    RW.writeFile bibFileWExt bibText
+    RW.writeFile bibFileWExt bibText        
 
-
-
---   addExtension "tex" file
---     where
---         mFileNameNoExt :: Path Rel File
---         (mFileNameNoExt, ext) = splitExtension $ filename f
---         mDirPath = parent f
---         dirFileStr :: String
---         dirFileStr = (toFilePath mFileNameNoExt) ++ "_SM"
---         dir :: Path Rel Dir
---         dir = parseRelDir dirFileStr
---         fPath = mDirPath </> dir
---         fFile = parseRelFile dirFileStr
---         file = fPath </> fFile
-        
-    
-
+-- Option Parsing
 data Input = Input
     { fileN       :: T.Text
     , pubWarn     :: Bool

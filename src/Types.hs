@@ -29,6 +29,7 @@ import qualified Data.Versions as Ver
 import qualified Data.List as L
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
+import Data.String (IsString(..))
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
@@ -48,7 +49,7 @@ data ModelLayer = ModelLayer { modelGraph   :: ModelGraph
                              }
                              deriving (Show, Eq)
 
-data ModelMeta = ModelMeta { modelName      :: T.Text
+data ModelMeta = ModelMeta { modelName      :: ModelName
                            , modelVersion   :: Ver.SemVer
                            , modelPaper     :: [BibTeXKey]
                            , biasOrderFirst :: [(NodeName, NodeState)]
@@ -56,7 +57,7 @@ data ModelMeta = ModelMeta { modelName      :: T.Text
                            , modelInfo :: LitInfo
                            }
                              deriving (Show, Eq)
-
+type ModelName = T.Text
 
 
 type ModelMapping = [(NodeName, [NodeName])]
@@ -140,36 +141,46 @@ data NodeType = Undefined_NT
               | Environment
               | Process
               | MRNA
+              | Protein_Complex
               | Protein
-              | TFProtein
+              | Adaptor_Protein
+              | Secreted_Protein
+              | TF_Protein
               | Metabolite
-              | MacroStructure
-              | ProteinComplex
+              | Macro_Structure
               | Kinase
               | Phosphatase
               | Ubiquitin_Ligase
               | Protease
               | DNAase
+              | Receptor
+              | MicroRNA
+              | CAM
                 deriving (Show, Eq, Data)
 
 instance Texy NodeType where
-    texy Undefined_NT = (fromLaTeX . TeXRaw) "Undefined_NT"
-    texy Cell             = (footnotesize . fromLaTeX . TeXRaw) "CLL"
-    texy DM_Switch        = (footnotesize . fromLaTeX . TeXRaw) "DMS"
-    texy Connector        = (footnotesize . fromLaTeX . TeXRaw) "CNN"
-    texy Environment      = (footnotesize . fromLaTeX . TeXRaw) "ENV"
-    texy Process          = (footnotesize . fromLaTeX . TeXRaw) "PRO"
-    texy MRNA             = (footnotesize . fromLaTeX . TeXRaw) "MRNA"
-    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "PRT"
-    texy TFProtein        = (footnotesize . fromLaTeX . TeXRaw) "TFP"
-    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "MTB"
-    texy MacroStructure   = (footnotesize . fromLaTeX . TeXRaw) "MSR"
-    texy ProteinComplex   = (footnotesize . fromLaTeX . TeXRaw) "PRC"
-    texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "KIN"
-    texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "PHT"
+    texy Undefined_NT     = texy ("Undefined_NT" :: T.Text)
+    texy Cell             = (footnotesize . fromLaTeX . TeXRaw) "Cell"
+    texy DM_Switch        = (footnotesize . fromLaTeX . TeXRaw) "DM"
+    texy Connector        = (footnotesize . fromLaTeX . TeXRaw) "Conn"
+    texy Environment      = (footnotesize . fromLaTeX . TeXRaw) "Env"
+    texy Process          = (footnotesize . fromLaTeX . TeXRaw) "Proc"
+    texy MRNA             = (footnotesize . fromLaTeX . TeXRaw) "mRNA"
+    texy Protein_Complex  = (footnotesize . fromLaTeX . TeXRaw) "PC"
+    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "Prot"
+    texy Adaptor_Protein  = (footnotesize . fromLaTeX . TeXRaw) "Adap"
+    texy Secreted_Protein = (footnotesize . fromLaTeX . TeXRaw) "Secr"
+    texy TF_Protein       = (footnotesize . fromLaTeX . TeXRaw) "TF"
+    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "Met"
+    texy Macro_Structure  = (footnotesize . fromLaTeX . TeXRaw) "MSt"
+    texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "K"
+    texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "Ph"
     texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UBL"
-    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTA"
-    texy DNAase           = (footnotesize . fromLaTeX . TeXRaw) "DNA"
+    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTAse"
+    texy DNAase           = (footnotesize . fromLaTeX . TeXRaw) "DNAase"
+    texy Receptor         = (footnotesize . fromLaTeX . TeXRaw) "Rec"
+    texy MicroRNA         = (footnotesize . fromLaTeX . TeXRaw) "miR"
+    texy CAM              = (footnotesize . fromLaTeX . TeXRaw) "CAM"
 
 data LinkEffect = Undefined_LE
                 | Inapt
@@ -179,7 +190,7 @@ data LinkEffect = Undefined_LE
                   deriving (Show, Eq, Ord, Data)
 
 instance Texy LinkEffect where
-    texy Undefined_LE = "Undefined_LE"
+    texy Undefined_LE = texy ("Undefined_LE" :: T.Text)
     texy Inapt = math $ commS "perp"
     texy Activation = math $ commS "leftarrow"
     -- from fdsymbol font
@@ -193,36 +204,38 @@ data LinkType =   Undefined_LT
                 | Transcription
                 | Translation
                 | Persistence
-                | Inhibitory_binding
-                | Phosphorylation
+                | Inhibitory_Binding
                 | Phosphorylation_Localization
+                | Phosphorylation
                 | Degradation
-                | LinkProcess
+                | Complex_Process
                 | Dephosphorylation
-                | Protective_binding
-                | Complex_formation
+                | Protective_Binding
+                | Complex_Formation
                 | Ubiquitination
-                | GTP_loading
+                | GEF
+                | GAP
                   deriving (Show, Eq, Ord, Data)
 
 instance Texy LinkType where
-    texy Undefined_LT = (fromLaTeX . TeXRaw) "Undefined_LT"
-    texy Enforced_Env       = (footnotesize . fromLaTeX . TeXRaw) "ENV"
-    texy Indirect           = (footnotesize . fromLaTeX . TeXRaw) "IND"
-    texy Transcription      = (footnotesize . fromLaTeX . TeXRaw) "TSC"
-    texy Translation        = (footnotesize . fromLaTeX . TeXRaw) "TSL"
-    texy Persistence        = (footnotesize . fromLaTeX . TeXRaw) "PER"
-    texy Inhibitory_binding = (footnotesize . fromLaTeX . TeXRaw) "INB"
-    texy Phosphorylation    = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Undefined_LT       = texy ("Undefined_LT" :: T.Text)
+    texy Enforced_Env       = (footnotesize . fromLaTeX . TeXRaw) "Env"
+    texy Indirect           = (footnotesize . fromLaTeX . TeXRaw) "Inv"
+    texy Transcription      = (footnotesize . fromLaTeX . TeXRaw) "TR"
+    texy Translation        = (footnotesize . fromLaTeX . TeXRaw) "TL"
+    texy Persistence        = (footnotesize . fromLaTeX . TeXRaw) "Per"
+    texy Inhibitory_Binding = (footnotesize . fromLaTeX . TeXRaw) "IBind"
     texy Phosphorylation_Localization =
-        (footnotesize . fromLaTeX . TeXRaw) "PL"
-    texy Degradation        = (footnotesize . fromLaTeX . TeXRaw) "DEG"
-    texy LinkProcess        = (footnotesize . fromLaTeX . TeXRaw) "LPR"
+        (footnotesize . fromLaTeX . TeXRaw) "PLoc"
+    texy Phosphorylation    = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Degradation        = (footnotesize . fromLaTeX . TeXRaw) "Deg"
+    texy Complex_Process    = (footnotesize . fromLaTeX . TeXRaw) "LPr"
     texy Dephosphorylation  = (footnotesize . fromLaTeX . TeXRaw) "DP"
-    texy Protective_binding = (footnotesize . fromLaTeX . TeXRaw) "ENV"
-    texy Complex_formation  = (footnotesize . fromLaTeX . TeXRaw) "COF"
-    texy Ubiquitination     = (footnotesize . fromLaTeX . TeXRaw) "UBQ"
-    texy GTP_loading        = (footnotesize . fromLaTeX . TeXRaw) "GTPL"
+    texy Protective_Binding = (footnotesize . fromLaTeX . TeXRaw) "PBind"
+    texy Complex_Formation  = (footnotesize . fromLaTeX . TeXRaw) "Compl"
+    texy Ubiquitination     = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
+    texy GEF                = (footnotesize . fromLaTeX . TeXRaw) "GEF"
+    texy GAP                = (footnotesize . fromLaTeX . TeXRaw) "GAP"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -261,11 +274,19 @@ data NodeExpr
 instance Show NodeExpr where
     show (GateLit b) = show b
     show (GateConst n s) = (show n) ++ ":" ++ (show s)
-    show (Not expr) = "not (" ++ (show expr) ++ ")"
+    show (Not expr) = "not " ++ (exprPars show expr)
     show (Binary And expr1 expr2) =
-        "(" ++ (show expr1) ++ ")" ++ " and " ++ "(" ++ (show expr2) ++ ")"
+        (exprPars show expr1) ++ " and " ++ (exprPars show expr2)
     show (Binary Or expr1 expr2) =
-        "(" ++ (show expr1) ++ ")" ++ " or " ++ "(" ++ (show expr2) ++ ")"
+        (exprPars show expr1) ++ " or " ++ (exprPars show expr2)
+
+-- NodeExpr should only be wrapped in parenthesis if they are not single terms. 
+exprPars :: (IsString a, Semigroup a) => (NodeExpr -> a) -> NodeExpr -> a
+exprPars f ex@(GateLit _) = f ex
+exprPars f ex@(GateConst _ _) = f ex
+exprPars f ex@(Not _) = "(" <> f ex <> ")"
+exprPars f ex@(Binary And _ _) = "(" <> f ex <> ")"
+exprPars f ex@(Binary Or _ _) = "(" <> f ex <> ")"
 
 data BinOp
   = And
@@ -443,9 +464,8 @@ data ModelLayerInvalid =
                   | NodeInlinkMismatch NodeInlinkMismatch
      deriving (Show, Eq)
 type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
-                                        -- anynode
-type StatesRefdStatesMisMatch =
-    ([(NodeName, [NodeState])], [(NodeName, [NodeState])])
+                                        -- any node
+type StatesRefdStatesMisMatch = [(NodeName, [NodeState])]
 type NodeInlinkMismatch = ([NodeName], [NodeName])
 
 data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys

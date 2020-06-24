@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b9fa995d70d2e61b62843ff191d00034fb40955e442e5d2046bfe81c233b2353
+-- hash: a05433efbfbd4aa607d04568bb75a5a21d5a6d642594ec57ff43b96b938e6161
 
 name:           ravasz-regan-group
-version:        0.1.0.0
+version:        0.2.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
 homepage:       https://github.com/githubuser/ravasz-regan-group#readme
 bug-reports:    https://github.com/githubuser/ravasz-regan-group/issues
@@ -33,7 +33,7 @@ library
       Utilities
       Constants
       Publish
-      PDF
+      SuppMat
       Text.LaTeX.Packages.Booktabs
       Text.LaTeX.Packages.ColorTbl
   other-modules:
@@ -41,7 +41,7 @@ library
       Paths_ravasz_regan_group
   hs-source-dirs:
       src
-  ghc-options: -Wall
+  ghc-options: -Wall -O2
   build-depends:
       HaTeX
     , Unique
@@ -60,6 +60,7 @@ library
     , safe-exceptions
     , scientific
     , text
+    , text-show
     , unordered-containers
     , validation
     , vector
@@ -72,7 +73,7 @@ executable dynmod
       Paths_ravasz_regan_group
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N3
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -O2
   build-depends:
       HaTeX
     , base >=4.7 && <5
@@ -85,6 +86,7 @@ executable dynmod
     , pretty-simple
     , ravasz-regan-group
     , text
+    , validation
   default-language: Haskell2010
 
 test-suite ravasz-regan-group-test

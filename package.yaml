@@ -1,5 +1,5 @@
 name:                ravasz-regan-group
-version:             0.2.0.0
+version:             0.2.5.0
 github:              "githubuser/ravasz-regan-group"
 license:             BSD3
 author:              "Peter Regan"
@@ -32,12 +32,12 @@ library:
   - Utilities
   - Constants
   - Publish
-  - PDF
+  - SuppMat
   - Text.LaTeX.Packages.Booktabs
   - Text.LaTeX.Packages.ColorTbl
   ghc-options:
   - -Wall
-#  - -O2
+  - -O2
   dependencies :
   - megaparsec
   - parser-combinators
@@ -59,6 +59,7 @@ library:
   - path
   - pretty-simple
   - mtl
+  - text-show
 
 executables:
   dynmod:
@@ -68,8 +69,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N3
-#    - -main-is DynamicalVerify.dynamicalVerify
-#    - -O2
+    - -O2
     dependencies:
     - ravasz-regan-group
     - megaparsec
@@ -81,6 +81,7 @@ executables:
     - fgl
     - HaTeX
     - mtl
+    - validation
 
 tests:
   ravasz-regan-group-test:

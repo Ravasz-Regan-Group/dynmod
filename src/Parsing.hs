@@ -215,10 +215,10 @@ nodeStateCheck nodesWLinks
         fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
     | (isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates) =
         fail $ show $
-            StatesRefdStatesMisMatch (zip exNodes exprStates, nodeRefs)
+            StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
     | (not $ isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates)
         = fail $ show $
-            StatesRefdStatesMisMatch (zip exNodes exprStates, nodeRefs)
+            StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
     | otherwise = return nodesWLinks
         where
             dmNodes = fst <$> nodesWLinks
@@ -421,22 +421,29 @@ nodeTypeParse :: Parser NodeType
 nodeTypeParse = lexeme $ rword "NodeType" >> 
     (try
         (colon >>
-            (   Cell <$ rword "Cell"
+            (   Cell             <$ rword "Cell"
             <|> DM_Switch        <$ rword "DM_Switch"
             <|> Connector        <$ rword "Connector"
             <|> Environment      <$ rword "Environment"
             <|> Process          <$ rword "Process"
             <|> MRNA             <$ rword "mRNA"
+--          This has come before Protein, otherwise you will match on
+--          that and then get confused
+            <|> Protein_Complex  <$ rword "Protein_Complex"
             <|> Protein          <$ rword "Protein"
-            <|> TFProtein        <$ rword "TF_protein"
+            <|> Adaptor_Protein  <$ rword "Adaptor_Protein"
+            <|> Secreted_Protein <$ rword "Secreted_Protein"
+            <|> TF_Protein       <$ rword "TF_Protein"
             <|> Metabolite       <$ rword "Metabolite"
-            <|> MacroStructure   <$ rword "MacroStructure"
+            <|> Macro_Structure  <$ rword "Macro_Structure"
             <|> Kinase           <$ rword "Kinase"
             <|> Phosphatase      <$ rword "Phosphatase"
-            <|> ProteinComplex   <$ rword "protein_complex"
             <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
             <|> Protease         <$ rword "Protease"
             <|> DNAase           <$ rword "DNAase"
+            <|> Receptor         <$ rword "Receptor"
+            <|> MicroRNA         <$ rword "miR"
+            <|> CAM              <$ rword "CAM"
             )
         ) 
     <|>
@@ -485,19 +492,20 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> Transcription      <$ rword "Transcription"
             <|> Translation        <$ rword "Translation"
             <|> Persistence        <$ rword "Persistence"
-            <|> Inhibitory_binding <$ rword "Inhibitory_binding"
+            <|> Inhibitory_Binding <$ rword "Inhibitory_Binding"
 --          This has come before Phosphorylation, otherwise you will match on
 --          that and then get confused
             <|> Phosphorylation_Localization
                                    <$ rword "Phosphorylation_Localization"
             <|> Phosphorylation    <$ rword "Phosphorylation"
             <|> Degradation        <$ rword "Degradation"
-            <|> LinkProcess        <$ rword "Process"
+            <|> Complex_Process    <$ rword "Complex_Process"
             <|> Dephosphorylation  <$ rword "Dephosphorylation"
-            <|> Protective_binding <$ rword "Protective_binding"
-            <|> Complex_formation  <$ rword "Complex_formation"
+            <|> Protective_Binding <$ rword "Protective_Binding"
+            <|> Complex_Formation  <$ rword "Complex_Formation"
             <|> Ubiquitination     <$ rword "Ubiquitination"
-            <|> GTP_loading        <$ rword "GTP_loading"
+            <|> GEF                <$ rword "GEF"
+            <|> GAP                <$ rword "GAP"
             )
         )
     <|>
@@ -522,7 +530,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
         False -> fail $ show $ TableExprStateMismatch $
                         T.unlines (tGatePrint:(deleteMult tpInputs lpInputs))
         True -> case accOutputMis tOutputs lOutputs of
-            errs@(_:_) -> fail $ T.unpack
+            errs@(_:_) -> fail $ (T.unpack . T.replace (T.singleton '\t') "  ")
                                 $ "TableExprOuputMismatch (Table, Logical): \n"
                                     <> T.unlines (tGatePrint:errs)
             [] | lName == tName -> return lGate'
@@ -531,7 +539,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
                       tNm = gNodeName tGate
         where
             tGatePrint = (T.concat $
-                           L.intersperse (T.singleton '\t') $ tOrder <> [tName])
+                           L.intersperse "  " $ tOrder <> [tName])
             tName = gNodeName tGate
             tpInputs = T.init <$> tOutputs
             lpInputs = T.init <$> lOutputs

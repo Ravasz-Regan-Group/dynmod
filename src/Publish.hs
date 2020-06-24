@@ -83,11 +83,7 @@ lTypePrep errs
           else "\n There are Inlinks in the following Nodes whose LinkTypes \
                     \are undefined\n"
         numErrs = length lTypeErrs
-        typesList = sPShowNoColor $
-            (\xs -> if xs == a then b else xs) <$> optionText
-        b = "Process"
-        a = "LinkProcess"
-        optionText = sPShowNoColor <$> optionList
+        typesList = sPShowNoColor optionList
         optionList =  (\(AlgRep xs) -> tail xs) algReps
         algReps = dataTypeRep (dataTypeOf (undefined :: LinkType))
         lTypeErrs = filter isUndefinedLinkType errs

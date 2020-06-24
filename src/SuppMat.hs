@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module PDF
+module SuppMat
     ( sM_LaTeX
     , mkBibFile
+    , mkBooleanNet
+    , BooleanNet
     ) 
     where
 
@@ -25,6 +27,8 @@ import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.Text as T
+import Data.Text.Lazy (toStrict)
+import qualified Text.Pretty.Simple as PS
 import qualified Data.List as L
 import Data.Maybe (fromJust)
 import Data.Foldable (fold)
@@ -249,11 +253,25 @@ modelLaTeXGate = do
         where
             modelLaTeXGate' m = Map.fromList pairs
                 where
-                    pairs = zip nNames (mkLaTeXGate boolNames <$> nodes)
-                    boolNames = Set.fromList $ (nodeName . nodeMeta) <$> (filter 
-                        (\x -> (length . gateAssigns . nodeGate) x == 2 ) nodes)
+                    pairs = zip nNames (mkLaTeXGate (boolNNodes m) <$> nodes)
                     nNames = (nodeName . nodeMeta) <$> nodes
                     nodes = ((snd <$>) . Gr.labNodes . modelGraph) m
+
+-- Return the NodeNames from those DMNodes in a ModelLayer which are boolean. 
+boolNNodes :: ModelLayer -> Set.HashSet NodeName
+boolNNodes mL = Set.fromList bNames
+    where
+        bNames = (nodeName . nodeMeta) <$> filter isDMNodeBoolean nodes
+        nodes = ((snd <$>) . Gr.labNodes . modelGraph) mL
+
+-- Is a DMNode boolean
+isDMNodeBoolean :: DMNode -> Bool
+isDMNodeBoolean x = (length . gateAssigns . nodeGate) x == 2
+
+-- Is a ModelLayer boolean
+isModelLayerBoolean :: ModelLayer -> Bool
+isModelLayerBoolean =
+    and . ((isDMNodeBoolean . snd) <$>) . Gr.labNodes . modelGraph
 
 -- The display of a gate in LaTeX will depend on whether, or its inputs, are
 -- boolean or integer valued. If integer-valued, a node, whether on the left 
@@ -295,7 +313,7 @@ exprTex s (Binary And expr1 expr2) =
 exprTex s (Binary Or expr1 expr2) =
     (parTexy s expr1) <> (commS "orop") <> (parTexy s expr2)
 
--- Put parentheses around and call exprTex on a compound NodeExpr, only call
+-- Put parentheses around and call exprTex on a compound NodeExpr, but only call
 -- exprTex on a simple NodeExpr
 parTexy :: LaTeXC l => Set.HashSet NodeName -> NodeExpr -> l
 parTexy s ex@(GateLit _) = exprTex s ex
@@ -384,3 +402,29 @@ mkBibText (BibTeXEntry{entryKey = key, entryType = tp, entryFields = fs}) =
         fields = (T.concat . L.intersperse ",\n" . (f <$>)) fs
         f (field, record) = field <> " = " <> record
 
+-- Render a DMModel into a List of (ModelName, BooleanNet) pairs. A pair is only
+-- created from a ModeLayer if every node in that ModeLayer is boolean. mkBNExpr
+-- is kept internal to ensure that it does not accidentally get used on a
+-- non-boolean NodeExpr
+mkBooleanNet :: DMModel -> [(ModelName, BooleanNet)]
+mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
+    where
+        mkBooleanNet' mL = T.unlines bNGates 
+            where
+                bNGates = zipWith (\n ex -> n <> " *= " <> ex) bNNames bNExpr
+                bNNames = gNodeName <$> gates
+                bNExpr = (mkBNExpr . snd . last . gateAssigns) <$> gates
+                gates = (((nodeGate . snd) <$>) . Gr.labNodes . modelGraph) mL
+        mkBNExpr :: NodeExpr -> T.Text
+        mkBNExpr (GateLit b) = (toStrict . PS.pShowNoColor) b
+        mkBNExpr (GateConst n _) = n
+        mkBNExpr (Not expr) = "not " <> (exprPars mkBNExpr expr)
+        mkBNExpr (Binary And expr1 expr2) =
+            (exprPars mkBNExpr expr1) <> " and " <> (exprPars mkBNExpr expr2)
+        mkBNExpr (Binary Or expr1 expr2) =
+            (exprPars mkBNExpr expr1) <> " or " <> (exprPars mkBNExpr expr2)
+        modelNs = (modelName . modelMeta) <$> boolLs
+        boolLs = filter isModelLayerBoolean layers
+        layers = modelLayers dmM
+
+type BooleanNet = T.Text
