@@ -34,16 +34,6 @@ import Data.Maybe (fromJust)
 import Data.Foldable (fold)
 import Control.Monad.Reader (Reader, runReader, ask)
 
-
--- Default TableSpecs for the longtables. 
--- longtableSpec :: LaTeXC l => l
--- longtableSpec = fromLaTeX $
---     newCommand' "longtablespec" 0 TeXEmpty ("@" <> (TeXRaw . render)
---         (FixArg "") <> "lcll" <> "@" <> (TeXRaw . render) (FixArg ""))
--- 
--- longtableSpecCall :: LaTeXC l => l
--- longtableSpecCall = commS "longtablepec"
-
 subColSep :: LaTeXC l => l
 subColSep = fromLaTeX $ textwidth' <> "-2" <> tabcolsep
 
@@ -140,7 +130,6 @@ preamble =
   <> renewCommand' "figurename" 0 TeXEmpty (TeXRaw
     "Supplemental Material, Figure")
   <> "\n"
---   <> longtablespec <> "\n"
   <> node1ASpec <> "\n"
   <> node1BSpec <> "\n"
   <> node2ASpec <> "\n"
@@ -183,8 +172,9 @@ sMTableUnits =
 body :: Reader DMModel LaTeX
 body = do
     tables <- mkSMSections
-    return $ "\n" <> tables <> "\n" <> comm1 "bibliographystyle" "plain" <> "\n"
-        <> comm1 "bibliography" "references.bib" <> "\n\n"
+    let biblio = comm1 "bibliographystyle" "plain" <> "\n"
+              <> comm1 "bibliography" "references.bib"
+    return $ "\n" <> tables <> "\n" {- <> legend <> "\n" -} <> biblio <> "\n\n"
 
 mkSMSections :: Reader DMModel LaTeX
 mkSMSections = do
@@ -198,7 +188,7 @@ mkSMSections = do
         toprule Nothing <> "\n" <>
         sMTableUnits    <> "\n" <>
         midrule Nothing <> "\n" <>
-        commS "endhead" <> "\n" <>
+--         commS "endhead" <> "\n" <>
         fold ((mkSMSection' . fst) <$> insAdjs) <>
         bottomrule Nothing <> "\n"
       )
@@ -206,6 +196,8 @@ mkSMSections = do
           (_, insAdjs) = head info
           mkSMSection' (n, ls) =
             smNodePrep gmap n <> lnbk <> "\n"
+                <> (addLineSpace $ Just $ CustomMeasure $ (dimexpr <> (texy
+                (1.0 ::Float))) <> defaultAddSpace) <> "\n"
                 <> (inLinkConcat (smLinkPrep <$> ls))
     (LayerBinding _ _ _) ->
       foldr (grouper gmap) TeXEmpty info
@@ -227,13 +219,15 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
       toprule Nothing <> "\n" <>
       sMTableUnits    <> "\n" <>
       midrule Nothing <> "\n" <>
-      commS "endhead" <> "\n" <>
+--       commS "endhead" <> "\n" <>
       fold (mkSMSubtables' gmp <$> insAdjs) <>
       bottomrule Nothing <> "\n"
     ) <> "\n" <> y
       where
         mkSMSubtables' gm (n, ls) =
             smNodePrep gm n <> lnbk <> "\n"
+                <> (addLineSpace $ Just $ CustomMeasure $ (dimexpr <> (texy
+                (1.0 ::Float))) <> defaultAddSpace) <> "\n"
                 <> (inLinkConcat (smLinkPrep <$> ls)) <> lnbk <> "\n"
 
 -- Prep the LaTeX depicting the NodeGates of a DMModel. This is done all at
@@ -428,3 +422,22 @@ mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
         layers = modelLayers dmM
 
 type BooleanNet = T.Text
+
+-- legend :: LaTeX
+-- legend = nTypeLegend <> "\n" <> lTypeLegend <> "\n" <> lEffectLegend
+-- 
+-- legendTSpec :: [TableSpec]
+-- legendTSpec = [ Separator TeXEmpty
+--               , LeftColumn
+--               , LeftColumn
+--               , LeftColumn
+--               , LeftColumn
+--               , Separator TeXEmpty
+--               ]
+-- 
+-- nTypeLegend :: LaTeX
+-- nTypeLegend = 
+--     tabular (Just Center) legendTSpec (
+--     caption "Key to "
+--     )
+

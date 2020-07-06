@@ -156,6 +156,11 @@ data NodeType = Undefined_NT
               | Receptor
               | MicroRNA
               | CAM
+              | CDKI
+              | GEF
+              | GAP
+              | GTPase
+              | Enzyme
                 deriving (Show, Eq, Data)
 
 instance Texy NodeType where
@@ -181,6 +186,11 @@ instance Texy NodeType where
     texy Receptor         = (footnotesize . fromLaTeX . TeXRaw) "Rec"
     texy MicroRNA         = (footnotesize . fromLaTeX . TeXRaw) "miR"
     texy CAM              = (footnotesize . fromLaTeX . TeXRaw) "CAM"
+    texy CDKI             = (footnotesize . fromLaTeX . TeXRaw) "CDKI"
+    texy GEF              = (footnotesize . fromLaTeX . TeXRaw) "GEF"
+    texy GAP              = (footnotesize . fromLaTeX . TeXRaw) "GAP"
+    texy GTPase           = (footnotesize . fromLaTeX . TeXRaw) "GTPa"
+    texy Enzyme           = (footnotesize . fromLaTeX . TeXRaw) "Enz"
 
 data LinkEffect = Undefined_LE
                 | Inapt
@@ -213,29 +223,39 @@ data LinkType =   Undefined_LT
                 | Protective_Binding
                 | Complex_Formation
                 | Ubiquitination
-                | GEF
-                | GAP
+                | GEF_Activity
+                | GAP_Activity
+                | Ligand_Binding
+                | Proteolysis
+                | Catalysis
+                | Binding_Localizaton
+                | Localization
                   deriving (Show, Eq, Ord, Data)
 
 instance Texy LinkType where
-    texy Undefined_LT       = texy ("Undefined_LT" :: T.Text)
-    texy Enforced_Env       = (footnotesize . fromLaTeX . TeXRaw) "Env"
-    texy Indirect           = (footnotesize . fromLaTeX . TeXRaw) "Inv"
-    texy Transcription      = (footnotesize . fromLaTeX . TeXRaw) "TR"
-    texy Translation        = (footnotesize . fromLaTeX . TeXRaw) "TL"
-    texy Persistence        = (footnotesize . fromLaTeX . TeXRaw) "Per"
-    texy Inhibitory_Binding = (footnotesize . fromLaTeX . TeXRaw) "IBind"
+    texy Undefined_LT        = texy ("Undefined_LT" :: T.Text)
+    texy Enforced_Env        = (footnotesize . fromLaTeX . TeXRaw) "Env"
+    texy Indirect            = (footnotesize . fromLaTeX . TeXRaw) "Ind"
+    texy Transcription       = (footnotesize . fromLaTeX . TeXRaw) "TR"
+    texy Translation         = (footnotesize . fromLaTeX . TeXRaw) "TL"
+    texy Persistence         = (footnotesize . fromLaTeX . TeXRaw) "Per"
+    texy Inhibitory_Binding  = (footnotesize . fromLaTeX . TeXRaw) "IBind"
     texy Phosphorylation_Localization =
         (footnotesize . fromLaTeX . TeXRaw) "PLoc"
-    texy Phosphorylation    = (footnotesize . fromLaTeX . TeXRaw) "P"
-    texy Degradation        = (footnotesize . fromLaTeX . TeXRaw) "Deg"
-    texy Complex_Process    = (footnotesize . fromLaTeX . TeXRaw) "LPr"
-    texy Dephosphorylation  = (footnotesize . fromLaTeX . TeXRaw) "DP"
-    texy Protective_Binding = (footnotesize . fromLaTeX . TeXRaw) "PBind"
-    texy Complex_Formation  = (footnotesize . fromLaTeX . TeXRaw) "Compl"
-    texy Ubiquitination     = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
-    texy GEF                = (footnotesize . fromLaTeX . TeXRaw) "GEF"
-    texy GAP                = (footnotesize . fromLaTeX . TeXRaw) "GAP"
+    texy Phosphorylation     = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Degradation         = (footnotesize . fromLaTeX . TeXRaw) "Deg"
+    texy Complex_Process     = (footnotesize . fromLaTeX . TeXRaw) "LPr"
+    texy Dephosphorylation   = (footnotesize . fromLaTeX . TeXRaw) "DP"
+    texy Protective_Binding  = (footnotesize . fromLaTeX . TeXRaw) "PBind"
+    texy Complex_Formation   = (footnotesize . fromLaTeX . TeXRaw) "Compl"
+    texy Ubiquitination      = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
+    texy GEF_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GEF"
+    texy GAP_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GAP"
+    texy Ligand_Binding      = (footnotesize . fromLaTeX . TeXRaw) "Ligand"
+    texy Proteolysis         = (footnotesize . fromLaTeX . TeXRaw) "Lysis"
+    texy Catalysis           = (footnotesize . fromLaTeX . TeXRaw) "Cat"
+    texy Binding_Localizaton = (footnotesize . fromLaTeX . TeXRaw) "BLoc"
+    texy Localization        = (footnotesize . fromLaTeX . TeXRaw) "Loc"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

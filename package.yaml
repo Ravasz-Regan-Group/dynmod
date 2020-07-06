@@ -1,5 +1,5 @@
 name:                ravasz-regan-group
-version:             0.2.5.0
+version:             0.2.5.1
 github:              "githubuser/ravasz-regan-group"
 license:             BSD3
 author:              "Peter Regan"
@@ -59,7 +59,6 @@ library:
   - path
   - pretty-simple
   - mtl
-  - text-show
 
 executables:
   dynmod:

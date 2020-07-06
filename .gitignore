@@ -7,3 +7,16 @@
 /test/samples.rrms
 /test/test.pdf
 /test/test1.pdf
+
+.stack-work/
+
+*.o
+*.hi
+*.hie
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+.hpc
+.hsenv
+.ghc.environment.*

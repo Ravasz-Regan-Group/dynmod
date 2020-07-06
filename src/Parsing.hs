@@ -427,7 +427,7 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Environment      <$ rword "Environment"
             <|> Process          <$ rword "Process"
             <|> MRNA             <$ rword "mRNA"
---          This has come before Protein, otherwise you will match on
+--          This must come before Protein, otherwise you will match on
 --          that and then get confused
             <|> Protein_Complex  <$ rword "Protein_Complex"
             <|> Protein          <$ rword "Protein"
@@ -444,6 +444,11 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Receptor         <$ rword "Receptor"
             <|> MicroRNA         <$ rword "miR"
             <|> CAM              <$ rword "CAM"
+            <|> CDKI             <$ rword "CDKI"
+            <|> GEF              <$ rword "GEF"
+            <|> GAP              <$ rword "GAP"
+            <|> GTPase           <$ rword "GTPase"
+            <|> Enzyme           <$ rword "Enzyme"
             )
         ) 
     <|>
@@ -487,25 +492,30 @@ linkTypeParse :: Parser LinkType
 linkTypeParse = lexeme $ rword "LinkType" >>
     (try   
         (colon >>
-            (   Enforced_Env       <$ rword "Enforced_Env"
-            <|> Indirect           <$ rword "Indirect"
-            <|> Transcription      <$ rword "Transcription"
-            <|> Translation        <$ rword "Translation"
-            <|> Persistence        <$ rword "Persistence"
-            <|> Inhibitory_Binding <$ rword "Inhibitory_Binding"
---          This has come before Phosphorylation, otherwise you will match on
+            (   Enforced_Env        <$ rword "Enforced_Env"
+            <|> Indirect            <$ rword "Indirect"
+            <|> Transcription       <$ rword "Transcription"
+            <|> Translation         <$ rword "Translation"
+            <|> Persistence         <$ rword "Persistence"
+            <|> Inhibitory_Binding  <$ rword "Inhibitory_Binding"
+--          This must come before Phosphorylation, otherwise you will match on
 --          that and then get confused
             <|> Phosphorylation_Localization
-                                   <$ rword "Phosphorylation_Localization"
-            <|> Phosphorylation    <$ rword "Phosphorylation"
-            <|> Degradation        <$ rword "Degradation"
-            <|> Complex_Process    <$ rword "Complex_Process"
-            <|> Dephosphorylation  <$ rword "Dephosphorylation"
-            <|> Protective_Binding <$ rword "Protective_Binding"
-            <|> Complex_Formation  <$ rword "Complex_Formation"
-            <|> Ubiquitination     <$ rword "Ubiquitination"
-            <|> GEF                <$ rword "GEF"
-            <|> GAP                <$ rword "GAP"
+                                    <$ rword "Phosphorylation_Localization"
+            <|> Phosphorylation     <$ rword "Phosphorylation"
+            <|> Degradation         <$ rword "Degradation"
+            <|> Complex_Process     <$ rword "Complex_Process"
+            <|> Dephosphorylation   <$ rword "Dephosphorylation"
+            <|> Protective_Binding  <$ rword "Protective_Binding"
+            <|> Complex_Formation   <$ rword "Complex_Formation"
+            <|> Ubiquitination      <$ rword "Ubiquitination"
+            <|> GEF_Activity        <$ rword "GEF_Activity"
+            <|> GAP_Activity        <$ rword "GAP_Activity"
+            <|> Ligand_Binding      <$ rword "Ligand_Binding"
+            <|> Proteolysis         <$ rword "Proteolysis"
+            <|> Catalysis           <$ rword "Catalysis"
+            <|> Binding_Localizaton <$ rword "Binding_Localizaton"
+            <|> Localization        <$ rword "GELocalizationF"
             )
         )
     <|>
