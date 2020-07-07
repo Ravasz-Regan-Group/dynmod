@@ -29,6 +29,7 @@ import qualified Data.Graph.Inductive as Gr
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 import qualified Text.Pretty.Simple as PS
+import Data.List.Split (chunksOf)
 import qualified Data.List as L
 import Data.Maybe (fromJust)
 import Data.Foldable (fold)
@@ -174,7 +175,7 @@ body = do
     tables <- mkSMSections
     let biblio = comm1 "bibliographystyle" "plain" <> "\n"
               <> comm1 "bibliography" "references.bib"
-    return $ "\n" <> tables <> "\n" {- <> legend <> "\n" -} <> biblio <> "\n\n"
+    return $ "\n" <> tables <> "\n" <> legend <> "\n" <> biblio <> "\n\n"
 
 mkSMSections :: Reader DMModel LaTeX
 mkSMSections = do
@@ -188,7 +189,6 @@ mkSMSections = do
         toprule Nothing <> "\n" <>
         sMTableUnits    <> "\n" <>
         midrule Nothing <> "\n" <>
---         commS "endhead" <> "\n" <>
         fold ((mkSMSection' . fst) <$> insAdjs) <>
         bottomrule Nothing <> "\n"
       )
@@ -219,7 +219,6 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
       toprule Nothing <> "\n" <>
       sMTableUnits    <> "\n" <>
       midrule Nothing <> "\n" <>
---       commS "endhead" <> "\n" <>
       fold (mkSMSubtables' gmp <$> insAdjs) <>
       bottomrule Nothing <> "\n"
     ) <> "\n" <> y
@@ -423,21 +422,86 @@ mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
 
 type BooleanNet = T.Text
 
--- legend :: LaTeX
--- legend = nTypeLegend <> "\n" <> lTypeLegend <> "\n" <> lEffectLegend
--- 
--- legendTSpec :: [TableSpec]
--- legendTSpec = [ Separator TeXEmpty
---               , LeftColumn
---               , LeftColumn
---               , LeftColumn
---               , LeftColumn
---               , Separator TeXEmpty
---               ]
--- 
--- nTypeLegend :: LaTeX
--- nTypeLegend = 
---     tabular (Just Center) legendTSpec (
---     caption "Key to "
---     )
+-- How many symbol-legend pairs are there in a row?
+lRowPairNumber :: Int
+lRowPairNumber = 2
 
+-- Assemble the three legend tables
+legend :: LaTeX
+legend = subtables $ "\n" <>
+    nTypeLegend lRowPairNumber
+ <> lTypeLegend lRowPairNumber
+ <> lEffectLegend lRowPairNumber
+
+legendTSpec :: Int -> [TableSpec]
+legendTSpec i = (Separator TeXEmpty) : (replicate (i * 2) LeftColumn)
+    <> [Separator TeXEmpty]
+
+-- Create a table to display the symbols that represent the various NodeTypes.
+nTypeLegend :: Int -> LaTeX
+nTypeLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+    caption "Key to Node Type Symbols" <> lnbk <> "\n" <>
+    toprule Nothing <> "\n" <>
+    lUnits i ("Symbol" & "Node Type")<>
+    midrule Nothing <> "\n" <>
+    legendRows <> lnbk <> "\n" <>
+    bottomrule Nothing <> "\n"
+    )
+    where
+        legendRows = fold $ mkLegendRow <$> chunkedPairs
+        chunkedPairs = chunksOf i $ zip symbolList typesList
+        symbolList = texy <$> optionList
+        typesList = sPShowNoColor <$> optionList
+        optionList = tail [minBound :: NodeType ..]
+
+-- Create a table to display the symbols that represent the various LinkTypes.
+lTypeLegend :: Int -> LaTeX
+lTypeLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+    caption "Key to Link Type Symbols" <> lnbk <> "\n" <>
+    toprule Nothing <> "\n" <>
+    lUnits i ("Symbol" & "Link Type") <>
+    midrule Nothing <> "\n" <>
+    legendRows <> lnbk <> "\n" <>
+    bottomrule Nothing <> "\n"
+    )
+    where
+        legendRows = fold $ mkLegendRow <$> chunkedPairs
+        chunkedPairs = chunksOf i $ zip symbolList typesList
+        symbolList = texy <$> optionList
+        typesList = sPShowNoColor <$> optionList
+        optionList = tail [minBound :: LinkType ..]
+
+-- Create a table to display the symbols that represent the various LinkEffects.
+lEffectLegend :: Int -> LaTeX
+lEffectLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+    caption "Key to Link Effect Symbols" <> lnbk <> "\n" <>
+    toprule Nothing <> "\n" <>
+    lUnits i ("Symbol" & "Link Effect") <>
+    midrule Nothing <> "\n" <>
+    legendRows <> lnbk <> "\n" <>
+    bottomrule Nothing <> "\n"
+    )
+    where
+        legendRows = fold $ mkLegendRow <$> chunkedPairs
+        chunkedPairs = chunksOf i $ zip symbolList typesList
+        symbolList = texy <$> optionList
+        typesList = sPShowNoColor <$> optionList
+        optionList = tail [minBound :: LinkEffect ..]
+
+-- Make a units row for a legend table
+lUnits :: Int -> LaTeX -> LaTeX
+lUnits i = mkRow . replicate i
+
+mkLegendRow :: [(LaTeX, T.Text)] -> LaTeX
+mkLegendRow = mkRow . (pairTexy <$>)
+    where
+        pairTexy (symbol, nType) = symbol & texy nType 
+-- mkLegendRow [(symbol, nType)] = mkRow (symbol & texy nType)
+-- mkLegendRow ((symbol, nType):(s2,t2):ps) =
+--     (symbol & texy nType) & (mkLegendRow ((s2,t2):ps))
+
+-- Make a tabular or longtable or tabularx row out of a list of LaTeX
+mkRow :: [LaTeX] -> LaTeX
+mkRow [] = TeXEmpty
+mkRow [lt] = lt <> lnbk <> "\n"
+mkRow (lt1:lt2:lts) = lt1 & (mkRow (lt2:lts))

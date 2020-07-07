@@ -515,7 +515,7 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> Proteolysis         <$ rword "Proteolysis"
             <|> Catalysis           <$ rword "Catalysis"
             <|> Binding_Localizaton <$ rword "Binding_Localizaton"
-            <|> Localization        <$ rword "GELocalizationF"
+            <|> Localization        <$ rword "Localization"
             )
         )
     <|>

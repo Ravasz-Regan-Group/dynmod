@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 
 module Types where
 --     ( DMModel(..)
@@ -8,7 +7,6 @@ module Types where
 --     , PackageInfo(..)
 --     ) where
 
-import Data.Data
 import Utilities
 import Text.LaTeX.Base.Class (fromLaTeX, commS, LaTeXC(..))
 import Text.LaTeX.Base.Commands (footnotesize)
@@ -161,7 +159,7 @@ data NodeType = Undefined_NT
               | GAP
               | GTPase
               | Enzyme
-                deriving (Show, Eq, Data)
+                deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
     texy Undefined_NT     = texy ("Undefined_NT" :: T.Text)
@@ -197,7 +195,7 @@ data LinkEffect = Undefined_LE
                 | Activation
                 | Repression
                 | Context_Dependent
-                  deriving (Show, Eq, Ord, Data)
+                  deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkEffect where
     texy Undefined_LE = texy ("Undefined_LE" :: T.Text)
@@ -230,7 +228,7 @@ data LinkType =   Undefined_LT
                 | Catalysis
                 | Binding_Localizaton
                 | Localization
-                  deriving (Show, Eq, Ord, Data)
+                  deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
     texy Undefined_LT        = texy ("Undefined_LT" :: T.Text)

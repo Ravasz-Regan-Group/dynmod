@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7d32949257623f37e482814f7a98057d9b1858c99ea390123bf3776adb85f383
+-- hash: a4dffc0d2b02030a99c095fa130a82bb6a52add8d37ab2f9caa3e531ab6b92de
 
 name:           ravasz-regan-group
-version:        0.2.5.0
+version:        0.2.6.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
 homepage:       https://github.com/githubuser/ravasz-regan-group#readme
 bug-reports:    https://github.com/githubuser/ravasz-regan-group/issues
@@ -59,6 +59,7 @@ library
     , pretty-simple
     , safe-exceptions
     , scientific
+    , split
     , text
     , unordered-containers
     , validation

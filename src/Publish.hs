@@ -9,7 +9,6 @@ import qualified Data.Graph.Inductive as Gr
 import qualified Data.Text as T
 import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict as Map
-import Data.Data
 import Data.Validation
 import Data.Maybe (fromJust)
 import qualified Data.List as L
@@ -57,8 +56,7 @@ nTypePrep errs
           | otherwise    = "\n The following Nodes have undefined NodeTypes:\n"
         numErrs = length nTypeErrs
         typesList = sPShowNoColor optionList
-        optionList = (\(AlgRep xs) -> tail xs) algReps
-        algReps = dataTypeRep (dataTypeOf (undefined :: NodeType))
+        optionList = tail [minBound :: NodeType ..]
         nTypeErrs = filter isUndefinedNodeType errs
 
 isUndefinedNodeType :: PubInvalid -> Bool
@@ -84,8 +82,7 @@ lTypePrep errs
                     \are undefined\n"
         numErrs = length lTypeErrs
         typesList = sPShowNoColor optionList
-        optionList =  (\(AlgRep xs) -> tail xs) algReps
-        algReps = dataTypeRep (dataTypeOf (undefined :: LinkType))
+        optionList = tail [minBound :: LinkType ..]
         lTypeErrs = filter isUndefinedLinkType errs
 
 isUndefinedLinkType :: PubInvalid -> Bool
@@ -114,8 +111,7 @@ lEffectPrep errs
                   \are undefined\n"
       numErrs = length lEffectErrs
       typesList = sPShowNoColor optionList
-      optionList =  (\(AlgRep xs) -> drop 2 xs) algReps
-      algReps = dataTypeRep (dataTypeOf (undefined :: LinkEffect))
+      optionList = drop 2 [minBound :: LinkEffect ..]
       lEffectErrs = filter isUndefinedEffectType errs
 
 isUndefinedEffectType :: PubInvalid -> Bool
