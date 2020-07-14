@@ -1,19 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
 
-module Parsing
+module Parse.DMMS
     ( modelFileParse ) 
       where
 
 import Types
 import Constants
 import Utilities
-import qualified Data.List as L
-import Data.Maybe (fromJust)
-import Data.Void
-import Data.Char (isSeparator)
-import Control.Monad (void)
 import qualified Data.Text as T
+import qualified Data.Versions as Ver
 import qualified Data.Colour.Names as C
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Graph.Inductive as Gr
@@ -29,7 +25,11 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Scientific
-import qualified Data.Versions as Ver
+import qualified Data.List as L
+import Data.Maybe (fromJust)
+import Data.Void
+import Data.Char (isSeparator)
+import Control.Monad (void)
 
 type Parser = Parsec Void T.Text
 
@@ -136,13 +136,13 @@ variable = (lexeme . try) (p >>= check)
                 then fail $ "Keyword " ++ show x ++ " cannot be a nodeName. "
                 else return x
 
--- Parse an rrms file. 
+-- Parse a dmms file. 
 modelFileParse :: Parser (FileFormatVersion, (DMModel, CitationDictionary))
-modelFileParse = (,) <$> rrmsVersion <*> modelCiteParse <* eof
+modelFileParse = (,) <$> dmmsVersion <*> modelCiteParse <* eof
 
--- Parse the rrms file format version. 
-rrmsVersion :: Parser FileFormatVersion
-rrmsVersion = versionParse "FormatVersion"
+-- Parse the dmms file format version. 
+dmmsVersion :: Parser FileFormatVersion
+dmmsVersion = versionParse "FormatVersion"
 
 -- Parse a DMModel and CitationDictionary, and then make sure that the citations
 -- in the former exist in the later. 
@@ -426,29 +426,30 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Connector        <$ rword "Connector"
             <|> Environment      <$ rword "Environment"
             <|> Process          <$ rword "Process"
+            <|> Macro_Structure  <$ rword "Macro_Structure"
+            <|> Metabolite       <$ rword "Metabolite"
             <|> MRNA             <$ rword "mRNA"
+            <|> MicroRNA         <$ rword "miR"
 --          This must come before Protein, otherwise you will match on
 --          that and then get confused
             <|> Protein_Complex  <$ rword "Protein_Complex"
-            <|> Protein          <$ rword "Protein"
+            <|> Receptor         <$ rword "Receptor"
             <|> Adaptor_Protein  <$ rword "Adaptor_Protein"
             <|> Secreted_Protein <$ rword "Secreted_Protein"
             <|> TF_Protein       <$ rword "TF_Protein"
-            <|> Metabolite       <$ rword "Metabolite"
-            <|> Macro_Structure  <$ rword "Macro_Structure"
             <|> Kinase           <$ rword "Kinase"
             <|> Phosphatase      <$ rword "Phosphatase"
             <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
             <|> Protease         <$ rword "Protease"
-            <|> DNAase           <$ rword "DNAase"
-            <|> Receptor         <$ rword "Receptor"
-            <|> MicroRNA         <$ rword "miR"
+            <|> DNase            <$ rword "DNase"
             <|> CAM              <$ rword "CAM"
+            <|> CDK              <$ rword "CDK"
             <|> CDKI             <$ rword "CDKI"
             <|> GEF              <$ rword "GEF"
             <|> GAP              <$ rword "GAP"
             <|> GTPase           <$ rword "GTPase"
             <|> Enzyme           <$ rword "Enzyme"
+            <|> Protein          <$ rword "Protein"
             )
         ) 
     <|>
@@ -457,9 +458,13 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
         )
     )
 
--- a NodeType, LinkEffect, or LinkType may be undefined at this point. 
+-- a NodeType or LinkType may be undefined at this point. 
 undefParse :: Parser T.Text
 undefParse = T.pack <$> (someTill (alphaNumChar <|> char '_') eol)
+
+-- a LinkEffect may be undefined or empty at this point. 
+undefParseNone :: Parser T.Text
+undefParseNone = T.pack <$> (manyTill (alphaNumChar <|> char '_') eol)
 
 -- Parse the graphical position of a node. 
 coordinateParse :: Parser (U.Vector Double)
@@ -477,15 +482,20 @@ dMLinkParse = between (symbol "InLink{") (symbol "InLink}") (runPermutation $
 
 -- Parse the effect of a link. 
 linkEffectParse :: Parser LinkEffect
-linkEffectParse = (metaItem "LinkEffect") >>= linkEffectCheck
-
-linkEffectCheck :: T.Text -> Parser LinkEffect
-linkEffectCheck ts = case ts of
-    "Activation"        -> return Activation
-    "Repression"        -> return Repression
-    "Context_Dependent" -> return Context_Dependent
-    ""                  -> return Inapt
-    _                   -> return Undefined_LE
+linkEffectParse = lexeme $ rword "LinkEffect" >>
+    (try
+        (colon >>
+            (   Activation        <$ rword "Activation"
+            <|> Repression        <$ rword "Repression"
+            <|> Context_Dependent <$ rword "Context_Dependent"
+            <|> Inapt             <$ rword "Inapt"
+            )
+        )
+    <|>
+        (colon' >>
+            Undefined_LE <$ undefParseNone
+        )
+    )
 
 -- Parse the type of a link. 
 linkTypeParse :: Parser LinkType
@@ -494,28 +504,30 @@ linkTypeParse = lexeme $ rword "LinkType" >>
         (colon >>
             (   Enforced_Env        <$ rword "Enforced_Env"
             <|> Indirect            <$ rword "Indirect"
+            <|> Complex_Process     <$ rword "Complex_Process"
+            <|> Persistence         <$ rword "Persistence"
             <|> Transcription       <$ rword "Transcription"
             <|> Translation         <$ rword "Translation"
-            <|> Persistence         <$ rword "Persistence"
+            <|> Ligand_Binding      <$ rword "Ligand_Binding"
+            <|> Complex_Formation   <$ rword "Complex_Formation"
             <|> Inhibitory_Binding  <$ rword "Inhibitory_Binding"
+            <|> Localization        <$ rword "Localization"
+            <|> Binding_Localizaton <$ rword "Binding_Localizaton"
+            <|> Protective_Binding  <$ rword "Protective_Binding"
+            <|> Unbinding           <$ rword "Unbinding"
 --          This must come before Phosphorylation, otherwise you will match on
---          that and then get confused
+--          that and then get confused. This is out of order from the Datatype,
+--          but hopefully we won't need to edit too deep in this list. 
             <|> Phosphorylation_Localization
                                     <$ rword "Phosphorylation_Localization"
             <|> Phosphorylation     <$ rword "Phosphorylation"
-            <|> Degradation         <$ rword "Degradation"
-            <|> Complex_Process     <$ rword "Complex_Process"
             <|> Dephosphorylation   <$ rword "Dephosphorylation"
-            <|> Protective_Binding  <$ rword "Protective_Binding"
-            <|> Complex_Formation   <$ rword "Complex_Formation"
             <|> Ubiquitination      <$ rword "Ubiquitination"
+            <|> Degradation         <$ rword "Degradation"
             <|> GEF_Activity        <$ rword "GEF_Activity"
             <|> GAP_Activity        <$ rword "GAP_Activity"
-            <|> Ligand_Binding      <$ rword "Ligand_Binding"
             <|> Proteolysis         <$ rword "Proteolysis"
             <|> Catalysis           <$ rword "Catalysis"
-            <|> Binding_Localizaton <$ rword "Binding_Localizaton"
-            <|> Localization        <$ rword "Localization"
             )
         )
     <|>
@@ -554,6 +566,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             tpInputs = T.init <$> tOutputs
             lpInputs = T.init <$> lOutputs
             tOutputs = L.sort (prettyGateEval tGate <$> tCombos)
+            -- # SCC tOutputs #-}
 --          Evaluate the logical gate with the table gate order, to make the
 --          pretty representations match. This is OK, since we have already made
 --          sure that the input nodes are the same up to permutation. 
@@ -567,6 +580,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             tOrder = gateOrder tGate
             lGate' = NodeGate lNodeName lGateAssigns tOrder
 tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
+-- # SCC tableDisCheck #-}
 
 -- When the inputs of a logical gate are a subset of its corresponding table
 -- we want to accumulate from the two PrettyGateOutput lists those rows where
@@ -587,6 +601,7 @@ accOutputMis ts ls = L.foldl' go [] tSplits
                                     <> ")"]
         tSplits = zip (T.init <$> ts) (T.last <$> ts)
         lSplits = zip (T.init <$> ls) (T.last <$> ls)
+-- # SCC accOutputMis #-}
 
 
 -- Check to make sure that the gateOrders of the parsed pairs of gates are
@@ -604,8 +619,8 @@ gateOrdCheck lGate tGate = case arePermutes lOrder tOrder of
         lReOrder = sortWithOrder tOrder lOrder
 
 -- Parse a NodeGate into a pair, where the first is the gate as parsed from a
--- discrete logical expression, if that exists in the rrms file, and the second
--- as parsed from a truth table, if that exists in the rrms file. If they both
+-- discrete logical expression, if that exists in the dmms file, and the second
+-- as parsed from a truth table, if that exists in the dmms file. If they both
 -- exist, they will be compared after parsing to ensure consistency. 
 gatePairParse :: Parser (Maybe LogicalNodeGate, Maybe TableNodeGate)
 gatePairParse = between (symbol "NodeGate{") (symbol "NodeGate}")

@@ -2,9 +2,9 @@
 /test/Deritei_Regan_Cell_Cycle
 /test/Deritei_Regan_Cell_Cycle_gDetails.txt
 /test/Deritei_Regan_Cell_Cycle_SM
-/test/Deritei_Regan_Cell_Cycle.rrms
+/test/Deritei_Regan_Cell_Cycle.dmms
 /test/parseTest.hs
-/test/samples.rrms
+/test/samples.dmms
 /test/test.pdf
 /test/test1.pdf
 
@@ -20,3 +20,8 @@
 .hpc
 .hsenv
 .ghc.environment.*
+/dynmod.prof
+/dynmod.svg
+/dynmod.aux
+/dynmod_eval.svg
+/dynmod_auto.svg

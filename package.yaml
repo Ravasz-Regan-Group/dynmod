@@ -1,5 +1,5 @@
 name:                ravasz-regan-group
-version:             0.2.6.0
+version:             0.2.6.1
 github:              "githubuser/ravasz-regan-group"
 license:             BSD3
 author:              "Peter Regan"
@@ -26,7 +26,7 @@ library:
   source-dirs: 
   - src
   exposed-modules:
-  - Parsing
+  - Parse.DMMS
   - Types
   - ReadWrite
   - Utilities
@@ -59,7 +59,6 @@ library:
   - path
   - pretty-simple
   - mtl
-  - split
 
 executables:
   dynmod:

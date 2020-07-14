@@ -59,6 +59,22 @@ calcp = "calc"
 titlesecp :: PackageName
 titlesecp = "titlesec"
 
+-- | usepackage [] showframe
+showframep :: PackageName
+showframep = "showframe"
+
+-- | usepackage [] caption
+captionp :: PackageName
+captionp = "caption"
+
+-- | usepackage [] ucs
+-- ucsp :: PackageName
+-- ucsp = "ucs"
+
+-- | usepackage [] fontspec
+fontspecp :: PackageName
+fontspecp = "fontspec"
+
 -- Denote an expression that calculates a dimension of some sort
 dimexpr :: LaTeXC l => l
 dimexpr = commS "dimexpr"

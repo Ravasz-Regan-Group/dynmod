@@ -2,7 +2,7 @@
 
 module Main where
 
-import Parsing
+import Parse.DMMS
 import Types
 import Publish
 import Utilities
@@ -24,6 +24,8 @@ import Control.Monad (zipWithM, zipWithM_, when)
 import qualified Text.Megaparsec as M
 import Data.Either (fromRight)
 import Control.Monad.Reader (runReader)
+import Paths_ravasz_regan_group (version)
+import Data.Version (showVersion)
 
 
 main :: IO ()
@@ -33,8 +35,8 @@ main = do
     (mFilePathNoExt, ext) <- splitExtension mFilePath
     fileInput <- RW.readFile mFilePath
     let strFileName = toFilePath mFilePath
-    case ext == ".rrms" of
-        False -> fail $ "Not an rrms file: " <> ext
+    case ext == ".dmms" of
+        False -> fail $ "Not a dmms file: " <> ext
         True  -> do
             case M.runParser (modelFileParse) strFileName fileInput of
                 Left err      -> PS.pPrint (M.errorBundlePretty err)
@@ -58,8 +60,8 @@ main = do
                             $ PS.pShowNoColor $ dmModel
  
 
--- Write TT & BooleanNet files to disk, as extracted from an rrms file, in a
--- directory with the rrms' name. 
+-- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
+-- directory with the dmms' name. 
 ttWrite :: Path Abs File -> ModelTTFiles -> [(ModelName, BooleanNet)] -> IO ()
 ttWrite mFilePath fs bNetPs = do
     (pathNoExt, ext) <- splitExtension mFilePath
@@ -150,7 +152,7 @@ input :: O.Parser Input
 input = Input
     <$> O.strArgument
         (O.metavar "FILE"
-        <> O.help "Path to an rrms file to parse")
+        <> O.help "Path to a dmms file to parse")
     <*> O.switch
         ( O.long "warnings"
        <> O.short 'w'
@@ -165,18 +167,25 @@ input = Input
        <> O.short 's'
        <> O.help "Whether to write a supplementary publication of the rmms file\
             \ to PDF. ")
+    -- Whether to write a pShowNoColor of the DMModel we've parsed.
     <*> O.switch
         ( O.long "parsetest"
        <> O.short 'p'
-       <> O.help "")
--- Whether to write a pShowNoColor of the DMModel we've parsed.
+       <> O.help ""
+       <> O.hidden
+       <> O.internal)
 
-opts = O.info (input O.<**> O.helper)
+versionOpt :: O.Parser (a -> a)
+versionOpt = O.infoOption
+                (showVersion version)
+                (O.long "version" <> O.help "Show version")
+
+opts = O.info (O.helper <*> versionOpt <*> input)
     ( O.fullDesc
-   <> O.progDesc "Parse an rrms file and output a Truth Table directory. \
+   <> O.progDesc "Parse a dmms file and output a Truth Table directory. \
    \Options: write publication level warnings to a file, write node coordinates\
    \ and color to a file, write a supplementary publication of the rmms file to\
    \ PDF. "
-   <> O.header "dynamicalverify - processing rrms files")
+   <> O.header "dynmod - processing dmms files")
 
 

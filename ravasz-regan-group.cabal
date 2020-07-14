@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a4dffc0d2b02030a99c095fa130a82bb6a52add8d37ab2f9caa3e531ab6b92de
+-- hash: c6d6b332ea6814324f5099aede4edc430283cd10260d71f6582791745a1c1332
 
 name:           ravasz-regan-group
 version:        0.2.6.0
@@ -27,7 +27,7 @@ source-repository head
 
 library
   exposed-modules:
-      Parsing
+      Parse.DMMS
       Types
       ReadWrite
       Utilities
@@ -59,7 +59,6 @@ library
     , pretty-simple
     , safe-exceptions
     , scientific
-    , split
     , text
     , unordered-containers
     , validation

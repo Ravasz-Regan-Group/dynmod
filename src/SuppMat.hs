@@ -8,6 +8,7 @@ module SuppMat
     ) 
     where
 
+import Constants
 import Types
 import Utilities
 import Text.LaTeX.DynMod.Extra
@@ -23,13 +24,13 @@ import Text.LaTeX.Packages.LongTable
 import Text.LaTeX.Packages.Color
 import Text.LaTeX.Packages.Geometry
 import Text.LaTeX.Packages.AMSMath
+import Text.LaTeX.Packages.Babel
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 import qualified Text.Pretty.Simple as PS
-import Data.List.Split (chunksOf)
 import qualified Data.List as L
 import Data.Maybe (fromJust)
 import Data.Foldable (fold)
@@ -82,6 +83,12 @@ linkBSpecCall = commS "linkbspec"
 linkCSpecCall = commS "linkcspec"
 linkDSpecCall = commS "linkdspec"
 
+-- Substitutes "\allowbreak\_{}" for "\_{}". Applied to places where a NodeName
+-- is displayed, to get around long NodeNames while keeping lots of space for
+-- descriptions in other columns. 
+uScoreSub :: (LaTeXC l) => T.Text -> l
+uScoreSub = fromLaTeX . TeXRaw . T.replace "_" "\\allowbreak\\_{}"
+
 -- Half the separation between columns. 
 tabcolsep :: LaTeXC l => l
 tabcolsep = commS "tabcolsep"
@@ -101,6 +108,9 @@ preamble =
         "fdarrows" "\"6E" <> "\n"
   <> usepackage [utf8] inputenc <> "\n"
   <> useencoding [T1] <> "\n"
+--   Insert your language here if you are recompiling this to work mainly in
+--   a non-English context. Extended latin characters are supported regardless.
+  <> usepackage ["english"] babel <>"\n"
   <> usepackage [] amsmath <> "\n"
   <> newCommand "andop" 0 TeXEmpty (mathbin $ mathrm "and") <> "\n"
   <> newCommand "orop" 0 TeXEmpty (mathbin $ mathrm "or") <> "\n"
@@ -109,6 +119,7 @@ preamble =
   <> setCounter "LTchunksize" 200 <> "\n"
   <> comm2 "setlength" (commS "LTcapwidth")
     ((texy (1.15 :: Float)) <> commS "textwidth") <> "\n"
+  <> usepackage ["font=bf", "labelfont=bf"] captionp <> "\n"
   <> usepackage [] subfloatp <> "\n"
   <> usepackage [] booktabs <> "\n"
   <> usepackage [] makecellp <> "\n"
@@ -116,6 +127,7 @@ preamble =
   <> usepackage [dvipsnames] pxcolor <> "\n"
   <> usepackage ["margin=1.0in"] geometry <> "\n"
   <> usepackage ["raggedright"] titlesecp <> "\n"
+--   <> usepackage [] showframep <> "\n"
   <> renewCommand' "thepage" 0 TeXEmpty (TeXRaw "S" <>
     comm1 "arabic" "page")
   <> "\n"
@@ -197,7 +209,7 @@ mkSMSections = do
           mkSMSection' (n, ls) =
             smNodePrep gmap n <> lnbk <> "\n"
                 <> (addLineSpace $ Just $ CustomMeasure $ (dimexpr <> (texy
-                (1.0 ::Float))) <> defaultAddSpace) <> "\n"
+                (1.0 :: Float))) <> defaultAddSpace) <> "\n"
                 <> (inLinkConcat (smLinkPrep <$> ls))
     (LayerBinding _ _ _) ->
       foldr (grouper gmap) TeXEmpty info
@@ -226,7 +238,7 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
         mkSMSubtables' gm (n, ls) =
             smNodePrep gm n <> lnbk <> "\n"
                 <> (addLineSpace $ Just $ CustomMeasure $ (dimexpr <> (texy
-                (1.0 ::Float))) <> defaultAddSpace) <> "\n"
+                (1.0 :: Float))) <> defaultAddSpace) <> "\n"
                 <> (inLinkConcat (smLinkPrep <$> ls)) <> lnbk <> "\n"
 
 -- Prep the LaTeX depicting the NodeGates of a DMModel. This is done all at
@@ -318,15 +330,15 @@ parTexy s ex@(Binary Or _ _) = (autoParens . exprTex s) ex
 -- Prep the 2 rows of a supplementary table that describe a node. 
 smNodePrep :: Map.HashMap NodeName LaTeX -> DMNode -> LaTeX
 smNodePrep gmap n = 
-  let name = nodeName nMeta
-      gate = fromJust $ Map.lookup name gmap
+  let nName = nodeName nMeta
+      gate = fromJust $ Map.lookup nName gmap
       nDesc = TeXRaw $ (fst . fst . nodeInfo) nMeta
       nSymbol = (texy . nodeType) nMeta
       nMeta = nodeMeta n
   in
   (addLineSpace $ Just $ CustomMeasure $
-            (dimexpr <> (texy (1.5 ::Float))) <> defaultAddSpace) <> "\n" <>
-  (multicolumn 1 [ParColumnTop node1ASpecCall] (texy name)
+            (dimexpr <> (texy (1.5 :: Float))) <> defaultAddSpace) <> "\n" <>
+  (multicolumn 1 [ParColumnTop node1ASpecCall] (uScoreSub nName)
     & (multicolumn 3 [ParColumnMid node1BSpecCall] gate)) <> lnbk <> "\n" <>
   ((multicolumn 1 [ParColumnMid node2ASpecCall] TeXEmpty)
     & (multicolumn 1 [ParColumnMid node2BSpecCall] nSymbol)
@@ -336,7 +348,7 @@ smNodePrep gmap n =
 -- Prep the n rows of a supplementary table that describe a nodes InLinks.
 smLinkPrep :: (DMLink, NodeName) -> LaTeX
 smLinkPrep lk =
-  let nName   = (texy . snd) lk
+  let nName   = (uScoreSub . snd) lk
       lDesc   = (TeXRaw . fst . fst . linkInfo . fst) lk
       lType   = (texy . linkType . fst) lk
       lEffect = (texy . linkEffect . fst) lk
@@ -352,7 +364,7 @@ inLinkConcat :: (LaTeXC l) => [l] -> l
 inLinkConcat = fold . L.intersperse spacer
     where
         spacer = lnbk <> "\n" <> (addLineSpace $ Just $ CustomMeasure $
-            (dimexpr <> (texy (1.0 ::Float))) <> defaultAddSpace) <> "\n"
+            (dimexpr <> (texy (1.0 :: Float))) <> defaultAddSpace) <> "\n"
 
 -- The PDF is structured by sections, which mention the modelName of the layer
 -- below, then tables displaying one NodeName from a layer, then the nodes from
@@ -422,86 +434,79 @@ mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
 
 type BooleanNet = T.Text
 
--- How many symbol-legend pairs are there in a row?
-lRowPairNumber :: Int
-lRowPairNumber = 2
-
 -- Assemble the three legend tables
 legend :: LaTeX
-legend = subtables $ "\n" <>
-    nTypeLegend lRowPairNumber
- <> lTypeLegend lRowPairNumber
- <> lEffectLegend lRowPairNumber
+legend = subtables $ "\n"
+            <> nTypeLegend
+            <> lTypeLegend
+            <> lEffectLegend
 
-legendTSpec :: Int -> [TableSpec]
-legendTSpec i = (Separator TeXEmpty) : (replicate (i * 2) LeftColumn)
-    <> [Separator TeXEmpty]
+legendTSpec :: [TableSpec]
+legendTSpec = [ Separator TeXEmpty
+              , LeftColumn
+              , LeftColumn
+              , ParColumnTop $ colDim 0.6
+              , Separator TeXEmpty
+              ]
 
 -- Create a table to display the symbols that represent the various NodeTypes.
-nTypeLegend :: Int -> LaTeX
-nTypeLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+nTypeLegend :: LaTeX
+nTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
     caption "Key to Node Type Symbols" <> lnbk <> "\n" <>
     toprule Nothing <> "\n" <>
-    lUnits i ("Symbol" & "Node Type")<>
+    "Symbol" & "Node Type" & "Description" <>lnbk <> "\n" <>
     midrule Nothing <> "\n" <>
-    legendRows <> lnbk <> "\n" <>
+    legendRows <> "\n" <>
     bottomrule Nothing <> "\n"
     )
     where
-        legendRows = fold $ mkLegendRow <$> chunkedPairs
-        chunkedPairs = chunksOf i $ zip symbolList typesList
+        legendRows = fold $ mkLRow <$> triples
+        triples = zip3 symbolList typesList descList
+        descList = nTDesc <$> optionList
         symbolList = texy <$> optionList
         typesList = sPShowNoColor <$> optionList
         optionList = tail [minBound :: NodeType ..]
 
 -- Create a table to display the symbols that represent the various LinkTypes.
-lTypeLegend :: Int -> LaTeX
-lTypeLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+lTypeLegend :: LaTeX
+lTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
     caption "Key to Link Type Symbols" <> lnbk <> "\n" <>
     toprule Nothing <> "\n" <>
-    lUnits i ("Symbol" & "Link Type") <>
+    "Symbol" & "Link Type" & "Description" <>lnbk <> "\n" <>
     midrule Nothing <> "\n" <>
-    legendRows <> lnbk <> "\n" <>
+    legendRows <> "\n" <>
     bottomrule Nothing <> "\n"
     )
     where
-        legendRows = fold $ mkLegendRow <$> chunkedPairs
-        chunkedPairs = chunksOf i $ zip symbolList typesList
+        legendRows = fold $ mkLRow <$> triples
+        triples = zip3 symbolList typesList descList
+        descList = lTDesc <$> optionList
         symbolList = texy <$> optionList
         typesList = sPShowNoColor <$> optionList
         optionList = tail [minBound :: LinkType ..]
 
 -- Create a table to display the symbols that represent the various LinkEffects.
-lEffectLegend :: Int -> LaTeX
-lEffectLegend i = "\n" <> longtable (Just Center) (legendTSpec i) ("\n" <>
+lEffectLegend :: LaTeX
+lEffectLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
     caption "Key to Link Effect Symbols" <> lnbk <> "\n" <>
     toprule Nothing <> "\n" <>
-    lUnits i ("Symbol" & "Link Effect") <>
+    "Symbol" & "Link Effect" & "Description" <>lnbk <> "\n" <>
     midrule Nothing <> "\n" <>
-    legendRows <> lnbk <> "\n" <>
+    legendRows <> "\n" <>
     bottomrule Nothing <> "\n"
     )
     where
-        legendRows = fold $ mkLegendRow <$> chunkedPairs
-        chunkedPairs = chunksOf i $ zip symbolList typesList
+        legendRows = fold $ mkLRow <$> triples
+        triples = zip3 symbolList typesList descList
+        descList = lEDesc <$> optionList
         symbolList = texy <$> optionList
         typesList = sPShowNoColor <$> optionList
         optionList = tail [minBound :: LinkEffect ..]
 
--- Make a units row for a legend table
-lUnits :: Int -> LaTeX -> LaTeX
-lUnits i = mkRow . replicate i
+mkLRow :: (LaTeX, T.Text, T.Text) -> LaTeX
+mkLRow (symbol, haskT, desc) =
+    symbol & texy haskT & texy desc <> lnbk <>
+        (addLineSpace $ Just $ CustomMeasure $
+            (dimexpr <> (texy (0.75 :: Float))) <> defaultAddSpace) <> "\n"
 
-mkLegendRow :: [(LaTeX, T.Text)] -> LaTeX
-mkLegendRow = mkRow . (pairTexy <$>)
-    where
-        pairTexy (symbol, nType) = symbol & texy nType 
--- mkLegendRow [(symbol, nType)] = mkRow (symbol & texy nType)
--- mkLegendRow ((symbol, nType):(s2,t2):ps) =
---     (symbol & texy nType) & (mkLegendRow ((s2,t2):ps))
 
--- Make a tabular or longtable or tabularx row out of a list of LaTeX
-mkRow :: [LaTeX] -> LaTeX
-mkRow [] = TeXEmpty
-mkRow [lt] = lt <> lnbk <> "\n"
-mkRow (lt1:lt2:lts) = lt1 & (mkRow (lt2:lts))

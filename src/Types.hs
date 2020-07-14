@@ -138,27 +138,28 @@ data NodeType = Undefined_NT
               | Connector
               | Environment
               | Process
+              | Macro_Structure
+              | Metabolite
               | MRNA
+              | MicroRNA
               | Protein_Complex
-              | Protein
+              | Receptor
               | Adaptor_Protein
               | Secreted_Protein
               | TF_Protein
-              | Metabolite
-              | Macro_Structure
               | Kinase
               | Phosphatase
               | Ubiquitin_Ligase
               | Protease
-              | DNAase
-              | Receptor
-              | MicroRNA
+              | DNase
               | CAM
+              | CDK
               | CDKI
               | GEF
               | GAP
               | GTPase
               | Enzyme
+              | Protein
                 deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
@@ -168,92 +169,95 @@ instance Texy NodeType where
     texy Connector        = (footnotesize . fromLaTeX . TeXRaw) "Conn"
     texy Environment      = (footnotesize . fromLaTeX . TeXRaw) "Env"
     texy Process          = (footnotesize . fromLaTeX . TeXRaw) "Proc"
+    texy Macro_Structure  = (footnotesize . fromLaTeX . TeXRaw) "MSt"
+    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "Met"
     texy MRNA             = (footnotesize . fromLaTeX . TeXRaw) "mRNA"
+    texy MicroRNA         = (footnotesize . fromLaTeX . TeXRaw) "miR"
     texy Protein_Complex  = (footnotesize . fromLaTeX . TeXRaw) "PC"
-    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "Prot"
+    texy Receptor         = (footnotesize . fromLaTeX . TeXRaw) "Rec"
     texy Adaptor_Protein  = (footnotesize . fromLaTeX . TeXRaw) "Adap"
     texy Secreted_Protein = (footnotesize . fromLaTeX . TeXRaw) "Secr"
     texy TF_Protein       = (footnotesize . fromLaTeX . TeXRaw) "TF"
-    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "Met"
-    texy Macro_Structure  = (footnotesize . fromLaTeX . TeXRaw) "MSt"
     texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "K"
     texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "Ph"
     texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UBL"
-    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTAse"
-    texy DNAase           = (footnotesize . fromLaTeX . TeXRaw) "DNAase"
-    texy Receptor         = (footnotesize . fromLaTeX . TeXRaw) "Rec"
-    texy MicroRNA         = (footnotesize . fromLaTeX . TeXRaw) "miR"
+    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTase"
+    texy DNase            = (footnotesize . fromLaTeX . TeXRaw) "DNase"
     texy CAM              = (footnotesize . fromLaTeX . TeXRaw) "CAM"
+    texy CDK              = (footnotesize . fromLaTeX . TeXRaw) "CDK"
     texy CDKI             = (footnotesize . fromLaTeX . TeXRaw) "CDKI"
     texy GEF              = (footnotesize . fromLaTeX . TeXRaw) "GEF"
     texy GAP              = (footnotesize . fromLaTeX . TeXRaw) "GAP"
     texy GTPase           = (footnotesize . fromLaTeX . TeXRaw) "GTPa"
     texy Enzyme           = (footnotesize . fromLaTeX . TeXRaw) "Enz"
+    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "Prot"
 
 data LinkEffect = Undefined_LE
-                | Inapt
                 | Activation
                 | Repression
                 | Context_Dependent
+                | Inapt
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkEffect where
     texy Undefined_LE = texy ("Undefined_LE" :: T.Text)
-    texy Inapt = math $ commS "perp"
     texy Activation = math $ commS "leftarrow"
     -- from fdsymbol font
     texy Repression = math $ commS "leftfootline"
     -- from fdsymbol font
     texy Context_Dependent = math $ commS "leftblackspoon" 
+    texy Inapt = math $ commS "perp"
 
 data LinkType =   Undefined_LT
                 | Enforced_Env
                 | Indirect
+                | Complex_Process
+                | Persistence
                 | Transcription
                 | Translation
-                | Persistence
-                | Inhibitory_Binding
-                | Phosphorylation_Localization
-                | Phosphorylation
-                | Degradation
-                | Complex_Process
-                | Dephosphorylation
-                | Protective_Binding
+                | Ligand_Binding
                 | Complex_Formation
+                | Inhibitory_Binding
+                | Localization
+                | Binding_Localizaton
+                | Protective_Binding
+                | Unbinding
+                | Phosphorylation
+                | Dephosphorylation
+                | Phosphorylation_Localization
                 | Ubiquitination
+                | Degradation
                 | GEF_Activity
                 | GAP_Activity
-                | Ligand_Binding
                 | Proteolysis
                 | Catalysis
-                | Binding_Localizaton
-                | Localization
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
     texy Undefined_LT        = texy ("Undefined_LT" :: T.Text)
     texy Enforced_Env        = (footnotesize . fromLaTeX . TeXRaw) "Env"
     texy Indirect            = (footnotesize . fromLaTeX . TeXRaw) "Ind"
+    texy Complex_Process     = (footnotesize . fromLaTeX . TeXRaw) "ComplProc"
+    texy Persistence         = (footnotesize . fromLaTeX . TeXRaw) "Per"
     texy Transcription       = (footnotesize . fromLaTeX . TeXRaw) "TR"
     texy Translation         = (footnotesize . fromLaTeX . TeXRaw) "TL"
-    texy Persistence         = (footnotesize . fromLaTeX . TeXRaw) "Per"
+    texy Ligand_Binding      = (footnotesize . fromLaTeX . TeXRaw) "Ligand"
+    texy Complex_Formation   = (footnotesize . fromLaTeX . TeXRaw) "Compl"
     texy Inhibitory_Binding  = (footnotesize . fromLaTeX . TeXRaw) "IBind"
+    texy Localization        = (footnotesize . fromLaTeX . TeXRaw) "Loc"
+    texy Binding_Localizaton = (footnotesize . fromLaTeX . TeXRaw) "BLoc"
+    texy Protective_Binding  = (footnotesize . fromLaTeX . TeXRaw) "PBind"
+    texy Unbinding           = (footnotesize . fromLaTeX . TeXRaw) "Unbind"
+    texy Phosphorylation     = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Dephosphorylation   = (footnotesize . fromLaTeX . TeXRaw) "DP"
     texy Phosphorylation_Localization =
         (footnotesize . fromLaTeX . TeXRaw) "PLoc"
-    texy Phosphorylation     = (footnotesize . fromLaTeX . TeXRaw) "P"
-    texy Degradation         = (footnotesize . fromLaTeX . TeXRaw) "Deg"
-    texy Complex_Process     = (footnotesize . fromLaTeX . TeXRaw) "LPr"
-    texy Dephosphorylation   = (footnotesize . fromLaTeX . TeXRaw) "DP"
-    texy Protective_Binding  = (footnotesize . fromLaTeX . TeXRaw) "PBind"
-    texy Complex_Formation   = (footnotesize . fromLaTeX . TeXRaw) "Compl"
     texy Ubiquitination      = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
+    texy Degradation         = (footnotesize . fromLaTeX . TeXRaw) "Deg"
     texy GEF_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GEF"
     texy GAP_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GAP"
-    texy Ligand_Binding      = (footnotesize . fromLaTeX . TeXRaw) "Ligand"
     texy Proteolysis         = (footnotesize . fromLaTeX . TeXRaw) "Lysis"
     texy Catalysis           = (footnotesize . fromLaTeX . TeXRaw) "Cat"
-    texy Binding_Localizaton = (footnotesize . fromLaTeX . TeXRaw) "BLoc"
-    texy Localization        = (footnotesize . fromLaTeX . TeXRaw) "Loc"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -313,15 +317,23 @@ data BinOp
 
 -- Evaluate a node expression
 eval :: NodeExpr -> ExprInput -> Maybe Bool
-eval expr nodeStates = eval' expr
-  where
-    eval' (Not expr1) = not <$> (eval' expr1)
-    eval' (Binary And expr1 expr2) = liftA2 (&&) (eval' expr1) (eval' expr2)
-    eval' (Binary Or expr1 expr2) = liftA2 (||) (eval' expr1) (eval' expr2)
-    eval' (GateConst nName nState)
-      = (nState ==) <$> (Map.lookup nName nodeStates)
-    eval' (GateLit b) = Just b
-
+eval (Not expr1) ns = not <$> (eval expr1 ns)
+eval (Binary And expr1 expr2) ns =
+    liftA2 (&&) (eval expr1 ns) (eval expr2 ns)
+eval (Binary Or expr1 expr2) ns =
+    liftA2 (||) (eval expr1 ns) (eval expr2 ns)
+eval (GateConst nName nState) ns =
+    (nState ==) <$> (Map.lookup nName ns)
+eval (GateLit b) _ =  Just b
+-- # SCC eval #-}
+-- eval expr nodeStates = eval' expr
+--   where
+--     eval' (Not expr1) = not <$> (eval' expr1)
+--     eval' (Binary And expr1 expr2) = liftA2 (&&) (eval' expr1) (eval' expr2)
+--     eval' (Binary Or expr1 expr2) = liftA2 (||) (eval' expr1) (eval' expr2)
+--     eval' (GateConst nName nState)
+--       = (nState ==) <$> (Map.lookup nName nodeStates)
+--     eval' (GateLit b) = Just b
 
 -- Evaluate a gate against a given input HashMap
 gateEval :: NodeGate -> ExprInput -> Maybe NodeState
@@ -333,6 +345,7 @@ gateEval nGate nInput
         exprs = snd <$> assigns
         output = (flip eval nInput) <$> exprs
         areInputsSufficient = not $ elem Nothing output
+-- # SCC gateEval #-}
 
 -- Evaluate a gate against a given input HashMap, and return the result as tab
 -- separated Text formatted integers in proper gateOrder order. Use only on
@@ -347,6 +360,7 @@ prettyGateEval nGate nInput = prettify output
         orderedInput = fromJust <$> (sequenceA (Map.lookup <$> order) nInput)
         output = fromJust $ gateEval nGate nInput
         order = gateOrder nGate
+-- # SCC prettyGateEval #-}
 
 type PrettyGateOutput = T.Text
 type LayerTTFiles = (T.Text, [(NodeName, T.Text)])
@@ -848,6 +862,7 @@ gateCombinations asns = fmap Map.fromList combosList
     where
         (nNames, nStates) = unzip $ refdNodesStates asns
         combosList = fmap (zip nNames) (sequenceA nStates)
+-- # SCC gateCombinations #-}
 
 -- Produces the nodes, and states of those nodes, that are referenced,
 -- (explicitly or otherwise), in a given list of NodeExprs. 
@@ -874,6 +889,7 @@ exprNodes expr' = MMap.map (L.nub . ([0, 1] <>)) $ exprNodes' expr'
 -- each node. The DMModel as a whole will have a [[[ExprInput]]]
 modelCombinations :: DMModel -> [[[ExprInput]]]
 modelCombinations = (layerCombinations <$>) . modelLayers
+-- # SCC modelCombinations #-}
 
 -- Generate all the possible inputs sets of a ModelLayer, one [ExprInput] for
 -- each node. 
@@ -884,6 +900,7 @@ layerCombinations mL = fromJust <$> comboLists
         ranges :: LayerRange
         ranges = Map.fromList $ nodeRange <$> nodes
         nodes = layerNodes mL
+-- # SCC layerCombinations #-}
 
 -- If we have a LayerRange, this gives the possible inputs to a given node in
 -- that ModelLayer. 
@@ -897,6 +914,7 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         nNames :: [NodeName]
         nNames = fst <$> (refdNodesStates nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
+-- # SCC nodeCombinations #-}
 
 -- Extract the names and ranges from a node. 
 nodeRange :: DMNode -> NodeRange
