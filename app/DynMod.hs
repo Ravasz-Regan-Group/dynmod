@@ -24,7 +24,7 @@ import Control.Monad (zipWithM, zipWithM_, when)
 import qualified Text.Megaparsec as M
 import Data.Either (fromRight)
 import Control.Monad.Reader (runReader)
-import Paths_ravasz_regan_group (version)
+import Paths_dynmod (version)
 import Data.Version (showVersion)
 
 

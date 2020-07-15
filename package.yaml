@@ -1,6 +1,6 @@
-name:                ravasz-regan-group
+name:                dynmod
 version:             0.2.6.2
-github:              "githubuser/ravasz-regan-group"
+github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
 maintainer:          "peter.regan@gmail.com"
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -70,7 +70,7 @@ executables:
     - -with-rtsopts=-N3
     - -O2
     dependencies:
-    - ravasz-regan-group
+    - dynmod
     - megaparsec
     - text
     - pretty-simple
@@ -83,7 +83,7 @@ executables:
     - validation
 
 tests:
-  ravasz-regan-group-test:
+  dynmod-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -92,4 +92,4 @@ tests:
     - -with-rtsopts=-N2
 #    - -O2
     dependencies:
-    - ravasz-regan-group
+    - dynmod

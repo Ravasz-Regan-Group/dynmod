@@ -1,3 +1,3 @@
-# Changelog for ravasz-regan-group
+# Changelog for dynmod
 
 ## Unreleased changes

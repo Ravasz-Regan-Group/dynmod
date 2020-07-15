@@ -4,13 +4,13 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ab0746db58b8643fdeae76f4447a5199c2e7f1b7f0d7697881fc62458853cc6b
+-- hash: 363d8f04b4f5a7d44724ced0e92bd15b1473aa2dadde406569a4853a83c333e9
 
-name:           ravasz-regan-group
-version:        0.2.6.1
-description:    Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
-homepage:       https://github.com/githubuser/ravasz-regan-group#readme
-bug-reports:    https://github.com/githubuser/ravasz-regan-group/issues
+name:           dynmod
+version:        0.2.6.2
+description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
+homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
+bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
 author:         Peter Regan
 maintainer:     peter.regan@gmail.com
 copyright:      2019 Peter Regan
@@ -23,7 +23,7 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/ravasz-regan-group
+  location: https://github.com/Ravasz-Regan-Group/dynmod
 
 library
   exposed-modules:
@@ -38,7 +38,7 @@ library
       Text.LaTeX.Packages.ColorTbl
   other-modules:
       Text.LaTeX.DynMod.Extra
-      Paths_ravasz_regan_group
+      Paths_dynmod
   hs-source-dirs:
       src
   ghc-options: -Wall -O2
@@ -69,13 +69,14 @@ library
 executable dynmod
   main-is: DynMod.hs
   other-modules:
-      Paths_ravasz_regan_group
+      Paths_dynmod
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -O2
   build-depends:
       HaTeX
     , base >=4.7 && <5
+    , dynmod
     , fgl
     , megaparsec
     , mtl
@@ -83,20 +84,19 @@ executable dynmod
     , path
     , path-io
     , pretty-simple
-    , ravasz-regan-group
     , text
     , validation
   default-language: Haskell2010
 
-test-suite ravasz-regan-group-test
+test-suite dynmod-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_ravasz_regan_group
+      Paths_dynmod
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N2
   build-depends:
       base >=4.7 && <5
-    , ravasz-regan-group
+    , dynmod
   default-language: Haskell2010
