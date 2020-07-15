@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c6d6b332ea6814324f5099aede4edc430283cd10260d71f6582791745a1c1332
+-- hash: ab0746db58b8643fdeae76f4447a5199c2e7f1b7f0d7697881fc62458853cc6b
 
 name:           ravasz-regan-group
-version:        0.2.6.0
+version:        0.2.6.1
 description:    Please see the README on GitHub at <https://github.com/githubuser/ravasz-regan-group#readme>
 homepage:       https://github.com/githubuser/ravasz-regan-group#readme
 bug-reports:    https://github.com/githubuser/ravasz-regan-group/issues

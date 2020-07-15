@@ -197,7 +197,8 @@ mkSMSections = do
   return $ case dmM of
     (Fine _) ->
       longtable (Just Center) theTSpec (
-        caption "Regulatory logic representing the model." <> lnbk <> "\n" <>
+        caption "Regulatory logic representing the model." <> "\n" <>
+        endhead <> lnbk <> "\n" <>
         toprule Nothing <> "\n" <>
         sMTableUnits    <> "\n" <>
         midrule Nothing <> "\n" <>
@@ -226,8 +227,8 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
     (
       "\n" <>
       (caption ("Description " <> commS "&" <> " experimental support for the \
-        \ modules of " <> ((texy . nodeName . nodeMeta . fst) inAdj)))
-         <> lnbk <> "\n" <>
+        \ modules of " <> ((texy . nodeName . nodeMeta . fst) inAdj))) <>
+         "\n" <> endhead <> lnbk <> "\n" <>
       toprule Nothing <> "\n" <>
       sMTableUnits    <> "\n" <>
       midrule Nothing <> "\n" <>
@@ -451,14 +452,7 @@ legendTSpec = [ Separator TeXEmpty
 
 -- Create a table to display the symbols that represent the various NodeTypes.
 nTypeLegend :: LaTeX
-nTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
-    caption "Key to Node Type Symbols" <> lnbk <> "\n" <>
-    toprule Nothing <> "\n" <>
-    "Symbol" & "Node Type" & "Description" <>lnbk <> "\n" <>
-    midrule Nothing <> "\n" <>
-    legendRows <> "\n" <>
-    bottomrule Nothing <> "\n"
-    )
+nTypeLegend = legendScafold legendRows
     where
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
@@ -469,14 +463,7 @@ nTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
 
 -- Create a table to display the symbols that represent the various LinkTypes.
 lTypeLegend :: LaTeX
-lTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
-    caption "Key to Link Type Symbols" <> lnbk <> "\n" <>
-    toprule Nothing <> "\n" <>
-    "Symbol" & "Link Type" & "Description" <>lnbk <> "\n" <>
-    midrule Nothing <> "\n" <>
-    legendRows <> "\n" <>
-    bottomrule Nothing <> "\n"
-    )
+lTypeLegend = legendScafold legendRows
     where
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
@@ -487,14 +474,7 @@ lTypeLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
 
 -- Create a table to display the symbols that represent the various LinkEffects.
 lEffectLegend :: LaTeX
-lEffectLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
-    caption "Key to Link Effect Symbols" <> lnbk <> "\n" <>
-    toprule Nothing <> "\n" <>
-    "Symbol" & "Link Effect" & "Description" <>lnbk <> "\n" <>
-    midrule Nothing <> "\n" <>
-    legendRows <> "\n" <>
-    bottomrule Nothing <> "\n"
-    )
+lEffectLegend = legendScafold legendRows
     where
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
@@ -502,6 +482,20 @@ lEffectLegend = "\n" <> longtable (Just Center) legendTSpec ("\n" <>
         symbolList = texy <$> optionList
         typesList = sPShowNoColor <$> optionList
         optionList = tail [minBound :: LinkEffect ..]
+
+
+-- 
+legendScafold :: LaTeX -> LaTeX
+legendScafold rows = "\n" <>
+    ("\n" <> (longtable (Just Center) legendTSpec $ "\n" <>
+    caption "Key to Link Effect Symbols" <> "\n" <>
+    endhead <> lnbk <> "\n" <>
+    toprule Nothing <> "\n" <>
+    "Symbol" & "Link Effect" & "Description" <>lnbk <> "\n" <>
+    midrule Nothing <> "\n" <>
+    rows <>
+    bottomrule Nothing <> "\n"
+    ) <> "\n")
 
 mkLRow :: (LaTeX, T.Text, T.Text) -> LaTeX
 mkLRow (symbol, haskT, desc) =

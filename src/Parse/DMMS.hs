@@ -428,8 +428,8 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Process          <$ rword "Process"
             <|> Macro_Structure  <$ rword "Macro_Structure"
             <|> Metabolite       <$ rword "Metabolite"
-            <|> MRNA             <$ rword "mRNA"
-            <|> MicroRNA         <$ rword "miR"
+            <|> MRNA             <$ rword "MRNA"
+            <|> MicroRNA         <$ rword "MicroRNA"
 --          This must come before Protein, otherwise you will match on
 --          that and then get confused
             <|> Protein_Complex  <$ rword "Protein_Complex"
@@ -676,7 +676,8 @@ nOperators =
 nTerm :: Parser NodeExpr
 nTerm = parens parseNodeExpr
     <|> (try integerNTerm)
-    <|> booleanNTerm
+    <|> (try booleanNTerm)
+    <|> literalTerm
 
 -- Parse a node name without an :Int at then end of the node name
 booleanNTerm :: Parser NodeExpr
@@ -690,6 +691,17 @@ integerNTerm = do
     varState <- integer
     return (GateConst var varState)
 
+literalTerm :: Parser NodeExpr
+literalTerm = rword "GateLit" >> (GateLit <$> boolParse)
+
+boolParse :: Parser Bool
+boolParse = (try trueParse) <|> falseParse
+
+trueParse :: Parser Bool
+trueParse = True <$ rword "True"
+
+falseParse :: Parser Bool
+falseParse = False <$ rword "False"
 
 truthTableParse :: Parser TableNodeGate
 truthTableParse = between (symbol "TruthTable{")

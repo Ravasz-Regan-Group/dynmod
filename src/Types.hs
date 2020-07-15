@@ -180,7 +180,7 @@ instance Texy NodeType where
     texy TF_Protein       = (footnotesize . fromLaTeX . TeXRaw) "TF"
     texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "K"
     texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "Ph"
-    texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UBL"
+    texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UbL"
     texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTase"
     texy DNase            = (footnotesize . fromLaTeX . TeXRaw) "DNase"
     texy CAM              = (footnotesize . fromLaTeX . TeXRaw) "CAM"
