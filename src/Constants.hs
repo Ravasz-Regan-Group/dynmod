@@ -1,165 +1,322 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Constants ( svgColors
+                 , svgLocalColors
                  , rws
                  , nTDesc
                  , lTDesc
                  , lEDesc
                  ) where
 
-import Types
+import Types.DMModel
 import qualified Data.Text as T
+import qualified Data.Colour as C
+import qualified Data.Colour.Names as CN
 
 
 -- SVG Color Names:
 svgColors :: [T.Text]
-svgColors = ["aliceblue"
- ,"antiquewhite"
- ,"aqua"
- ,"aquamarine"
- ,"azure"
- ,"beige"
- ,"bisque"
- ,"black"
- ,"blanchedalmond"
- ,"blue"
- ,"blueviolet"
- ,"brown"
- ,"burlywood"
- ,"cadetblue"
- ,"chartreuse"
- ,"chocolate"
- ,"coral"
- ,"cornflowerblue"
- ,"cornsilk"
- ,"crimson"
- ,"cyan"
- ,"darkblue"
- ,"darkcyan"
- ,"darkgoldenrod"
- ,"darkgray"
- ,"darkgreen"
- ,"darkgrey"
- ,"darkkhaki"
- ,"darkmagenta"
- ,"darkolivegreen"
- ,"darkorange"
- ,"darkorchid"
- ,"darkred"
- ,"darksalmon"
- ,"darkseagreen"
- ,"darkslateblue"
- ,"darkslategray"
- ,"darkslategrey"
- ,"darkturquoise"
- ,"darkviolet"
- ,"deeppink"
- ,"deepskyblue"
- ,"dimgray"
- ,"dimgrey"
- ,"dodgerblue"
- ,"firebrick"
- ,"floralwhite"
- ,"forestgreen"
- ,"fuchsia"
- ,"gainsboro"
- ,"ghostwhite"
- ,"gold"
- ,"goldenrod"
- ,"gray"
- ,"grey"
- ,"green"
- ,"greenyellow"
- ,"honeydew"
- ,"hotpink"
- ,"indianred"
- ,"indigo"
- ,"ivory"
- ,"khaki"
- ,"lavender"
- ,"lavenderblush"
- ,"lawngreen"
- ,"lemonchiffon"
- ,"lightblue"
- ,"lightcoral"
- ,"lightcyan"
- ,"lightgoldenrodyellow"
- ,"lightgray"
- ,"lightgreen"
- ,"lightgrey"
- ,"lightpink"
- ,"lightsalmon"
- ,"lightseagreen"
- ,"lightskyblue"
- ,"lightslategray"
- ,"lightslategrey"
- ,"lightsteelblue"
- ,"lightyellow"
- ,"lime"
- ,"limegreen"
- ,"linen"
- ,"magenta"
- ,"maroon"
- ,"mediumaquamarine"
- ,"mediumblue"
- ,"mediumorchid"
- ,"mediumpurple"
- ,"mediumseagreen"
- ,"mediumslateblue"
- ,"mediumspringgreen"
- ,"mediumturquoise"
- ,"mediumvioletred"
- ,"midnightblue"
- ,"mintcream"
- ,"mistyrose"
- ,"moccasin"
- ,"navajowhite"
- ,"navy"
- ,"oldlace"
- ,"olive"
- ,"olivedrab"
- ,"orange"
- ,"orangered"
- ,"orchid"
- ,"palegoldenrod"
- ,"palegreen"
- ,"paleturquoise"
- ,"palevioletred"
- ,"papayawhip"
- ,"peachpuff"
- ,"peru"
- ,"pink"
- ,"plum"
- ,"powderblue"
- ,"purple"
- ,"red"
- ,"rosybrown"
- ,"royalblue"
- ,"saddlebrown"
- ,"salmon"
- ,"sandybrown"
- ,"seagreen"
- ,"seashell"
- ,"sienna"
- ,"silver"
- ,"skyblue"
- ,"slateblue"
- ,"slategray"
- ,"slategrey"
- ,"snow"
- ,"springgreen"
- ,"steelblue"
- ,"tan"
- ,"teal"
- ,"thistle"
- ,"tomato"
- ,"turquoise"
- ,"violet"
- ,"wheat"
- ,"white"
- ,"whitesmoke"
- ,"yellow"
- ,"yellowgreen"]
+svgColors = [
+   "aliceblue"
+ , "antiquewhite"
+ , "aqua"
+ , "aquamarine"
+ , "azure"
+ , "beige"
+ , "bisque"
+ , "black"
+ , "blanchedalmond"
+ , "blue"
+ , "blueviolet"
+ , "brown"
+ , "burlywood"
+ , "cadetblue"
+ , "chartreuse"
+ , "chocolate"
+ , "coral"
+ , "cornflowerblue"
+ , "cornsilk"
+ , "crimson"
+ , "cyan"
+ , "darkblue"
+ , "darkcyan"
+ , "darkgoldenrod"
+ , "darkgray"
+ , "darkgreen"
+ , "darkgrey"
+ , "darkkhaki"
+ , "darkmagenta"
+ , "darkolivegreen"
+ , "darkorange"
+ , "darkorchid"
+ , "darkred"
+ , "darksalmon"
+ , "darkseagreen"
+ , "darkslateblue"
+ , "darkslategray"
+ , "darkslategrey"
+ , "darkturquoise"
+ , "darkviolet"
+ , "deeppink"
+ , "deepskyblue"
+ , "dimgray"
+ , "dimgrey"
+ , "dodgerblue"
+ , "firebrick"
+ , "floralwhite"
+ , "forestgreen"
+ , "fuchsia"
+ , "gainsboro"
+ , "ghostwhite"
+ , "gold"
+ , "goldenrod"
+ , "gray"
+ , "grey"
+ , "green"
+ , "greenyellow"
+ , "honeydew"
+ , "hotpink"
+ , "indianred"
+ , "indigo"
+ , "ivory"
+ , "khaki"
+ , "lavender"
+ , "lavenderblush"
+ , "lawngreen"
+ , "lemonchiffon"
+ , "lightblue"
+ , "lightcoral"
+ , "lightcyan"
+ , "lightgoldenrodyellow"
+ , "lightgray"
+ , "lightgreen"
+ , "lightgrey"
+ , "lightpink"
+ , "lightsalmon"
+ , "lightseagreen"
+ , "lightskyblue"
+ , "lightslategray"
+ , "lightslategrey"
+ , "lightsteelblue"
+ , "lightyellow"
+ , "lime"
+ , "limegreen"
+ , "linen"
+ , "magenta"
+ , "maroon"
+ , "mediumaquamarine"
+ , "mediumblue"
+ , "mediumorchid"
+ , "mediumpurple"
+ , "mediumseagreen"
+ , "mediumslateblue"
+ , "mediumspringgreen"
+ , "mediumturquoise"
+ , "mediumvioletred"
+ , "midnightblue"
+ , "mintcream"
+ , "mistyrose"
+ , "moccasin"
+ , "navajowhite"
+ , "navy"
+ , "oldlace"
+ , "olive"
+ , "olivedrab"
+ , "orange"
+ , "orangered"
+ , "orchid"
+ , "palegoldenrod"
+ , "palegreen"
+ , "paleturquoise"
+ , "palevioletred"
+ , "papayawhip"
+ , "peachpuff"
+ , "peru"
+ , "pink"
+ , "plum"
+ , "powderblue"
+ , "purple"
+ , "red"
+ , "rosybrown"
+ , "royalblue"
+ , "saddlebrown"
+ , "salmon"
+ , "sandybrown"
+ , "seagreen"
+ , "seashell"
+ , "sienna"
+ , "silver"
+ , "skyblue"
+ , "slateblue"
+ , "slategray"
+ , "slategrey"
+ , "snow"
+ , "springgreen"
+ , "steelblue"
+ , "tan"
+ , "teal"
+ , "thistle"
+ , "tomato"
+ , "turquoise"
+ , "violet"
+ , "wheat"
+ , "white"
+ , "whitesmoke"
+ , "yellow"
+ , "yellowgreen"
+ ]
+
+-- SVG Colors:
+svgLocalColors :: [C.Colour Double]
+svgLocalColors = [
+   CN.aliceblue
+ , CN.antiquewhite
+ , CN.aqua
+ , CN.aquamarine
+ , CN.azure
+ , CN.beige
+ , CN.bisque
+ , CN.black
+ , CN.blanchedalmond
+ , CN.blue
+ , CN.blueviolet
+ , CN.brown
+ , CN.burlywood
+ , CN.cadetblue
+ , CN.chartreuse
+ , CN.chocolate
+ , CN.coral
+ , CN.cornflowerblue
+ , CN.cornsilk
+ , CN.crimson
+ , CN.cyan
+ , CN.darkblue
+ , CN.darkcyan
+ , CN.darkgoldenrod
+ , CN.darkgray
+ , CN.darkgreen
+ , CN.darkgrey
+ , CN.darkkhaki
+ , CN.darkmagenta
+ , CN.darkolivegreen
+ , CN.darkorange
+ , CN.darkorchid
+ , CN.darkred
+ , CN.darksalmon
+ , CN.darkseagreen
+ , CN.darkslateblue
+ , CN.darkslategray
+ , CN.darkslategrey
+ , CN.darkturquoise
+ , CN.darkviolet
+ , CN.deeppink
+ , CN.deepskyblue
+ , CN.dimgray
+ , CN.dimgrey
+ , CN.dodgerblue
+ , CN.firebrick
+ , CN.floralwhite
+ , CN.forestgreen
+ , CN.fuchsia
+ , CN.gainsboro
+ , CN.ghostwhite
+ , CN.gold
+ , CN.goldenrod
+ , CN.gray
+ , CN.grey
+ , CN.green
+ , CN.greenyellow
+ , CN.honeydew
+ , CN.hotpink
+ , CN.indianred
+ , CN.indigo
+ , CN.ivory
+ , CN.khaki
+ , CN.lavender
+ , CN.lavenderblush
+ , CN.lawngreen
+ , CN.lemonchiffon
+ , CN.lightblue
+ , CN.lightcoral
+ , CN.lightcyan
+ , CN.lightgoldenrodyellow
+ , CN.lightgray
+ , CN.lightgreen
+ , CN.lightgrey
+ , CN.lightpink
+ , CN.lightsalmon
+ , CN.lightseagreen
+ , CN.lightskyblue
+ , CN.lightslategray
+ , CN.lightslategrey
+ , CN.lightsteelblue
+ , CN.lightyellow
+ , CN.lime
+ , CN.limegreen
+ , CN.linen
+ , CN.magenta
+ , CN.maroon
+ , CN.mediumaquamarine
+ , CN.mediumblue
+ , CN.mediumorchid
+ , CN.mediumpurple
+ , CN.mediumseagreen
+ , CN.mediumslateblue
+ , CN.mediumspringgreen
+ , CN.mediumturquoise
+ , CN.mediumvioletred
+ , CN.midnightblue
+ , CN.mintcream
+ , CN.mistyrose
+ , CN.moccasin
+ , CN.navajowhite
+ , CN.navy
+ , CN.oldlace
+ , CN.olive
+ , CN.olivedrab
+ , CN.orange
+ , CN.orangered
+ , CN.orchid
+ , CN.palegoldenrod
+ , CN.palegreen
+ , CN.paleturquoise
+ , CN.palevioletred
+ , CN.papayawhip
+ , CN.peachpuff
+ , CN.peru
+ , CN.pink
+ , CN.plum
+ , CN.powderblue
+ , CN.purple
+ , CN.red
+ , CN.rosybrown
+ , CN.royalblue
+ , CN.saddlebrown
+ , CN.salmon
+ , CN.sandybrown
+ , CN.seagreen
+ , CN.seashell
+ , CN.sienna
+ , CN.silver
+ , CN.skyblue
+ , CN.slateblue
+ , CN.slategray
+ , CN.slategrey
+ , CN.snow
+ , CN.springgreen
+ , CN.steelblue
+ , CN.tan
+ , CN.teal
+ , CN.thistle
+ , CN.tomato
+ , CN.turquoise
+ , CN.violet
+ , CN.wheat
+ , CN.white
+ , CN.whitesmoke
+ , CN.yellow
+ , CN.yellowgreen
+ ]
 
 rws :: [T.Text]
 rws = [ "ModelName"
@@ -228,6 +385,7 @@ nTDesc GAP = "GTPase-activating protein (also called GTPase-accelerating protein
 nTDesc GTPase = "GTPase enzymes that hydrolyze ATP to ADP."
 nTDesc Enzyme = "Enzyme that does not fit the more specific enzyme categories listed above."
 nTDesc Protein = "Regulatory protein that does not fit any of the more specific classifications listed above."
+nTDesc Membrane_Potential = "A relative measure of membrane potential across a biological membrane, generally indicating whether this potential is within the  normal range, or abnormally low / high in a way that affects other regulatory processes."
 
 -- Official descriptions of the various LinkTypes
 lTDesc :: LinkType -> T.Text

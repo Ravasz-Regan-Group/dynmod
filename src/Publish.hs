@@ -2,7 +2,7 @@
 
 module Publish (mkPublish, prettyPublish) where
 
-import Types
+import Types.DMModel
 import Utilities
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Graph.Inductive as Gr
@@ -28,16 +28,16 @@ prettyPublish (Failure errs) = stripped
             , lEffectPrep
             , citePrep
             ] sErrs
-        stripped = sPShowNoColor (filter (not. selecter) sErrs)
+        stripped = sPShowNoColor (filter (not . selecter) sErrs)
 --         stripLELTNTCE = filter (not . isCiteError) stripLELTNT
 --         stripLELTNT = filter (not . isUndefinedEffectType) stripLTNT
 --         stripLTNT = filter (not . isUndefinedLinkType) stripNT
 --         stripNT = filter (not . isUndefinedNodeType) sErrs
         selecter = or . sequenceA [ isUndefinedNodeType
-                                 , isUndefinedLinkType
-                                 , isUndefinedEffectType
-                                 , isCiteError
-                                 ]
+                                  , isUndefinedLinkType
+                                  , isUndefinedEffectType
+                                  , isCiteError
+                                  ]
         sErrs = L.sort errs
 
 

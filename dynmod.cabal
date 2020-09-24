@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 363d8f04b4f5a7d44724ced0e92bd15b1473aa2dadde406569a4853a83c333e9
+-- hash: c6e9b7d51388900b3ab0b39f77322b8bfa3abd7685f69a386b279e74aa99bbc6
 
 name:           dynmod
-version:        0.2.6.2
+version:        0.3.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -28,12 +28,16 @@ source-repository head
 library
   exposed-modules:
       Parse.DMMS
-      Types
+      Types.DMModel
+      Parse.GML
+      Types.GML
+      Visualize
       ReadWrite
       Utilities
       Constants
       Publish
       SuppMat
+      Render
       Text.LaTeX.Packages.Booktabs
       Text.LaTeX.Packages.ColorTbl
   other-modules:
@@ -72,7 +76,7 @@ executable dynmod
       Paths_dynmod
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -O2
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -O2 -Wall
   build-depends:
       HaTeX
     , base >=4.7 && <5

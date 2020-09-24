@@ -4,6 +4,7 @@ module Utilities where
 
 import Data.Validation
 import qualified Data.HashSet as Set
+import qualified Data.HashMap.Strict as Map
 import qualified Data.Hashable as Hash
 import qualified Text.Pretty.Simple as PS
 import qualified Data.Text as T
@@ -113,3 +114,17 @@ thdOf4 (_, _, n, _) = n
 
 fthOf4 :: (a, b, c, d) -> d
 fthOf4 (_, _, _, o) = o
+
+concatPair :: Monoid a => (a, a) -> a
+concatPair (x, y) = x <> y
+
+differenceWithKey :: (Eq k, Hash.Hashable k) =>
+                                        (k -> v -> w -> Maybe v)
+                                        -> Map.HashMap k v
+                                        -> Map.HashMap k w
+                                        -> Map.HashMap k v
+differenceWithKey f a b = Map.foldlWithKey' go Map.empty a
+  where
+    go m k v = case Map.lookup k b of
+                 Nothing -> Map.insert k v m
+                 Just w  -> maybe m (\y -> Map.insert k y m) (f k v w)

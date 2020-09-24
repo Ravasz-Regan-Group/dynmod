@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.2.6.2
+version:             0.3.0.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -27,12 +27,16 @@ library:
   - src
   exposed-modules:
   - Parse.DMMS
-  - Types
+  - Types.DMModel
+  - Parse.GML
+  - Types.GML
+  - Visualize
   - ReadWrite
   - Utilities
   - Constants
   - Publish
   - SuppMat
+  - Render
   - Text.LaTeX.Packages.Booktabs
   - Text.LaTeX.Packages.ColorTbl
   ghc-options:
@@ -69,6 +73,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N3
     - -O2
+    - -Wall
     dependencies:
     - dynmod
     - megaparsec

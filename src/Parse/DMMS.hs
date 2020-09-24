@@ -5,7 +5,7 @@ module Parse.DMMS
     ( modelFileParse ) 
       where
 
-import Types
+import Types.DMModel
 import Constants
 import Utilities
 import qualified Data.Text as T
@@ -27,6 +27,7 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Scientific
 import qualified Data.List as L
 import Data.Maybe (fromJust)
+import qualified Data.Bifunctor as B
 import Data.Void
 import Data.Char (isSeparator)
 import Control.Monad (void)
@@ -144,8 +145,7 @@ modelFileParse = (,) <$> dmmsVersion <*> modelCiteParse <* eof
 dmmsVersion :: Parser FileFormatVersion
 dmmsVersion = versionParse "FormatVersion"
 
--- Parse a DMModel and CitationDictionary, and then make sure that the citations
--- in the former exist in the later. 
+-- Parse a DMModel and CitationDictionary. 
 modelCiteParse :: Parser (DMModel, CitationDictionary)
 modelCiteParse = ((,) <$> modelParse <*> citeDictParse)
 
@@ -164,8 +164,44 @@ modelParse = between (symbol "Model{") (symbol "Model}")
             )
         )
         <|> (Fine <$> modelLayerParse)
-    )
-    >>= nodeDupeCheck
+    ) >>= nodeDupeCheck >>= nodeDifferentiate
+
+-- Return a DMModel whose Nodes are unique in all layers. This is useful when
+-- doing anything related to the ModelMappings, since by definition they work
+-- with Gr.LNodes from different Gr.Gr DMNode DMLink graphs. 
+nodeDifferentiate :: DMModel -> Parser DMModel
+nodeDifferentiate dmm@(Fine _) = return dmm
+nodeDifferentiate (LayerBinding mm ml dm) = return $ go mm ml dm 0
+    where
+        go mapping layer (LayerBinding mm' ml' dm') offSet =
+          LayerBinding mapping shiftedLayer $ go mm' ml' dm' newOffset
+            where
+                newOffset = 1 + ((maximum . Gr.nodes) shiftedGraph)
+                shiftedLayer = ModelLayer shiftedGraph meta
+                shiftedGraph = indexShift offSet graph
+                graph = modelGraph layer
+                meta = modelMeta layer
+        go mapping layer (Fine ml') offSet =
+          LayerBinding mapping shiftedCoarseL $ Fine shiftedFineL
+            where
+                shiftedFineL = ModelLayer shiftedFineG fMeta
+                shiftedFineG = indexShift fineOffset fGraph
+                fGraph = modelGraph ml'
+                fMeta = modelMeta ml'
+                fineOffset = 1 + ((maximum . Gr.nodes) shiftedCoarseG)
+                shiftedCoarseL = ModelLayer shiftedCoarseG cMeta
+                shiftedCoarseG = indexShift offSet cGraph
+                cGraph = modelGraph layer
+                cMeta = modelMeta layer
+
+indexShift :: Int -> Gr.Gr a b -> Gr.Gr a b
+indexShift offSet g = Gr.mkGraph sNodes sEdges
+    where
+        sEdges = ((\i (x, y, z) -> (x + i, y + i, z)) offSet) <$> edges
+        sNodes = (B.first (+ offSet)) <$> nodes
+        edges  = Gr.labEdges g
+        nodes = Gr.labNodes g
+
 
 -- Check that ALL NodeNames in the entire parsed DMModel are unique
 nodeDupeCheck :: DMModel -> Parser DMModel
@@ -421,35 +457,36 @@ nodeTypeParse :: Parser NodeType
 nodeTypeParse = lexeme $ rword "NodeType" >> 
     (try
         (colon >>
-            (   Cell             <$ rword "Cell"
-            <|> DM_Switch        <$ rword "DM_Switch"
-            <|> Connector        <$ rword "Connector"
-            <|> Environment      <$ rword "Environment"
-            <|> Process          <$ rword "Process"
-            <|> Macro_Structure  <$ rword "Macro_Structure"
-            <|> Metabolite       <$ rword "Metabolite"
-            <|> MRNA             <$ rword "MRNA"
-            <|> MicroRNA         <$ rword "MicroRNA"
+            (   Cell               <$ rword "Cell"
+            <|> DM_Switch          <$ rword "DM_Switch"
+            <|> Connector          <$ rword "Connector"
+            <|> Environment        <$ rword "Environment"
+            <|> Process            <$ rword "Process"
+            <|> Macro_Structure    <$ rword "Macro_Structure"
+            <|> Metabolite         <$ rword "Metabolite"
+            <|> MRNA               <$ rword "MRNA"
+            <|> MicroRNA           <$ rword "MicroRNA"
 --          This must come before Protein, otherwise you will match on
 --          that and then get confused
-            <|> Protein_Complex  <$ rword "Protein_Complex"
-            <|> Receptor         <$ rword "Receptor"
-            <|> Adaptor_Protein  <$ rword "Adaptor_Protein"
-            <|> Secreted_Protein <$ rword "Secreted_Protein"
-            <|> TF_Protein       <$ rword "TF_Protein"
-            <|> Kinase           <$ rword "Kinase"
-            <|> Phosphatase      <$ rword "Phosphatase"
-            <|> Ubiquitin_Ligase <$ rword "Ubiquitin_Ligase"
-            <|> Protease         <$ rword "Protease"
-            <|> DNase            <$ rword "DNase"
-            <|> CAM              <$ rword "CAM"
-            <|> CDK              <$ rword "CDK"
-            <|> CDKI             <$ rword "CDKI"
-            <|> GEF              <$ rword "GEF"
-            <|> GAP              <$ rword "GAP"
-            <|> GTPase           <$ rword "GTPase"
-            <|> Enzyme           <$ rword "Enzyme"
-            <|> Protein          <$ rword "Protein"
+            <|> Protein_Complex    <$ rword "Protein_Complex"
+            <|> Receptor           <$ rword "Receptor"
+            <|> Adaptor_Protein    <$ rword "Adaptor_Protein"
+            <|> Secreted_Protein   <$ rword "Secreted_Protein"
+            <|> TF_Protein         <$ rword "TF_Protein"
+            <|> Kinase             <$ rword "Kinase"
+            <|> Phosphatase        <$ rword "Phosphatase"
+            <|> Ubiquitin_Ligase   <$ rword "Ubiquitin_Ligase"
+            <|> Protease           <$ rword "Protease"
+            <|> DNase              <$ rword "DNase"
+            <|> CAM                <$ rword "CAM"
+            <|> CDK                <$ rword "CDK"
+            <|> CDKI               <$ rword "CDKI"
+            <|> GEF                <$ rword "GEF"
+            <|> GAP                <$ rword "GAP"
+            <|> GTPase             <$ rword "GTPase"
+            <|> Enzyme             <$ rword "Enzyme"
+            <|> Protein            <$ rword "Protein"
+            <|> Membrane_Potential <$ rword "Membrane_Potential"
             )
         ) 
     <|>
@@ -551,9 +588,9 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
     Success (lGate, tGate) -> case isSubset lpInputs tpInputs of
         False -> fail $ show $ TableExprStateMismatch $
                         T.unlines (tGatePrint:(deleteMult tpInputs lpInputs))
-        True -> case accOutputMis tOutputs lOutputs of
+        True -> case accOutputMis tOutputs lOutputs of 
             errs@(_:_) -> fail $ (T.unpack . T.replace (T.singleton '\t') "  ")
-                                $ "TableExprOuputMismatch (Table, Logical): \n"
+                                $ "TableExprOutputMismatch (Table, Logical): \n"
                                     <> T.unlines (tGatePrint:errs)
             [] | lName == tName -> return lGate'
                | otherwise -> fail $ show $ TableDisNameMismatch (tNm, lName)
@@ -566,26 +603,25 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             tpInputs = T.init <$> tOutputs
             lpInputs = T.init <$> lOutputs
             tOutputs = L.sort (prettyGateEval tGate <$> tCombos)
-            -- # SCC tOutputs #-}
---          Evaluate the logical gate with the table gate order, to make the
---          pretty representations match. This is OK, since we have already made
---          sure that the input nodes are the same up to permutation. 
-            lOutputs = L.sort (prettyGateEval lGate' <$> lCombos)
+--          Evaluate the logical gate with the table gate order and inputs, to
+--          make the pretty representations match. This is OK, since we have
+--          already made sure that the input nodes are the same up to
+--          permutation, and that the logical inputs are a subset of the table
+--          inputs. 
+            lOutputs = L.sort (prettyGateEval lGate' <$> tCombos)
             tCombos = gateCombinations tExprs
-            lCombos = gateCombinations lExprs
+--             lCombos = gateCombinations lExprs
             tExprs = snd <$> (gateAssigns tGate)
-            lExprs = snd <$> (gateAssigns lGate)
+--             lExprs = snd <$> (gateAssigns lGate)
             lNodeName = gNodeName lGate
             lGateAssigns = gateAssigns lGate
             tOrder = gateOrder tGate
+--          The logical gate, with the table node order
             lGate' = NodeGate lNodeName lGateAssigns tOrder
 tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
--- # SCC tableDisCheck #-}
 
--- When the inputs of a logical gate are a subset of its corresponding table
--- we want to accumulate from the two PrettyGateOutput lists those rows where
--- both inputs exist, but whose outputs to that input are different. Call as:
--- accOutputMis tOutput lOutput
+-- We want to accumulate from the two PrettyGateOutput lists those rows whose
+-- outputs to that input are different. Call as: accOutputMis tOutput lOutput
 accOutputMis :: [PrettyGateOutput] -> [PrettyGateOutput] -> [T.Text]
 accOutputMis ts ls = L.foldl' go [] tSplits
     where
@@ -601,12 +637,11 @@ accOutputMis ts ls = L.foldl' go [] tSplits
                                     <> ")"]
         tSplits = zip (T.init <$> ts) (T.last <$> ts)
         lSplits = zip (T.init <$> ls) (T.last <$> ls)
--- # SCC accOutputMis #-}
 
 
 -- Check to make sure that the gateOrders of the parsed pairs of gates are
--- identical up to permutation. If they are, set them both to be the order of
--- table gate. If not, error out and return the the two NodeName Lists. 
+-- identical up to permutation. If they are, return them. 
+-- If not, error out and return the two NodeName Lists. 
 gateOrdCheck :: LogicalNodeGate 
              -> TableNodeGate 
              -> Validation GateInvalid (LogicalNodeGate, TableNodeGate)

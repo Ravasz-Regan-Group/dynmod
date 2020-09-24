@@ -1,10 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Types where
+module Types.DMModel where
 --     ( DMModel(..)
 --     , ModelMeta(..)
 --     , FileFormatVersion
---     , PackageInfo(..)
 --     ) where
 
 import Utilities
@@ -19,8 +18,8 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
-import qualified Data.Map.Monoidal.Strict as MMap
 import qualified Data.HashSet as Set
+import qualified Data.Map.Monoidal.Strict as MMap
 import Data.Validation
 import qualified Data.List.Unique as Uniq
 import qualified Data.Versions as Ver
@@ -70,6 +69,7 @@ data DMLink = DMLink { linkEffect :: LinkEffect
 data DMNode = DMNode { nodeMeta :: NodeMeta
                      , nodeGate :: NodeGate }
                        deriving (Show, Eq)
+
 instance Ord DMNode where
     compare x y = compare (nodeMeta x) (nodeMeta y)
 
@@ -160,37 +160,39 @@ data NodeType = Undefined_NT
               | GTPase
               | Enzyme
               | Protein
+              | Membrane_Potential
                 deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
-    texy Undefined_NT     = texy ("Undefined_NT" :: T.Text)
-    texy Cell             = (footnotesize . fromLaTeX . TeXRaw) "Cell"
-    texy DM_Switch        = (footnotesize . fromLaTeX . TeXRaw) "DM"
-    texy Connector        = (footnotesize . fromLaTeX . TeXRaw) "Conn"
-    texy Environment      = (footnotesize . fromLaTeX . TeXRaw) "Env"
-    texy Process          = (footnotesize . fromLaTeX . TeXRaw) "Proc"
-    texy Macro_Structure  = (footnotesize . fromLaTeX . TeXRaw) "MSt"
-    texy Metabolite       = (footnotesize . fromLaTeX . TeXRaw) "Met"
-    texy MRNA             = (footnotesize . fromLaTeX . TeXRaw) "mRNA"
-    texy MicroRNA         = (footnotesize . fromLaTeX . TeXRaw) "miR"
-    texy Protein_Complex  = (footnotesize . fromLaTeX . TeXRaw) "PC"
-    texy Receptor         = (footnotesize . fromLaTeX . TeXRaw) "Rec"
-    texy Adaptor_Protein  = (footnotesize . fromLaTeX . TeXRaw) "Adap"
-    texy Secreted_Protein = (footnotesize . fromLaTeX . TeXRaw) "Secr"
-    texy TF_Protein       = (footnotesize . fromLaTeX . TeXRaw) "TF"
-    texy Kinase           = (footnotesize . fromLaTeX . TeXRaw) "K"
-    texy Phosphatase      = (footnotesize . fromLaTeX . TeXRaw) "Ph"
-    texy Ubiquitin_Ligase = (footnotesize . fromLaTeX . TeXRaw) "UbL"
-    texy Protease         = (footnotesize . fromLaTeX . TeXRaw) "PTase"
-    texy DNase            = (footnotesize . fromLaTeX . TeXRaw) "DNase"
-    texy CAM              = (footnotesize . fromLaTeX . TeXRaw) "CAM"
-    texy CDK              = (footnotesize . fromLaTeX . TeXRaw) "CDK"
-    texy CDKI             = (footnotesize . fromLaTeX . TeXRaw) "CDKI"
-    texy GEF              = (footnotesize . fromLaTeX . TeXRaw) "GEF"
-    texy GAP              = (footnotesize . fromLaTeX . TeXRaw) "GAP"
-    texy GTPase           = (footnotesize . fromLaTeX . TeXRaw) "GTPa"
-    texy Enzyme           = (footnotesize . fromLaTeX . TeXRaw) "Enz"
-    texy Protein          = (footnotesize . fromLaTeX . TeXRaw) "Prot"
+    texy Undefined_NT       = texy ("Undefined_NT" :: T.Text)
+    texy Cell               = (footnotesize . fromLaTeX . TeXRaw) "Cell"
+    texy DM_Switch          = (footnotesize . fromLaTeX . TeXRaw) "DM"
+    texy Connector          = (footnotesize . fromLaTeX . TeXRaw) "Conn"
+    texy Environment        = (footnotesize . fromLaTeX . TeXRaw) "Env"
+    texy Process            = (footnotesize . fromLaTeX . TeXRaw) "Proc"
+    texy Macro_Structure    = (footnotesize . fromLaTeX . TeXRaw) "MSt"
+    texy Metabolite         = (footnotesize . fromLaTeX . TeXRaw) "Met"
+    texy MRNA               = (footnotesize . fromLaTeX . TeXRaw) "mRNA"
+    texy MicroRNA           = (footnotesize . fromLaTeX . TeXRaw) "miR"
+    texy Protein_Complex    = (footnotesize . fromLaTeX . TeXRaw) "PC"
+    texy Receptor           = (footnotesize . fromLaTeX . TeXRaw) "Rec"
+    texy Adaptor_Protein    = (footnotesize . fromLaTeX . TeXRaw) "Adap"
+    texy Secreted_Protein   = (footnotesize . fromLaTeX . TeXRaw) "Secr"
+    texy TF_Protein         = (footnotesize . fromLaTeX . TeXRaw) "TF"
+    texy Kinase             = (footnotesize . fromLaTeX . TeXRaw) "K"
+    texy Phosphatase        = (footnotesize . fromLaTeX . TeXRaw) "Ph"
+    texy Ubiquitin_Ligase   = (footnotesize . fromLaTeX . TeXRaw) "UbL"
+    texy Protease           = (footnotesize . fromLaTeX . TeXRaw) "PTase"
+    texy DNase              = (footnotesize . fromLaTeX . TeXRaw) "DNase"
+    texy CAM                = (footnotesize . fromLaTeX . TeXRaw) "CAM"
+    texy CDK                = (footnotesize . fromLaTeX . TeXRaw) "CDK"
+    texy CDKI               = (footnotesize . fromLaTeX . TeXRaw) "CDKI"
+    texy GEF                = (footnotesize . fromLaTeX . TeXRaw) "GEF"
+    texy GAP                = (footnotesize . fromLaTeX . TeXRaw) "GAP"
+    texy GTPase             = (footnotesize . fromLaTeX . TeXRaw) "GTPa"
+    texy Enzyme             = (footnotesize . fromLaTeX . TeXRaw) "Enz"
+    texy Protein            = (footnotesize . fromLaTeX . TeXRaw) "Prot"
+    texy Membrane_Potential = (footnotesize . fromLaTeX . TeXRaw) "MP"
 
 data LinkEffect = Undefined_LE
                 | Activation
@@ -273,6 +275,11 @@ data NodeCondition = NodeCondition { currentState :: NodeState
 
 type TransitionType = T.Text
 
+-- When we render a parsed DMModel back to T.Text, to write a dmms file, it is
+-- convenient to have these, since that is how they are organized in the .dmms.
+type DMMSNode = (DMNode, [DMMSLink])
+type DMMSLink = (NodeName, DMLink)
+
 type CitationDictionary = Map.HashMap BibTeXKey BibTeXEntry
 type BibTeXKey = T.Text
 
@@ -302,7 +309,7 @@ instance Show NodeExpr where
     show (Binary Or expr1 expr2) =
         (exprPars show expr1) ++ " or " ++ (exprPars show expr2)
 
--- NodeExpr should only be wrapped in parenthesis if they are not single terms. 
+-- NodeExpr should only be wrapped in parenthesis if they are compound terms. 
 exprPars :: (IsString a, Semigroup a) => (NodeExpr -> a) -> NodeExpr -> a
 exprPars f ex@(GateLit _) = f ex
 exprPars f ex@(GateConst _ _) = f ex
@@ -313,7 +320,7 @@ exprPars f ex@(Binary Or _ _) = "(" <> f ex <> ")"
 data BinOp
   = And
   | Or
-  deriving (Show, Eq)
+  deriving (Show, Eq)        
 
 -- Evaluate a node expression
 eval :: NodeExpr -> ExprInput -> Maybe Bool
@@ -325,15 +332,6 @@ eval (Binary Or expr1 expr2) ns =
 eval (GateConst nName nState) ns =
     (nState ==) <$> (Map.lookup nName ns)
 eval (GateLit b) _ =  Just b
--- # SCC eval #-}
--- eval expr nodeStates = eval' expr
---   where
---     eval' (Not expr1) = not <$> (eval' expr1)
---     eval' (Binary And expr1 expr2) = liftA2 (&&) (eval' expr1) (eval' expr2)
---     eval' (Binary Or expr1 expr2) = liftA2 (||) (eval' expr1) (eval' expr2)
---     eval' (GateConst nName nState)
---       = (nState ==) <$> (Map.lookup nName nodeStates)
---     eval' (GateLit b) = Just b
 
 -- Evaluate a gate against a given input HashMap
 gateEval :: NodeGate -> ExprInput -> Maybe NodeState
@@ -345,7 +343,6 @@ gateEval nGate nInput
         exprs = snd <$> assigns
         output = (flip eval nInput) <$> exprs
         areInputsSufficient = not $ elem Nothing output
--- # SCC gateEval #-}
 
 -- Evaluate a gate against a given input HashMap, and return the result as tab
 -- separated Text formatted integers in proper gateOrder order. Use only on
@@ -360,7 +357,6 @@ prettyGateEval nGate nInput = prettify output
         orderedInput = fromJust <$> (sequenceA (Map.lookup <$> order) nInput)
         output = fromJust $ gateEval nGate nInput
         order = gateOrder nGate
--- # SCC prettyGateEval #-}
 
 type PrettyGateOutput = T.Text
 type LayerTTFiles = (T.Text, [(NodeName, T.Text)])
@@ -369,7 +365,7 @@ type ModelTTFiles = [LayerTTFiles]
 -- Generate T.Texts for TT files (csv files with a truth table in each) from the
 -- nodes in a ModelLayer, along with the name of that layer and names of the
 -- nodes. 
-layerTTs :: ModelLayer -> (T.Text, [(NodeName, T.Text)])
+layerTTs :: ModelLayer -> LayerTTFiles
 layerTTs mL = (mName, tablesWNames)
     where
         mName = (modelName . modelMeta) mL
@@ -457,7 +453,7 @@ data GateInvalid = InconsistentNames
                  | ContradictoryExprSet ContradictoryExprSet
                  | TableExprInNodeMismatch TableExprInNodeMismatch
                  | TableExprStateMismatch TableExprStateMismatch
-                 | TableExprOuputMismatch TableExprOuputMismatch
+                 | TableExprOutputMismatch TableExprOutputMismatch
                  | TableDisNameMismatch TableDisNameMismatch
     deriving (Show, Eq)
 
@@ -469,7 +465,7 @@ type TableExprMismatch = (([ExprInput], [Maybe NodeState])
                               , ([ExprInput], [Maybe NodeState]))
 type TableExprInNodeMismatch = ([NodeName], [NodeName])
 type TableExprStateMismatch = T.Text
-type TableExprOuputMismatch = (T.Text, [NodeStateAssign])
+type TableExprOutputMismatch = (T.Text, [NodeStateAssign])
 type TableDisNameMismatch = (NodeName, NodeName)
 
 data TableInvalid = IncompleteOrOversizedRow
@@ -630,7 +626,7 @@ nodeNamesOK names = case allTheSame names of
 -- Check that all node states are assigned in order, without 0 or duplicates. 
 
 stateAssignsOK :: [NodeStateAssign]
-                -> Validation [GateInvalid] [NodeStateAssign]
+               -> Validation [GateInvalid] [NodeStateAssign]
 stateAssignsOK assigns
     | (allGood ns', errorRollup testResults)
         == (True, []) = Success $ zeroth:assigns
@@ -733,7 +729,7 @@ noZeros ns = let st = states ns in
 -- Check that there are no missing (or, equivalently, too high) state 
 -- assignments. 
 noMissingOrTooHigh :: [NodeStateAssign] 
-                    -> Validation GateInvalid [NodeStateAssign] 
+                   -> Validation GateInvalid [NodeStateAssign] 
 noMissingOrTooHigh ns = let st = states ns
 --                          Remove any dupes and any assignments below 1. 
 --                          That kind of error will be dealt with separately. 
@@ -762,7 +758,7 @@ isConsistent gAssigns
         gateCombos = gateCombinations gateExprs
 --      These are the outputs from evaluating the expressions that define this
 --      gate against all the inputs that might possibly produce a true output
---      from any of the them. Each of these Lists of Bool should contain exactly
+--      from any of them. Each of these Lists of Bool should contain exactly
 --      one True. Any fewer and something is wrong with the null state (0). Any
 --      more and the gate is internally self-contradictory. 
         gEval gateEx gCombo oPuts = (sequenceA (eval <$> gateEx) gCombo):oPuts
@@ -862,7 +858,6 @@ gateCombinations asns = fmap Map.fromList combosList
     where
         (nNames, nStates) = unzip $ refdNodesStates asns
         combosList = fmap (zip nNames) (sequenceA nStates)
--- # SCC gateCombinations #-}
 
 -- Produces the nodes, and states of those nodes, that are referenced,
 -- (explicitly or otherwise), in a given list of NodeExprs. 
@@ -889,7 +884,6 @@ exprNodes expr' = MMap.map (L.nub . ([0, 1] <>)) $ exprNodes' expr'
 -- each node. The DMModel as a whole will have a [[[ExprInput]]]
 modelCombinations :: DMModel -> [[[ExprInput]]]
 modelCombinations = (layerCombinations <$>) . modelLayers
--- # SCC modelCombinations #-}
 
 -- Generate all the possible inputs sets of a ModelLayer, one [ExprInput] for
 -- each node. 
@@ -900,7 +894,6 @@ layerCombinations mL = fromJust <$> comboLists
         ranges :: LayerRange
         ranges = Map.fromList $ nodeRange <$> nodes
         nodes = layerNodes mL
--- # SCC layerCombinations #-}
 
 -- If we have a LayerRange, this gives the possible inputs to a given node in
 -- that ModelLayer. 
@@ -914,7 +907,6 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         nNames :: [NodeName]
         nNames = fst <$> (refdNodesStates nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
--- # SCC nodeCombinations #-}
 
 -- Extract the names and ranges from a node. 
 nodeRange :: DMNode -> NodeRange
@@ -929,6 +921,16 @@ modelNodes :: DMModel -> [[DMNode]]
 modelNodes (Fine ml) = [layerNodes ml]
 modelNodes (LayerBinding _ mL dmM) = (layerNodes mL) : (modelNodes dmM)
 
+-- Extract all the Gr.LNode DMNodes from a DMModel
+modelNodes' :: DMModel -> [[Gr.LNode DMNode]]
+modelNodes' (Fine ml) = [layerNodes' ml]
+modelNodes' (LayerBinding _ mL dmM) = (layerNodes' mL) : (modelNodes' dmM)
+
+-- Extract all the Gr.LEdge DMLinks from a DMModel
+modelEdges' :: DMModel -> [[Gr.LEdge DMLink]]
+modelEdges' (Fine ml) = [layerEdges' ml]
+modelEdges' (LayerBinding _ mL dmM) = (layerEdges' mL) : (modelEdges' dmM)
+
 -- Extract all the ModelLayers from a DMModel
 modelLayers :: DMModel ->  [ModelLayer]
 modelLayers (Fine mL) = [mL]
@@ -937,6 +939,14 @@ modelLayers (LayerBinding _ mL dmM) = mL : (modelLayers dmM)
 -- Extract the DMNodes from a ModelLayer
 layerNodes :: ModelLayer -> [DMNode]
 layerNodes = (snd <$>) . Gr.labNodes . modelGraph
+
+-- Extract the Gr.LNode DMNodes from a ModelLayer
+layerNodes' :: ModelLayer -> [Gr.LNode DMNode]
+layerNodes' = Gr.labNodes . modelGraph
+
+-- Extract the Gr.LEdge DMLinks from a ModelLayer
+layerEdges' :: ModelLayer -> [Gr.LEdge DMLink]
+layerEdges' = Gr.labEdges . modelGraph
 
 -- Extract all the citation keys from a DMModel, include any ModelPapers. 
 modelCiteKeys :: DMModel -> Set.HashSet BibTeXKey
@@ -962,3 +972,19 @@ layerNames (LayerBinding _ mLayer dmModel) =
 coarseLayer :: DMModel -> ModelLayer
 coarseLayer (Fine ml) = ml
 coarseLayer (LayerBinding _ mLayer _) = mLayer
+
+-- Turn a ModelGraph into a [DMMSNode], for when we want to render a ModelGraph
+-- to T.Text
+dmmsNodes :: ModelGraph -> [DMMSNode]
+dmmsNodes mg = zip strippedNS namedES
+    where
+        strippedNS = snd <$> (L.sort ns)
+        namedES = lNamer nMap <<$>> chunkedES
+        lNamer m (i, _, dmL) = ((nodeName . nodeMeta)(m Map.! i), dmL)
+--      We want to group nodes with their InLinks, so we sort the edges by the
+--      second Node (their destination). 
+        chunkedES = L.groupBy (\(_, j, _) (_, m, _) -> j == m) sortedES
+        sortedES = L.sortOn (\(i, j, k) -> (j, i, k)) es
+        nMap = Map.fromList ns
+        ns = Gr.labNodes mg
+        es = Gr.labEdges mg

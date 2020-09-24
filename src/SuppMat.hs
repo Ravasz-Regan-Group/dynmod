@@ -9,7 +9,7 @@ module SuppMat
     where
 
 import Constants
-import Types
+import Types.DMModel
 import Utilities
 import Text.LaTeX.DynMod.Extra
 import Text.LaTeX.Packages.Booktabs
@@ -185,7 +185,7 @@ sMTableUnits =
 body :: Reader DMModel LaTeX
 body = do
     tables <- mkSMSections
-    let biblio = comm1 "bibliographystyle" "plain" <> "\n"
+    let biblio = comm1 "bibliographystyle" "unsrt" <> "\n"
               <> comm1 "bibliography" "references.bib"
     return $ "\n" <> tables <> "\n" <> legend <> "\n" <> biblio <> "\n\n"
 
@@ -243,12 +243,12 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
                 <> (inLinkConcat (smLinkPrep <$> ls)) <> lnbk <> "\n"
 
 -- Prep the LaTeX depicting the NodeGates of a DMModel. This is done all at
--- once, because the depiction of a  GateConst NodeName NodeState depends on
+-- once, because the depiction of a GateConst NodeName NodeState depends on
 -- whether or not that input is Boolean or integer valued (more than on or off).
 -- We therefore need the entirety of the ModelLayer that it sits in. We process
--- the entirety of the DMModeld because we are in a Reader DMMode LaTeX anyway.
+-- the entirety of the DMModel because we are in a Reader DMMode LaTeX anyway.
 -- This assumes that all NodeNames in an entire parsed rmms file ARE UNIQUE.
--- That is the spec, but it bears repeating
+-- That is the spec, and checked for, but it bears repeating
 modelLaTeXGate :: Reader DMModel (Map.HashMap NodeName LaTeX)
 modelLaTeXGate = do
     dmM <- ask
@@ -279,9 +279,9 @@ isModelLayerBoolean :: ModelLayer -> Bool
 isModelLayerBoolean =
     and . ((isDMNodeBoolean . snd) <$>) . Gr.labNodes . modelGraph
 
--- The display of a gate in LaTeX will depend on whether, or its inputs, are
+-- The display of a gate in LaTeX will depend on whether it, or its inputs, are
 -- boolean or integer valued. If integer-valued, a node, whether on the left 
--- hand side of an assignment, or in the expression itself, will have a
+-- hand side of an assignment or in the expression itself, will have a
 -- subscript to indicate which of its states is referenced. If boolean, no
 -- subscript is necessary. 
 mkLaTeXGate :: Set.HashSet NodeName -> DMNode -> LaTeX
