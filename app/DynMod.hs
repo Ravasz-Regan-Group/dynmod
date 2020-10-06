@@ -73,9 +73,9 @@ workDMMS f options (Right parsed) = do
                 let strGMLFName = toFilePath gFilePath
                 gmlFileContent <- RW.readFile gFilePath
                 let gmlPOut = M.runParser gmlParse strGMLFName gmlFileContent
-                let mg = case gmlPOut of
-                     (Left _) -> "Bad parse"
-                     (Right g)  -> LT.toStrict $ PS.pShowNoColor $ g
+--                 let mg = case gmlPOut of
+--                      (Left _) -> "Bad parse"
+--                      (Right g)  -> LT.toStrict $ PS.pShowNoColor $ g
 --                 gTest <- parseRelFile "test/parseGMLTest.hs"
 --                 RW.writeFile gTest mg
                 updateDMMS f parsed gmlPOut

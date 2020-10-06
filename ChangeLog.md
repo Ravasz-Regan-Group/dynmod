@@ -1,5 +1,8 @@
 # Changelog for dynmod
 
+### 0.3.1.0
+* Let Node coordinates be negative. 
+
 ### 0.3.0.0
 * Completed initial graphics workflow: The -g,--gml option writes out the
   structure, coordinates, and colors of the parsed dmms file as a gml file. This

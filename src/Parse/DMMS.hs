@@ -84,6 +84,9 @@ parens' = between (symbol' "(") (symbol' ")")
 number :: Parser Scientific
 number = lexeme L.scientific
 
+signedNumber :: Parser Scientific
+signedNumber = L.signed sc number
+
 -- | 'integer' parses an Int. (Note that this does not parse signs!)
 
 integer :: Parser Int
@@ -506,7 +509,7 @@ undefParseNone = T.pack <$> (manyTill (alphaNumChar <|> char '_') eol)
 -- Parse the graphical position of a node. 
 coordinateParse :: Parser (U.Vector Double)
 coordinateParse = (lexeme . try) $ rword "NodeCoordinate" >> colon >>
-    ((U.fromList .  fmap toRealFloat) <$> sepBy number comma)
+    ((U.fromList .  fmap toRealFloat) <$> sepBy signedNumber comma)
         
 -- Parse a DMLink
 dMLinkParse :: Parser (NodeName, DMLink)
