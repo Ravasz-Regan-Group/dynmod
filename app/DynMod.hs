@@ -76,8 +76,8 @@ workDMMS f options (Right parsed) = do
                 let mg = case gmlPOut of
                      (Left _) -> "Bad parse"
                      (Right g)  -> LT.toStrict $ PS.pShowNoColor $ g
-                gTest <- parseRelFile "test/parseGMLTest.hs"
-                RW.writeFile gTest mg
+--                 gTest <- parseRelFile "test/parseGMLTest.hs"
+--                 RW.writeFile gTest mg
                 updateDMMS f parsed gmlPOut
             _ -> fail $ "Not a gml file: " <> ext
     when (parseTest options) $ do
