@@ -1,5 +1,8 @@
 # Changelog for dynmod
 
+### 0.3.2.0
+* Parse NodeColors of the form #123456. 
+
 ### 0.3.1.0
 * Let Node coordinates be negative. 
 

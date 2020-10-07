@@ -11,6 +11,7 @@ import Utilities
 import qualified Data.Text as T
 import qualified Data.Versions as Ver
 import qualified Data.Colour.Names as C
+import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.Graph.Inductive.NodeMap as Grm
@@ -29,8 +30,10 @@ import qualified Data.List as L
 import Data.Maybe (fromJust)
 import qualified Data.Bifunctor as B
 import Data.Void
-import Data.Char (isSeparator)
+import Data.Char (isSeparator, toLower)
+import Data.Word (Word8)
 import Control.Monad (void)
+import Numeric (readHex)
 
 type Parser = Parsec Void T.Text
 
@@ -100,6 +103,9 @@ colon = symbol ":"
 
 colon' :: Parser T.Text
 colon' = symbol' ":"
+
+hash :: Parser T.Text
+hash = symbol "#"
 
 -- | 'stateAssign' parses a node state assignment operator.
 
@@ -338,25 +344,38 @@ biasPairParse bias = (lexeme . try)
     )
 
 -- Parse a Colour. 
-metaColor :: T.Text -> Parser LocalColor
-metaColor mColor = (metaItem mColor) >>= colorCheck
+metaColor :: Parser LocalColor
+metaColor = (lexeme . try) (rword "NodeColor" >> colon >>
+    (try rgbColorParse <|> svgColor)
+    )
 
-colorCheck :: T.Text -> Parser LocalColor
+-- metaColor mColor = (metaItem mColor) >>= (rgbColorParse <|> colorCheck)
+
+
+
+-- Parse an RGB hex of the form: #123456
+rgbColorParse :: Parser LocalColor
+rgbColorParse = do
+    _ <- hash
+    red   <- (count 2 hexDigitChar >>= hexInt)
+    green <- (count 2 hexDigitChar >>= hexInt)
+    blue  <- (count 2 hexDigitChar >>= hexInt)
+    return $ SC.sRGB24 red green blue
+
+hexInt :: String -> Parser Word8
+hexInt xs = case readHex xs of
+    [(i, "")] -> return i
+    _ -> fail $ xs <> " is not a hexadecimal literal"
+
+svgColor :: Parser LocalColor
+svgColor = some letterChar >>= colorCheck
+
+colorCheck :: String -> Parser LocalColor
 colorCheck ts
-    | lowered `elem` svgColors = C.readColourName (T.unpack lowered)
+    | (T.pack lowered) `elem` svgColors = C.readColourName lowered
     | ts == "" = return defaultColor
     | otherwise = fail $ show $ ts <> " is not an SVG color. "
-        where lowered = T.toLower ts
-
--- Check if a Text is the name of an SVG color, and return it if it is. 
--- colorIdentifier :: Parser T.Text
--- colorIdentifier = lexeme (c >>= check)
---     where
---         c       = T.pack <$> (some letterChar)
---         check x = case lowered `elem` svgColors of
---                     True  -> return lowered
---                     False -> fail $ show $ x <> " is not an SVG color. "
---                     where lowered = T.toLower x
+        where lowered = toLower <$> ts
 
 -- Parse a straight Text metadata item. 
 metaItem :: T.Text -> Parser T.Text
@@ -444,7 +463,7 @@ nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}")
         NodeMeta <$> toPermutation (identifier "NodeName")
                  <*> toPermutation nodeGenesParse
                  <*> toPermutation nodeTypeParse
-                 <*> toPermutation (metaColor "NodeColor")
+                 <*> toPermutation metaColor
                  <*> toPermutation coordinateParse
                  <*> ((,) <$> toPermutation (extractCitations "NodeDescription")
                            <*> toPermutation (extractCitations "NodeNotes")))
