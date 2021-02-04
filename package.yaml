@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.3.2.0
+version:             0.4.0.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -47,6 +47,7 @@ library:
   - parser-combinators
   - fgl
   - vector
+  - vector-instances
   - colour
   - text
   - scientific
@@ -55,7 +56,6 @@ library:
   - HaTeX
   - validation
   - Unique
-  - monoidal-containers
   - versions
   - hashable
   - safe-exceptions

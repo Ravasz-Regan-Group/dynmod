@@ -36,6 +36,9 @@ import Data.Maybe (fromJust)
 import Data.Foldable (fold)
 import Control.Monad.Reader (Reader, runReader, ask)
 
+displayStyle :: LaTeXC l => l
+displayStyle = commS "displaystyle"
+
 subColSep :: LaTeXC l => l
 subColSep = fromLaTeX $ textwidth' <> "-2" <> tabcolsep
 

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e7195cb06a7fd98cbea57758b85c95658b2bd804113be8e406c782d5448dae85
+-- hash: 3ab6cda3c00832dee695c236606b4c1654ac087314a60f6ef196e47474139637
 
 name:           dynmod
 version:        0.3.2.0
@@ -56,7 +56,6 @@ library
     , fgl
     , hashable
     , megaparsec
-    , monoidal-containers
     , mtl
     , parser-combinators
     , path
@@ -67,6 +66,7 @@ library
     , unordered-containers
     , validation
     , vector
+    , vector-instances
     , versions
   default-language: Haskell2010
 

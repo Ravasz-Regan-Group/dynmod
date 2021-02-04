@@ -115,6 +115,14 @@ thdOf4 (_, _, n, _) = n
 fthOf4 :: (a, b, c, d) -> d
 fthOf4 (_, _, _, o) = o
 
+-- Convert an uncurried function to a curried function.
+curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
+curry3 f a b c = f (a,b,c)
+
+-- Convert a curried function to a function on a triple.
+uncurry3 :: (a -> b -> c -> d) -> ((a, b, c) -> d)
+uncurry3 f ~(a,b,c) = f a b c
+
 concatPair :: Monoid a => (a, a) -> a
 concatPair (x, y) = x <> y
 
@@ -128,3 +136,16 @@ differenceWithKey f a b = Map.foldlWithKey' go Map.empty a
     go m k v = case Map.lookup k b of
                  Nothing -> Map.insert k v m
                  Just w  -> maybe m (\y -> Map.insert k y m) (f k v w)
+
+-- Sort the second list by the order of elements in the first list. 
+sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
+sortWithOrder = sortWithOrderOn id
+
+sortWithOrderOn :: (Ord a, Ord b, Hash.Hashable b)
+                => (a -> b) -> [b] -> [a] -> [a]
+sortWithOrderOn f order = L.sortOn (getOrder . f)
+    where
+        getOrder k = Map.lookupDefault (-1) k $ mkOrderHashMap order
+
+mkOrderHashMap :: (Ord a, Hash.Hashable a) => [a] -> Map.HashMap a Int
+mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))

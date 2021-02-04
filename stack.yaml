@@ -40,7 +40,6 @@ packages:
 extra-deps:
 - Unique-0.4.7.7
 - HaTeX-3.22.2.0
-- monoidal-containers-0.6.0.1
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

@@ -1,13 +1,107 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Types.DMModel where
---     ( DMModel(..)
---     , ModelMeta(..)
---     , FileFormatVersion
---     ) where
+module Types.DMModel
+    ( DMModel(..)
+    , ModelLayer(..)
+    , ModelGraph
+    , ModelMapping
+    , ModelMeta(..)
+    , ModelName
+    , LocalColor
+    , FileFormatVersion
+    , DMNode(..)
+    , NodeMeta(..)
+    , LitInfo
+    , Note
+    , Description
+    , NodeGate(..)
+    , GateOrder
+    , TruthTable
+    , GateOrigin(..)
+    , NodeStateAssign
+    , LogicalGate
+    , TruthTableGate
+    , NodeRange
+    , LayerRange
+    , NodeType(..)
+    , EntrezGeneID
+    , NodeName
+    , NodeState
+    , NodeExpr(..)
+    , BinOp(..)
+    , ExprInput
+    , DMLink(..)
+    , LinkEffect(..)
+    , LinkType(..)
+    , ModelInvalid(..)
+    , DuplicateCoarseMapNodes
+    , ExcessFineMapNodes
+    , MissingFineMapNodes
+    , ExcessCoarseMapNodes
+    , MissingCoarseMapNodes
+    , FineInMultipleCoarse
+    , DuplicatedNodeNames
+    , NodeInvalid(..)
+    , GateInvalid(..)
+    , NodeRefdNodesMismatch
+    , StatesRefdStatesMisMatch
+    , NodeInlinkMismatch
+    , ModelLayerInvalid(..)
+    , TableInvalid(..)
+    , GateInLinkInvalid(..)
+    , NodeMetaNameMismatch
+    , DuplicateDMLinks
+    , MissingDescription(..)
+    , UndefinedNodeType
+    , UnspecifiedNodeColor
+    , MissingCoord
+    , CoordWrongDimension
+    , UndefinedLinkType
+    , UndefinedEffectType
+    , PrettyGateOutput
+    , ModelTTFiles
+    , DMMSNode
+    , InAdj
+    , inAdjs
+    , findInAdj
+    , defaultColor
+    , gateEval
+    , prettyGateEval
+    , layerTTs
+    , gateCombinations
+    , refdNodesStatesNG
+    , refdNodesStatesTM
+    , exprNodes
+    , modelLayers
+    , coarseLayer
+    , mkLayerBinding
+    , layerNodes
+    , nodeCombinations
+    , nodeRange
+    , exprPars
+    , mkLogicalGate
+    , mkTableGate
+    , tTableToAssigns
+    , assignsToTTable
+    , tTInputOutput
+    , dmmsNodes
+    , modelNodes'
+    , modelEdges'
+    , modelCiteKeys
+    , CitationDictionary
+    , BibTeXKey
+    , BibTeXEntry(..)
+    , BibTeXField
+    , BibTeXRecord
+    , PubInvalid(..)
+    , OrphanedModelCites
+    , ExcessDictCites
+    , CiteDictionaryInvalid(..)
+    
+    ) where
 
 import Utilities
-import Text.LaTeX.Base.Class (fromLaTeX, commS, LaTeXC(..))
+import Text.LaTeX.Base.Class (fromLaTeX, commS)
 import Text.LaTeX.Base.Commands (footnotesize)
 import Text.LaTeX.Base.Math (math)
 import Text.LaTeX.Base.Syntax (LaTeX(..))
@@ -15,11 +109,12 @@ import Text.LaTeX.Base.Texy (Texy(..))
 import qualified Data.Colour as C
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
+import Data.Vector.Instances()
 import qualified Data.Text as T
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
-import qualified Data.Map.Monoidal.Strict as MMap
+-- import qualified Data.Map.Monoidal.Strict as MMap
 import Data.Validation
 import qualified Data.List.Unique as Uniq
 import qualified Data.Versions as Ver
@@ -67,8 +162,8 @@ data DMLink = DMLink { linkEffect :: LinkEffect
                        deriving (Show, Eq, Ord)
 
 data DMNode = DMNode { nodeMeta :: NodeMeta
-                     , nodeGate :: NodeGate }
-                       deriving (Show, Eq)
+                     , nodeGate :: NodeGate
+                     } deriving (Show, Eq)
 
 instance Ord DMNode where
     compare x y = compare (nodeMeta x) (nodeMeta y)
@@ -94,18 +189,25 @@ instance Ord NodeMeta where
 -- Also, the NodeName is contained in the
 -- NodeMetaData, but from a human debugging point of view it seems wise to hang
 -- on to it.
-data NodeGate = NodeGate { gNodeName   :: NodeName
+data NodeGate = NodeGate { gNodeName :: NodeName
+                         , gateOrder :: GateOrder
                          , gateAssigns :: [NodeStateAssign]
-                         , gateOrder   :: [NodeName]
+                         , gateTable :: TruthTable
+                         , gateOrigin :: GateOrigin
                          }
                          deriving (Show, Eq)
 
-displayStyle :: LaTeXC l => l
-displayStyle = commS "displaystyle"
-
 type NodeStateAssign = (NodeState, NodeExpr)
+type GateOrder = [NodeName]
+type TruthTable = Map.HashMap (U.Vector NodeState) NodeState
+data GateOrigin = LogicalExpression
+                | DMMSTruthTable
+                | Both
+                deriving (Show, Eq)
+
 type NodeRange = (NodeName, [NodeState])
 type LayerRange = Map.HashMap NodeName [NodeState]
+
 
 -- The first pair is a description, with accompanying list of \cites. 
 -- The second pair is a note, with accompanying list of \cites. 
@@ -125,12 +227,6 @@ type CitationLists = [[T.Text]]
 -- the gates using our own custom type here for validation will not be 
 -- computationally punitive. - Pete Regan January 13, 2020
 
-
--- The following are essentially phantom types, so that I don't write a bug
--- based on forgetting which in the pair came from the discrete logical 
--- expression, and which from the truth table. 
-type LogicalNodeGate = NodeGate
-type TableNodeGate = NodeGate
 
 data NodeType = Undefined_NT
               | Cell
@@ -293,6 +389,47 @@ data BibTeXEntry = BibTeXEntry {
 type BibTeXField = T.Text
 type BibTeXRecord = T.Text
 
+prettyTTable :: NodeName -> GateOrder -> TruthTable -> (NodeName, T.Text)
+prettyTTable nN gO tT = (nN, gatePrint <> T.singleton '\n' <> prettyRows)
+    where
+        prettyRows = T.unlines textRows
+        textRows = (T.concat . (L.intersperse (T.singleton '\t')) .
+            ((T.pack . show) <$>)) <$> joinedRows
+        joinedRows = (\(v, y) -> U.toList v <> [y]) <$> rows
+        rows = (L.sortOn fst . Map.toList) tT
+        gatePrint = T.concat $ L.intersperse (T.singleton '\t') $ gO <> [nN]
+
+
+tTableToAssigns :: NodeName -> GateOrder -> TruthTable -> [NodeStateAssign]
+tTableToAssigns nN gO tT = tableToLogical (gO <> [nN]) inputRows outputs
+    where
+        (inputRows, outputs) = unzip $ deVec <$> (Map.toList tT)
+        deVec (v, o) = (U.toList v, o)        
+
+assignsToTTable :: GateOrder -> [NodeStateAssign] -> TruthTable
+assignsToTTable gO ass = Map.fromList inputOutputPairs
+    where
+        inputOutputPairs = zip inputs $ (fromJust . gateEval ass) <$> combos
+        inputs = U.fromList <$> ((snd <$>) <$> combosList)
+        combos = Map.fromList <$> combosList 
+        combosList = (zip nNames) <$> (sequenceA nStates)
+        (nNames, nStates) = unzip orderedStateRanges
+--     Make sure that the comboList ends up ordered by the NodeGates GateOrder
+        orderedStateRanges = sortWithOrderOn fst gO stateRanges
+        stateRanges = refdNodesStatesNG $ snd <$> ass
+
+-- Convert a TruthTabe to a List of (ExprInput, NodeState). Useful when you need
+-- to compare a TruthTable to NodeGate. Ordered as you would write out the rows
+-- or a truth table (eg 0001, 0010, 0011, 0100, etc), though including the 
+-- possibility of some columns whose maximum is > 1 in that case of integer
+-- rather than boolean gates. 
+tTInputOutput :: GateOrder -> TruthTable -> [(ExprInput, NodeState)]
+tTInputOutput gO tT = zip exprInputs outputs
+    where
+        exprInputs = (Map.fromList . (zip gO)) <$> inputLists
+        inputLists = U.toList <$> vecs
+        (vecs, outputs) = unzip $ (L.sortOn fst . Map.toList) tT
+
 data NodeExpr
   = GateLit Bool
   | GateConst NodeName NodeState
@@ -320,7 +457,7 @@ exprPars f ex@(Binary Or _ _) = "(" <> f ex <> ")"
 data BinOp
   = And
   | Or
-  deriving (Show, Eq)        
+  deriving (Show, Eq)
 
 -- Evaluate a node expression
 eval :: NodeExpr -> ExprInput -> Maybe Bool
@@ -334,12 +471,11 @@ eval (GateConst nName nState) ns =
 eval (GateLit b) _ =  Just b
 
 -- Evaluate a gate against a given input HashMap
-gateEval :: NodeGate -> ExprInput -> Maybe NodeState
-gateEval nGate nInput
+gateEval :: [NodeStateAssign] -> ExprInput -> Maybe NodeState
+gateEval assigns nInput
     | areInputsSufficient = (L.findIndex (== Just True) output)
     | otherwise = Nothing
     where
-        assigns = gateAssigns nGate
         exprs = snd <$> assigns
         output = (flip eval nInput) <$> exprs
         areInputsSufficient = not $ elem Nothing output
@@ -347,16 +483,18 @@ gateEval nGate nInput
 -- Evaluate a gate against a given input HashMap, and return the result as tab
 -- separated Text formatted integers in proper gateOrder order. Use only on
 -- ExprInputs that contain all the necessary inputs
-prettyGateEval :: NodeGate -> ExprInput -> PrettyGateOutput
-prettyGateEval nGate nInput = prettify output
+prettyGateEval :: GateOrder
+               -> [NodeStateAssign]
+               -> ExprInput
+               -> PrettyGateOutput
+prettyGateEval gO assigns nInput = prettify output
     where
         prettify = (((prettyInput <> T.singleton '\t') <>) . T.pack . show)
         prettyInput = T.intersperse '\t'
                         $ T.concat
                             $ (T.pack . show) <$> orderedInput
-        orderedInput = fromJust <$> (sequenceA (Map.lookup <$> order) nInput)
-        output = fromJust $ gateEval nGate nInput
-        order = gateOrder nGate
+        orderedInput = fromJust <$> (sequenceA (Map.lookup <$> gO) nInput)
+        output = fromJust $ gateEval assigns nInput
 
 type PrettyGateOutput = T.Text
 type LayerTTFiles = (T.Text, [(NodeName, T.Text)])
@@ -366,24 +504,13 @@ type ModelTTFiles = [LayerTTFiles]
 -- nodes in a ModelLayer, along with the name of that layer and names of the
 -- nodes. 
 layerTTs :: ModelLayer -> LayerTTFiles
-layerTTs mL = (mName, tablesWNames)
+layerTTs mL = (mName, prettyTTables)
     where
         mName = (modelName . modelMeta) mL
-        tablesWNames = zip nodeNames prettyTTables
-        prettyTTables = T.unlines <$> (zipWith (:) gatePrints prettyRows)
-        prettyRows :: [[PrettyGateOutput]]
-        prettyRows = L.sort <$> (zipWith ($) fs comboLists)
-        fs :: [[ExprInput] -> [PrettyGateOutput]]
-        fs = go <$> nodeGates
---      apply prettyGateEval to a gate, and then a list of ExprInputs
-        go :: NodeGate -> [ExprInput] -> [PrettyGateOutput]
-        go g es = prettyGateEval g <$> es
-        comboLists :: [[ExprInput]]
-        comboLists = layerCombinations mL
-        nodeGates = nodeGate <$> nodes
---      This is the top line of each truth table
-        gatePrints :: [T.Text]
-        gatePrints  = mkGatePrint <$> nodes
+        prettyTTables = (uncurry3 prettyTTable) <$> triplets
+        triplets = zip3 nodeNames gateOrders nodeTables
+        nodeTables = (gateTable . nodeGate) <$> nodes
+        gateOrders = (gateOrder . nodeGate) <$> nodes
         nodeNames = (nodeName . nodeMeta) <$> nodes
         nodes = layerNodes mL
 
@@ -455,18 +582,20 @@ data GateInvalid = InconsistentNames
                  | TableExprStateMismatch TableExprStateMismatch
                  | TableExprOutputMismatch TableExprOutputMismatch
                  | TableDisNameMismatch TableDisNameMismatch
+                 | TruthTableIncomplete TruthTableIncomplete
     deriving (Show, Eq)
 
 -- If there are internal contradictions in a gate, this provides the relevant
 -- expressions, expression states, inputs, and gate states affected. 
 type ContradictoryExprSet = 
         [([NodeExpr], [Int], ExprInput, [Maybe Bool])]
-type TableExprMismatch = (([ExprInput], [Maybe NodeState])
-                              , ([ExprInput], [Maybe NodeState]))
+-- type TableExprMismatch = (([ExprInput], [Maybe NodeState])
+--                               , ([ExprInput], [Maybe NodeState]))
 type TableExprInNodeMismatch = ([NodeName], [NodeName])
 type TableExprStateMismatch = T.Text
 type TableExprOutputMismatch = (T.Text, [NodeStateAssign])
 type TableDisNameMismatch = (NodeName, NodeName)
+type TruthTableIncomplete = [((NodeName, NodeState), (NodeName, NodeState))] 
 
 data TableInvalid = IncompleteOrOversizedRow
                   | InsufficientRows
@@ -595,26 +724,20 @@ isMapSurjective ms
 
 
 -- It would be very easy to blindly create nonsensical gates, so we never create
--- a NodeGate directly, only through these smart constructors.
+-- [NodeStateAssign] directly, only through these smart constructors.
 
 -- In the case where we are parsing a discrete logical statment.  
 mkLogicalGate :: [(NodeName, NodeStateAssign)]
-              -> Validation [GateInvalid] NodeGate
+              -> Validation [GateInvalid] LogicalGate
 mkLogicalGate xs =
-    NodeGate <$> (nodeNamesOK ns) <*> (stateAssignsOK ass) <*> (pure order)
+    (,,) <$> (nodeNamesOK ns) <*> pure order <*> (stateAssignsOK ass)
         where (ns, ass) = unzip xs
-              order     = fst <$> (refdNodesStates $ snd <$> ass)
+              order     = fst <$> (refdNodesStatesNG $ snd <$> ass)
 
+type LogicalGate = (NodeName, GateOrder, [NodeStateAssign])
 
 -- Several helper functions for gate sanity/consistency checks:
 
--- Logical Gates:
--- Check that the gate has actual terms in it. 
-nonEmptyGate :: [(NodeName, NodeStateAssign)] 
-             -> Validation [GateInvalid] [(NodeName, NodeStateAssign)]
-nonEmptyGate nPairs = case nPairs == [] of
-    False -> Success nPairs
-    True  -> Failure [EmptyGate]
 
 -- Check that all node state assignments use the same node names. Don't call 
 -- this outside of the smart constructer, as it doesn't check for empty lists. 
@@ -649,13 +772,17 @@ states = fmap fst
 
 -- Truth Table Gates:
 mkTableGate :: ([NodeName],[[NodeState]])
-            -> Validation [TableInvalid] TableNodeGate
+            -> Validation [TableInvalid] TruthTableGate
 mkTableGate (nodes, rows)
-    | testErrors == [] = Success $ tableToLogical nodes inputRows outputs
+    | testErrors == [] = Success $ ( (last nodes)
+                                   , (init nodes)
+                                   , (Map.fromList $ zip inputVectors outputs)
+                                   )
     | otherwise        = Failure testErrors
     where 
         cols = L.transpose rows
-        inputRows = map init rows
+        inputVectors = U.fromList <$> inputRows
+        inputRows = init <$> rows
         outputs = last cols
         testResults = [ allOutputsPresent outputs
                       , sufficientInputRows inputRows
@@ -664,13 +791,13 @@ mkTableGate (nodes, rows)
                       ]
         testErrors = errorRollup testResults
 
-tableToLogical :: [NodeName] -> [[NodeState]] -> [NodeState] -> TableNodeGate
-tableToLogical nodes inputRows outputs = tableNode
+type TruthTableGate = (NodeName, GateOrder, TruthTable)
+
+tableToLogical :: GateOrder -> [[NodeState]] -> [NodeState] -> [NodeStateAssign]
+tableToLogical nodes inputRows outputs = collapsedOrs
     where
 --      Associate each input in each row with its corresponding node: 
         inputAssociations = zip (init nodes) <$> inputRows
---      Yank out the name of the node whose gate this is: 
-        nName = last nodes
 --      Turn all the pairs of NodeName and NodeState into GateConsts: 
         inputExprList = fmap (fmap (uncurry GateConst)) inputAssociations
 --      AND together all the entries in each row: 
@@ -707,10 +834,6 @@ tableToLogical nodes inputRows outputs = tableNode
 --      Create a list which is the final NodeExpr for each state of the node
 --      whose gate we are constructing:
         collapsedOrs = fmap orAssignments extractedOutputs
---      Create the final TableNodeGate:
-        tableNode = NodeGate nName collapsedOrs (init nodes)
-        
-
 
 -- Check that there are no duplicate state assignments. 
 noDupes :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]
@@ -856,27 +979,34 @@ duplicatedRowMap inputs = (coordinates, inputs)
 gateCombinations :: [NodeExpr] -> [ExprInput]
 gateCombinations asns = fmap Map.fromList combosList
     where
-        (nNames, nStates) = unzip $ refdNodesStates asns
+        (nNames, nStates) = unzip $ refdNodesStatesNG asns
         combosList = fmap (zip nNames) (sequenceA nStates)
 
 -- Produces the nodes, and states of those nodes, that are referenced,
--- (explicitly or otherwise), in a given list of NodeExprs. 
-refdNodesStates :: [NodeExpr] -> [(NodeName, [NodeState])]
-refdNodesStates = MMap.toList . MMap.map L.nub . mconcat . fmap exprNodes
+-- (explicitly or otherwise), in a given list of NodeExprs.
+refdNodesStatesNG :: [NodeExpr] -> [(NodeName, [NodeState])]
+refdNodesStatesNG exprs = (\(nName, s) -> (nName, [0..s])) <$> (Map.toList nMap)
+    where
+        nMap = foldr (Map.unionWith max) Map.empty (exprNodes <$> exprs)
 
--- Extract a monoidal HashMap of the nodes of an expression, with all their
--- possible states. In case of a singular Not GateConst NodeName NodeState,
--- the function can't tell from inside the gate what other values the input
--- might take, except that we know that 0 and 1 must exist, so we guarantee 
--- them.
-exprNodes :: NodeExpr -> MMap.MonoidalMap NodeName [NodeState]
-exprNodes expr' = MMap.map (L.nub . ([0, 1] <>)) $ exprNodes' expr'
- where
-  exprNodes' (GateLit _) = MMap.empty
-  exprNodes' (GateConst nName nState) = MMap.singleton nName [nState]
-  exprNodes' (Not expr) = exprNodes' expr
-  exprNodes' (Binary And expr1 expr2) = (exprNodes' expr1) <> (exprNodes' expr2)
-  exprNodes' (Binary Or expr1 expr2)  = (exprNodes' expr1) <> (exprNodes' expr2)
+-- Produces the nodes, and states of those nodes, that are referenced in a given
+-- TruthTable. 
+refdNodesStatesTM :: GateOrder -> TruthTable -> [(NodeName, [NodeState])]
+refdNodesStatesTM nodes tT = zip nodes columnRanges
+    where
+        columnRanges = ((\n -> [0..n]) . maximum) <$> (L.transpose keyList)
+        keyList = U.toList <$> ((L.sort . Map.keys) tT)
+
+-- Extract a HashMap of the nodes of a NodeExpr as keys and their highest
+-- referenced state as values. 
+exprNodes :: NodeExpr -> Map.HashMap NodeName NodeState
+exprNodes (GateLit _) = Map.empty
+exprNodes (GateConst nName nState) = Map.singleton nName nState
+exprNodes (Not expr) = exprNodes expr
+exprNodes (Binary And expr1 expr2) =
+    Map.unionWith max (exprNodes expr1) (exprNodes expr2)
+exprNodes (Binary Or expr1 expr2) =
+    Map.unionWith max (exprNodes expr1) (exprNodes expr2)
 
 
 -- Generate all the possible inputs sets of a model, separated by layers. Each
@@ -905,7 +1035,7 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         nStates :: Maybe [[NodeState]]
         nStates = sequenceA $ sequenceA (Map.lookup <$> nNames) r
         nNames :: [NodeName]
-        nNames = fst <$> (refdNodesStates nExprs)
+        nNames = fst <$> (refdNodesStatesNG nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
 
 -- Extract the names and ranges from a node. 

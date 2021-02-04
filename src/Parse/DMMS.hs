@@ -17,7 +17,6 @@ import qualified Data.Graph.Inductive as Gr
 import qualified Data.Graph.Inductive.NodeMap as Grm
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
-import qualified Data.Hashable as Hash
 import Control.Monad.Combinators.Expr   -- from parser-combinators
 import Control.Applicative.Permutations -- from parser-combinators
 import Data.Validation
@@ -27,7 +26,7 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Scientific
 import qualified Data.List as L
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.Bifunctor as B
 import Data.Void
 import Data.Char (isSeparator, toLower)
@@ -250,32 +249,107 @@ modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
 
 -- Check that, for every node and state reference in every NodeExpr, that node
 -- exists in the DMModel layer that we are in, and has a NodeStateAssign for
--- that state
+-- that state. Also check to make sure that every TruthTable that references a
+-- node has rows for every state that that node can have, even if some of those
+-- states are not referenced in the discrete logical expression which might also
+-- exist for that NodeGate in the DMMS file. 
 nodeStateCheck :: [(DMNode, [(NodeName, DMLink)])]
                -> Parser [(DMNode, [(NodeName, DMLink)])]
-nodeStateCheck nodesWLinks
-    | (isSubset exNodes nodes) && (isSubset exprStates nodeStates) =
-        return nodesWLinks
-    | (not $ isSubset exNodes nodes) && (isSubset exprStates nodeStates) =
-        fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
-    | (isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates) =
-        fail $ show $
-            StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
-    | (not $ isSubset exNodes nodes) && (not $ isSubset exprStates nodeStates)
-        = fail $ show $
-            StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
-    | otherwise = return nodesWLinks
-        where
-            dmNodes = fst <$> nodesWLinks
-            nodeGates = nodeGate <$> dmNodes
-            exprRefs = L.sort $ refdNodesStates $
-                concatMap (fmap snd . gateAssigns) nodeGates
-            exNodes = fst <$> exprRefs
-            exprStates = (L.sort . snd) <$> exprRefs
-            nodes = gNodeName <$> nodeGates
-            assigns = gateAssigns <$> nodeGates
-            nodeRefs = L.sort $ zip nodes $ (fst <$>) <$> assigns
-            nodeStates = snd <$> nodeRefs
+nodeStateCheck nodesWLinks = case ( isSubset exNodes nodes
+                                  , isSubset exprStates nodeStates)
+                             of
+    (False, True) -> fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
+    (True, False) -> fail $ show $
+        StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
+    (False, False) -> fail $ show $
+        StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
+    (True, True) -> case sequenceA (tableSizeCheck nodeMaxes <$> dmNodes) of
+        Failure errs -> fail (T.unpack $ T.unlines $ ((T.pack . show) <$>) errs)
+        Success ns -> return $ zip ns links
+    where
+        links = snd <$> nodesWLinks
+        dmNodes = fst <$> nodesWLinks
+        nodeGates = nodeGate <$> dmNodes
+        exprRefs = L.sort $ refdNodesStatesNG $
+            concatMap (fmap snd . gateAssigns) nodeGates
+        exNodes = fst <$> exprRefs
+        exprStates = snd <$> exprRefs
+        nodes = gNodeName <$> nodeGates
+        assigns = gateAssigns <$> nodeGates
+        nodeRefs = L.sort $ zip nodes $ (fst <$>) <$> assigns
+        nodeStates = snd <$> nodeRefs
+        nodeMaxes :: [(NodeName, NodeState)]
+        nodeMaxes = (\(x, ns) -> (x, maximum ns)) <$> nodeRefs
+
+-- Given a List of the maxima of a Layer's DMNodes and a DMNode, check that the
+-- maxima of each referenced node in the DMNode matches. If it does not, check
+-- the GateOrigin: If it is from a LogicalExpression, then simply correct the 
+-- NodeGate's TruthTable. Otherwise, return a GateInvalid and require the user
+-- to correct the TruthTable in the DMMS file. 
+tableSizeCheck :: [(NodeName, NodeState)]
+               -> DMNode
+               -> Validation [GateInvalid] DMNode
+tableSizeCheck lMaxima n = case misses of
+    [] -> Success n
+    mss@(_:_) -> case (gOrigin == DMMSTruthTable) || (gOrigin == Both) of
+        True  -> Failure $ [TruthTableIncomplete misses]
+        False -> Success $ tableMaxAdjust (fst <$> mss) n
+    where
+        misses = compTRefsNodes lMaxima (nName, refNodeMxMp)
+        refNodeMxMp = 
+            Map.fromList $ (maximum <$>) <$> (refdNodesStatesTM order tTable)
+        gOrigin = gateOrigin nGate
+        order = gateOrder nGate
+        tTable = gateTable nGate
+        nName = nodeName nMeta
+        nMeta = nodeMeta n
+        nGate = nodeGate n
+
+-- Check if the maximum value of the input nodes in a TruthTable match the
+-- actual maximum of those nodes from their DMNodes. Returned is a List of:
+-- (
+--  ( a NodeName, Its maximum NodeState)
+--  , (The NodeName where it is referenced, The maximum in that TruthTable.
+--  )
+-- )
+-- The List only has those cases where these maxima are DIFFERENT.  
+compTRefsNodes :: [(NodeName, NodeState)]
+               -> (NodeName, Map.HashMap NodeName NodeState)
+               -> [((NodeName, NodeState), (NodeName, NodeState))]
+compTRefsNodes nMaxes refMap = filter noSames $ mapMaybe (go refMap) nMaxes
+    where
+        go (rfnm, rmxs) (nM, nMax) = 
+                            (,) <$> ((,) <$> (pure nM) <*> (pure nMax))
+                                <*> ((,) <$> pure rfnm <*> (Map.lookup nM rmxs))
+        noSames ((_, n), (_, m)) = n /= m
+
+-- A TruthTable which was derived from a logical expression may be missing
+-- the whole range of some of its input nodes, as they may not mave been
+-- referenced in the expression. Given the correct maximum states, this corrects
+-- that TruthTable. 
+tableMaxAdjust :: [(NodeName, NodeState)] -> DMNode -> DMNode
+tableMaxAdjust maxima n = DMNode nMeta newGate
+    where
+        newGate = NodeGate gName order assigns newTable origin
+        newTable = Map.fromList inputOutputPairs
+        inputOutputPairs = zip inputs $ (fromJust . gateEval assigns) <$> combos
+        inputs = U.fromList <$> ((snd <$>) <$> combosList)
+        combos = Map.fromList <$> combosList
+        combosList = (zip nNames) <$> (sequenceA nStates)
+        (nNames, nStates) = unzip orderedStateRanges
+        orderedStateRanges = sortWithOrderOn fst order stateRanges
+        stateRanges = (\(nName, s) -> (nName, [0..s])) <$> (Map.toList newMap)
+        newMap = foldr fixMax nMap maxima
+        fixMax (nM, nS) m = Map.adjust (const nS) nM m
+        nMap = foldr (Map.unionWith max) Map.empty (exprNodes <$> exprs)
+        exprs = snd <$> assigns
+        gName = nodeName nMeta
+        order = gateOrder nGate
+        assigns = gateAssigns nGate
+        origin = gateOrigin nGate
+        nGate = nodeGate n
+        nMeta = nodeMeta n
+
 
 -- Check that for the NodeName associated with each DMLink there exists an
 -- actual DMNode with that NodeName
@@ -405,10 +479,8 @@ linkDupeCheck p@(_, ls)
 gateLinkCheck :: (DMNode, [(NodeName, DMLink)])
               -> Parser (DMNode, [(NodeName, DMLink)])
 gateLinkCheck parsed@((DMNode _ pNode), links) = 
-    let assigns = gateAssigns pNode
-        linkInputs = L.sort $ fst <$> links
-        gExprs = snd <$> assigns
-        gateInputs = L.sort $ fst <$> (refdNodesStates gExprs)
+    let linkInputs = L.sort $ fst <$> links
+        gateInputs = L.sort $ gateOrder pNode
     in
     case gateInputs == linkInputs of
         True  -> return parsed
@@ -602,90 +674,77 @@ gateParse = gatePairParse >>= tableDisCheck
 -- If we parse a logical expression AND a table, make sure they give the same
 -- output for all possible inputs. Also, make sure that the table & discrete
 -- have the same gNodeName. 
-tableDisCheck :: (Maybe LogicalNodeGate, Maybe TableNodeGate) -> Parser NodeGate
-tableDisCheck (Just lG, Nothing) = return lG
-tableDisCheck (Nothing, Just tG) = return tG
+tableDisCheck :: (Maybe LogicalGate, Maybe TruthTableGate) -> Parser NodeGate
+tableDisCheck (Just (nName, gOrder, assigns), Nothing) = return $ NodeGate
+    nName gOrder assigns (assignsToTTable gOrder assigns) LogicalExpression
+tableDisCheck (Nothing, Just (nName, gOrder, tTable)) = return $ NodeGate
+    nName gOrder (tTableToAssigns nName gOrder tTable) tTable DMMSTruthTable
 tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
     Failure err -> fail $ show err
-    Success (lGate, tGate) -> case isSubset lpInputs tpInputs of
-        False -> fail $ show $ TableExprStateMismatch $
-                        T.unlines (tGatePrint:(deleteMult tpInputs lpInputs))
-        True -> case accOutputMis tOutputs lOutputs of 
+    Success (lGate@(lName, _, assigns), tGate@(tName, tOrder, tTable))
+      -> case isSubset lCombos tCombos of
+        False -> fail $ T.unpack $ "TableExprStateMismatch \n" <> T.unlines
+            (tGatePrint:prettyCombos)
+        True -> case accOutputMis tGate lGate of
             errs@(_:_) -> fail $ (T.unpack . T.replace (T.singleton '\t') "  ")
                                 $ "TableExprOutputMismatch (Table, Logical): \n"
                                     <> T.unlines (tGatePrint:errs)
-            [] | lName == tName -> return lGate'
-               | otherwise -> fail $ show $ TableDisNameMismatch (tNm, lName)
-                where lName = gNodeName lGate
-                      tNm = gNodeName tGate
-        where
-            tGatePrint = (T.concat $
-                           L.intersperse "  " $ tOrder <> [tName])
-            tName = gNodeName tGate
-            tpInputs = T.init <$> tOutputs
-            lpInputs = T.init <$> lOutputs
-            tOutputs = L.sort (prettyGateEval tGate <$> tCombos)
---          Evaluate the logical gate with the table gate order and inputs, to
---          make the pretty representations match. This is OK, since we have
---          already made sure that the input nodes are the same up to
---          permutation, and that the logical inputs are a subset of the table
---          inputs. 
-            lOutputs = L.sort (prettyGateEval lGate' <$> tCombos)
-            tCombos = gateCombinations tExprs
---             lCombos = gateCombinations lExprs
-            tExprs = snd <$> (gateAssigns tGate)
---             lExprs = snd <$> (gateAssigns lGate)
-            lNodeName = gNodeName lGate
-            lGateAssigns = gateAssigns lGate
-            tOrder = gateOrder tGate
---          The logical gate, with the table node order
-            lGate' = NodeGate lNodeName lGateAssigns tOrder
+            [] | lName == tName -> return nGate
+               | otherwise -> fail $ show $ TableDisNameMismatch (tName, lName)
+        where            
+            nGate = NodeGate lName tOrder assigns tTable Both
+            prettyCombos :: [T.Text]
+            prettyCombos = (T.concat . (L.intersperse "  ")
+                . ((T.pack . show) <$>)) <$> tSortedtGOrderedELCombos
+            tSortedtGOrderedELCombos = L.sort $ (snd <$>) <$> tGOrderedELCombos
+            tGOrderedELCombos = (sortWithOrderOn fst tOrder) <$> excessLCombos
+            excessLCombos = Map.toList <$> (deleteMult tCombos lCombos)
+            tCombos = fst $ unzip $ tTInputOutput tOrder tTable
+            lCombos = gateCombinations $ snd <$> assigns
+            tGatePrint = (T.concat $ L.intersperse "  " $ tOrder <> [tName])
 tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
 
--- We want to accumulate from the two PrettyGateOutput lists those rows whose
--- outputs to that input are different. Call as: accOutputMis tOutput lOutput
-accOutputMis :: [PrettyGateOutput] -> [PrettyGateOutput] -> [T.Text]
-accOutputMis ts ls = L.foldl' go [] tSplits
+-- We want to accumulate from the TruthTable and NodeGate those rows whose
+-- outputs to that input are different. 
+accOutputMis :: TruthTableGate -> LogicalGate -> [T.Text]
+accOutputMis (_, tOrder, tTable) (_, _, assigns) = textified
     where
-        go acc (key, state) = case L.lookup key lSplits of
-              Nothing -> acc
-              Just n  -> case n == state of
-                  True  -> acc
-                  False -> acc <> [key
-                                    <> "("
-                                    <> (T.singleton state)
-                                    <> ", "
-                                    <> (T.singleton n)
-                                    <> ")"]
-        tSplits = zip (T.init <$> ts) (T.last <$> ts)
-        lSplits = zip (T.init <$> ls) (T.last <$> ls)
-
+        textified = textify <$> mismatches
+        textify (t, (x, y)) = t <> "\t(" <> (T.pack . show) x <> ",  "
+            <> (T.pack . show) y <> ")"
+        mismatches = filter (\(_, (x, y)) -> x /= y) $ zip inputRowTexts outputs
+        inputRowTexts = (T.intersperse '\t' . T.concat . ((T.pack . show) <$>))
+            <$> inputLists
+        outputs = zip tOutputs lOutputs
+        lOutputs = fromJust . gateEval assigns <$> tCombos
+        tCombos = (Map.fromList . (zip tOrder)) <$> inputLists
+        inputLists = U.toList <$> vecs
+        (vecs, tOutputs) = unzip $ (L.sortOn fst . Map.toList) tTable
 
 -- Check to make sure that the gateOrders of the parsed pairs of gates are
 -- identical up to permutation. If they are, return them. 
 -- If not, error out and return the two NodeName Lists. 
-gateOrdCheck :: LogicalNodeGate 
-             -> TableNodeGate 
-             -> Validation GateInvalid (LogicalNodeGate, TableNodeGate)
-gateOrdCheck lGate tGate = case arePermutes lOrder tOrder of
+gateOrdCheck :: LogicalGate 
+             -> TruthTableGate 
+             -> Validation GateInvalid (LogicalGate, TruthTableGate)
+gateOrdCheck lG@(_, lOrder, _) tG@(_, tOrder, _) =
+  case arePermutes lOrder tOrder of
     False -> Failure $ TableExprInNodeMismatch (tOrder, lReOrder)
-    True  -> Success $ (lGate, tGate)
+    True  -> Success $ (lG, tG)
     where
-        lOrder = (gateOrder lGate)
-        tOrder = (gateOrder tGate)
-        lReOrder = sortWithOrder tOrder lOrder
+        lReOrder = sortWithOrder tOrder lOrder        
 
 -- Parse a NodeGate into a pair, where the first is the gate as parsed from a
 -- discrete logical expression, if that exists in the dmms file, and the second
 -- as parsed from a truth table, if that exists in the dmms file. If they both
 -- exist, they will be compared after parsing to ensure consistency. 
-gatePairParse :: Parser (Maybe LogicalNodeGate, Maybe TableNodeGate)
+gatePairParse :: Parser (Maybe LogicalGate, Maybe TruthTableGate)
 gatePairParse = between (symbol "NodeGate{") (symbol "NodeGate}")
     (runPermutation $ (,)
         <$> toPermutationWithDefault Nothing (Just <$> parseDiscreteLogic)
         <*> toPermutationWithDefault Nothing (Just <$> truthTableParse))
   
-parseDiscreteLogic :: Parser LogicalNodeGate
+parseDiscreteLogic :: Parser LogicalGate
 parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
     ((try pInt <|> pBin) >>= gateConsistencyCheck)
         where pInt = some parseNodeStateAssign
@@ -694,9 +753,9 @@ parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
 -- Sanity check on gate definitions. Return a NodeGate on success. 
 -- Return a useful error message on failure. Use mkLogicalGate. 
 gateConsistencyCheck :: [(NodeName, NodeStateAssign)]
-                     -> Parser LogicalNodeGate
+                     -> Parser LogicalGate
 gateConsistencyCheck nPairs = case mkLogicalGate nPairs of
-    Success nGate -> return nGate
+    Success gTriplet  -> return gTriplet
     Failure errs      -> fail $ "Error(s) in gate assignment: " <> show errs
 
 
@@ -760,7 +819,7 @@ trueParse = True <$ rword "True"
 falseParse :: Parser Bool
 falseParse = False <$ rword "False"
 
-truthTableParse :: Parser TableNodeGate
+truthTableParse :: Parser TruthTableGate
 truthTableParse = between (symbol "TruthTable{")
                           (symbol "TruthTable}")
                            slurpTable
@@ -773,9 +832,9 @@ truthTableParse = between (symbol "TruthTable{")
 -- 2. Are all possible input combinations listed?
 -- 3. Exactly once?
 -- 4. In strictly increasing order?
-tableConsistencyCheck :: ([NodeName],[[NodeState]]) -> Parser TableNodeGate
+tableConsistencyCheck :: ([NodeName],[[NodeState]]) -> Parser TruthTableGate
 tableConsistencyCheck (nodes, rows) = case mkTableGate (nodes, rows) of
-    Success tableGate -> return tableGate
+    Success truthTable -> return truthTable
     Failure errs      -> fail $ show errs
             
 
@@ -896,10 +955,3 @@ commaCheck :: BibTeXRecord -> Parser BibTeXRecord
 commaCheck r = case T.last r of
     ',' -> return $ T.init r
     _   -> return r
-
--- Sort a list by the order of elements in the list order
-sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
-sortWithOrder order = L.sortOn getOrder
-    where
-        getOrder k = Map.lookupDefault (-1) k orderHashMap
-        orderHashMap = Map.fromList (zip order ([1..] :: [Int]))

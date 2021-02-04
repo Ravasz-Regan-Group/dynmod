@@ -169,7 +169,9 @@ renderTableG cs ng = dmmsWrap "TruthTable" entries
     where
         entries = topLine <> "\n" <> rows
         topLine = T.intercalate "\t" $ gateOrder ng <> [gNodeName ng]
-        rows = T.intercalate "\n" $ L.sort $ prettyGateEval ng <$> cs
+        rows = T.intercalate "\n" $ L.sort $ prettyGateEval order assigns <$> cs
+        assigns = gateAssigns ng
+        order = gateOrder ng
 
 renderNamedLink :: (NodeName, DMLink) -> T.Text
 renderNamedLink (inName, dmL) = dmmsWrap "InLink" entries <> " //" <> inName
