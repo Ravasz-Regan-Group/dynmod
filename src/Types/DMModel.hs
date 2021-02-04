@@ -257,6 +257,7 @@ data NodeType = Undefined_NT
               | Enzyme
               | Protein
               | Membrane_Potential
+              | LncRNA
                 deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
@@ -289,6 +290,7 @@ instance Texy NodeType where
     texy Enzyme             = (footnotesize . fromLaTeX . TeXRaw) "Enz"
     texy Protein            = (footnotesize . fromLaTeX . TeXRaw) "Prot"
     texy Membrane_Potential = (footnotesize . fromLaTeX . TeXRaw) "MP"
+    texy LncRNA             = (footnotesize . fromLaTeX . TeXRaw) "LncRNA"
 
 data LinkEffect = Undefined_LE
                 | Activation
@@ -329,6 +331,8 @@ data LinkType =   Undefined_LT
                 | GAP_Activity
                 | Proteolysis
                 | Catalysis
+                | Epigenetic
+                | Transcription_Conflict
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
@@ -348,14 +352,17 @@ instance Texy LinkType where
     texy Unbinding           = (footnotesize . fromLaTeX . TeXRaw) "Unbind"
     texy Phosphorylation     = (footnotesize . fromLaTeX . TeXRaw) "P"
     texy Dephosphorylation   = (footnotesize . fromLaTeX . TeXRaw) "DP"
-    texy Phosphorylation_Localization =
-        (footnotesize . fromLaTeX . TeXRaw) "PLoc"
+    texy Phosphorylation_Localization
+                             = (footnotesize . fromLaTeX . TeXRaw) "PLoc"
     texy Ubiquitination      = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
     texy Degradation         = (footnotesize . fromLaTeX . TeXRaw) "Deg"
     texy GEF_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GEF"
     texy GAP_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GAP"
     texy Proteolysis         = (footnotesize . fromLaTeX . TeXRaw) "Lysis"
     texy Catalysis           = (footnotesize . fromLaTeX . TeXRaw) "Cat"
+    texy Epigenetic          = (footnotesize . fromLaTeX . TeXRaw) "Epi"
+    texy Transcription_Conflict
+                             = (footnotesize . fromLaTeX . TeXRaw) "Tr_conf"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

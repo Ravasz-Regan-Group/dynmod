@@ -386,6 +386,7 @@ nTDesc GTPase = "GTPase enzymes that hydrolyze ATP to ADP."
 nTDesc Enzyme = "Enzyme that does not fit the more specific enzyme categories listed above."
 nTDesc Protein = "Regulatory protein that does not fit any of the more specific classifications listed above."
 nTDesc Membrane_Potential = "A relative measure of membrane potential across a biological membrane, generally indicating whether this potential is within the  normal range, or abnormally low / high in a way that affects other regulatory processes."
+nTDesc LncRNA = ""
 
 -- Official descriptions of the various LinkTypes
 lTDesc :: LinkType -> T.Text
@@ -412,6 +413,8 @@ lTDesc GEF_Activity = "Action of a Guanine nucleotide exchange factor (GEF) lead
 lTDesc GAP_Activity = "Actions of a GTPase-activating protein (GAP) leading to the hydrolysis of GTP by (and usually de-activation of) a GTPase."
 lTDesc Proteolysis = "Protein cleavage."
 lTDesc Catalysis = "Increasing the rate of metabolite production by an enzyme."
+lTDesc Epigenetic = ""
+lTDesc Transcription_Conflict = ""
 
 -- Official descriptions of the various LinkEffects
 lEDesc :: LinkEffect -> T.Text

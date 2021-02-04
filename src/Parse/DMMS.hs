@@ -590,6 +590,7 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Enzyme             <$ rword "Enzyme"
             <|> Protein            <$ rword "Protein"
             <|> Membrane_Potential <$ rword "Membrane_Potential"
+            <|> LncRNA             <$ rword "LncRNA"
             )
         ) 
     <|>
@@ -668,6 +669,9 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> GAP_Activity        <$ rword "GAP_Activity"
             <|> Proteolysis         <$ rword "Proteolysis"
             <|> Catalysis           <$ rword "Catalysis"
+            <|> Epigenetic          <$ rword "Epigenetic"
+            <|> Transcription_Conflict
+                                    <$ rword "Transcription_Conflict"
             )
         )
     <|>
