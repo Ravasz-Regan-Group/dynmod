@@ -490,10 +490,12 @@ gateLinkCheck :: (DMNode, [(NodeName, DMLink)])
 gateLinkCheck parsed@((DMNode _ pNode), links) = 
     let linkInputs = L.sort $ fst <$> links
         gateInputs = L.sort $ gateOrder pNode
+        symmetricDifference = (linkInputs L.\\ gateInputs) `L.union`
+            (gateInputs L.\\ gateInputs)
     in
     case gateInputs == linkInputs of
         True  -> return parsed
-        False -> fail $ show $ GateInLinkMismatch (gateInputs, linkInputs)
+        False -> fail $ show $ GateInLinkMismatch symmetricDifference
 
 -- Make sure that the NodeName from the parsed NodeGate is the same as the
 -- NodeName from the parsed NodeMetaData

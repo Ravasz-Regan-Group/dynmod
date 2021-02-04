@@ -22,7 +22,7 @@ import qualified Data.Text as T
 import qualified Text.Pretty.Simple as PS
 import qualified Data.Graph.Inductive as Gr
 import Data.Void
-import Control.Monad (zipWithM_, when)
+import Control.Monad (zipWithM_, when, unless)
 import qualified Text.Megaparsec as M
 import Control.Monad.Reader (runReader)
 import Paths_dynmod (version)
@@ -55,7 +55,6 @@ workDMMS f options (Right parsed) = do
         tts = layerTTs <$> layers
         bNPs = mkBooleanNet dmModel
     putStrLn "Good parse"
-    ttWrite f tts bNPs
     when (pubWarn options)
         (pubWWrite f (dmModel, citeDict))
     when (coordColors options)
@@ -84,6 +83,8 @@ workDMMS f options (Right parsed) = do
         pTest <- parseRelFile "test/parseTest.hs"
         RW.writeFile pTest $ LT.toStrict
             $ PS.pShowNoColor $ dmModel
+    unless (noTTWrite options)
+        (ttWrite f tts bNPs)
 
 
 -- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
@@ -208,6 +209,7 @@ data Input = Input
     , suppPDF     :: Bool
     , gmlWrite    :: Bool
     , updateGMLN  :: T.Text
+    , noTTWrite   :: Bool
     , parseTest   :: Bool
     } deriving (Eq, Show)
 
@@ -244,6 +246,11 @@ input = Input
             \coordinate information from a specified GML file. The networks \
             \in the two files must match. "
         )
+    <*> O.switch
+        ( O.long "no_ttwrite"
+       <> O.short 't'
+       <> O.help "Whether to refrain from writing out tt files. "
+        )
     -- Whether to write a pShowNoColor of the DMMS we've parsed.
     <*> O.switch
         ( O.long "parsetest"
@@ -263,7 +270,8 @@ opts = O.info (O.helper <*> versionOpt <*> input)
    <> O.progDesc "Parse a dmms file and output a Truth Table directory. \
    \Options: write publication level warnings to a file, write node coordinates\
    \ and color to a file, write a supplementary publication of the rmms file to\
-   \ PDF, update a dmms file from a gml file. "
+   \ PDF, update a dmms file from a gml file, refrain from writing out tt files\ 
+   \."
    <> O.header "dynmod - processing dmms files")
 
 

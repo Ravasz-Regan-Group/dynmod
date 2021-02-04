@@ -614,7 +614,7 @@ data TableInvalid = IncompleteOrOversizedRow
 
 data GateInLinkInvalid = GateInLinkMismatch GateInLinkMismatch
     deriving (Show, Eq)
-type GateInLinkMismatch = ([NodeName], [NodeName])
+type GateInLinkMismatch = [NodeName]
 
 data NodeInvalid = NodeMetaNameMismatch NodeMetaNameMismatch
                  | DuplicateDMLinks DuplicateDMLinks
