@@ -619,11 +619,13 @@ data ModelLayerInvalid =
                     NodeRefdNodesMismatch NodeRefdNodesMismatch
                   | StatesRefdStatesMisMatch StatesRefdStatesMisMatch
                   | NodeInlinkMismatch NodeInlinkMismatch
+                  | NodeNamesRepeated NodeNamesRepeated
      deriving (Show, Eq)
 type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
                                         -- any node
 type StatesRefdStatesMisMatch = [(NodeName, [NodeState])]
 type NodeInlinkMismatch = ([NodeName], [NodeName])
+type NodeNamesRepeated = [NodeName]
 
 data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys
     deriving (Show, Eq)
@@ -638,6 +640,7 @@ data PubInvalid =   PubMissingDesc MissingDescription
                   | UndefinedEffectType UndefinedEffectType
                   | OrphanedModelCites OrphanedModelCites
                   | ExcessDictCites ExcessDictCites
+                  | GateFromTable GateFromTable
     deriving (Show, Eq, Ord)
 
  -- The name of the piece missing a description, and its associated type. 
@@ -654,6 +657,7 @@ type UndefinedLinkType = (NodeName, NodeName) -- The associated Node
 type UndefinedEffectType = (NodeName, NodeName) -- The associated Node
 type OrphanedModelCites = (T.Text, [BibTeXKey])
 type ExcessDictCites = (T.Text, [BibTeXKey])
+type GateFromTable = NodeName
 
 
 -- It would be very easy to assemble DMModels with nonsensical maps between

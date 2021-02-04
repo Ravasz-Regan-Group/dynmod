@@ -243,9 +243,18 @@ modelLayerParse = runPermutation $
 modelGraphParse :: Parser ModelGraph
 modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
     some nodeParse
+    >>= nodeUniqueCheck
     >>= nodeStateCheck
     >>= nodeLinkCheck
     >>= modelGraphAssembler
+
+nodeUniqueCheck :: [(DMNode, [(NodeName, DMLink)])]
+               -> Parser [(DMNode, [(NodeName, DMLink)])] 
+nodeUniqueCheck nodesWLinks = case repeated nodeNames of
+    [] -> return nodesWLinks
+    rns@(_:_) -> fail $ "NodeNamesRepeated\n" <> (T.unpack . T.unlines) rns
+    where
+        nodeNames = (nodeName . nodeMeta . fst) <$> nodesWLinks
 
 -- Check that, for every node and state reference in every NodeExpr, that node
 -- exists in the DMModel layer that we are in, and has a NodeStateAssign for

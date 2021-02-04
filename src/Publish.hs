@@ -226,7 +226,7 @@ mkMGPublish mG = Gr.mkGraph <$> checkedNodes <*> checkedEdges
 mkPublishNode :: Gr.LNode DMNode -> Validation [PubInvalid] (Gr.LNode DMNode)
 mkPublishNode (n, (DMNode nM nG)) = (,) <$> (pure n) <*> pubNode
     where
-        pubNode = DMNode <$> (mkPublishNodeMeta nM) <*> (pure nG)
+        pubNode = DMNode <$> (mkPublishNodeMeta nM) <*> (mkNodeGatePublish nG)
 
 mkPublishNodeMeta :: NodeMeta -> Validation [PubInvalid] NodeMeta
 mkPublishNodeMeta nMD = let nName = nodeName nMD in
@@ -308,4 +308,18 @@ mkLinkTypePublish fromNodeN toNodeN lT = case lT of
     _            -> Success lT
     where
         err = UndefinedLinkType (fromNodeN, toNodeN)
-        
+
+mkNodeGatePublish :: NodeGate -> Validation [PubInvalid] NodeGate
+mkNodeGatePublish nG =
+    NodeGate <$> (pure $ gNodeName nG)
+             <*> (pure $ gateOrder nG)
+             <*> (pure $ gateAssigns nG)
+             <*> (pure $ gateTable nG)
+             <*> (mkOriginPublish (gateOrigin nG) (gNodeName nG))
+
+mkOriginPublish :: GateOrigin -> NodeName -> Validation [PubInvalid] GateOrigin
+mkOriginPublish gO nM
+    | gO == DMMSTruthTable = Failure [GateFromTable nM]
+    | otherwise = Success gO
+    
+   
