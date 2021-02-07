@@ -258,6 +258,7 @@ data NodeType = Undefined_NT
               | Protein
               | Membrane_Potential
               | LncRNA
+              | Cell_Surgace_Ligand
                 deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
@@ -291,6 +292,8 @@ instance Texy NodeType where
     texy Protein            = (footnotesize . fromLaTeX . TeXRaw) "Prot"
     texy Membrane_Potential = (footnotesize . fromLaTeX . TeXRaw) "MP"
     texy LncRNA             = (footnotesize . fromLaTeX . TeXRaw) "LncRNA"
+    texy Cell_Surgace_Ligand
+                            = (footnotesize . fromLaTeX . TeXRaw) "SLig"
 
 data LinkEffect = Undefined_LE
                 | Activation
@@ -333,6 +336,7 @@ data LinkType =   Undefined_LT
                 | Catalysis
                 | Epigenetic
                 | Transcription_Conflict
+                | Secretion
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
@@ -363,6 +367,7 @@ instance Texy LinkType where
     texy Epigenetic          = (footnotesize . fromLaTeX . TeXRaw) "Epi"
     texy Transcription_Conflict
                              = (footnotesize . fromLaTeX . TeXRaw) "Tr_conf"
+    texy Secretion           = (footnotesize . fromLaTeX . TeXRaw) "Secr"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -919,7 +924,7 @@ isConsistent gAssigns
                     (replicate (length abExprStates) gateExprs)
                     abExprStates
 --      Assemble the gate states and inputs for reporting. 
-        errs = ContradictoryExprSet 
+        errs = ContradictoryExprSet
             $ L.zip4 abExprs abExprStates abInputs abOutputs
 
 -- Table Gates

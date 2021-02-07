@@ -491,7 +491,7 @@ gateLinkCheck parsed@((DMNode _ pNode), links) =
     let linkInputs = L.sort $ fst <$> links
         gateInputs = L.sort $ gateOrder pNode
         symmetricDifference = (linkInputs L.\\ gateInputs) `L.union`
-            (gateInputs L.\\ gateInputs)
+            (gateInputs L.\\ linkInputs)
     in
     case gateInputs == linkInputs of
         True  -> return parsed
@@ -593,6 +593,8 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             <|> Protein            <$ rword "Protein"
             <|> Membrane_Potential <$ rword "Membrane_Potential"
             <|> LncRNA             <$ rword "LncRNA"
+            <|> Cell_Surgace_Ligand
+                                   <$ rword "Cell_Surgace_Ligand"
             )
         ) 
     <|>
@@ -674,6 +676,7 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> Epigenetic          <$ rword "Epigenetic"
             <|> Transcription_Conflict
                                     <$ rword "Transcription_Conflict"
+            <|> Secretion          <$ rword "Secretion"
             )
         )
     <|>
