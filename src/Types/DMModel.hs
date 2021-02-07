@@ -603,7 +603,7 @@ type ContradictoryExprSet =
         [([NodeExpr], [Int], ExprInput, [Maybe Bool])]
 -- type TableExprMismatch = (([ExprInput], [Maybe NodeState])
 --                               , ([ExprInput], [Maybe NodeState]))
-type TableExprInNodeMismatch = ([NodeName], [NodeName])
+type TableExprInNodeMismatch = [NodeName]
 type TableExprStateMismatch = T.Text
 type TableExprOutputMismatch = (T.Text, [NodeStateAssign])
 type TableDisNameMismatch = (NodeName, NodeName)

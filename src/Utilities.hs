@@ -149,3 +149,16 @@ sortWithOrderOn f order = L.sortOn (getOrder . f)
 
 mkOrderHashMap :: (Ord a, Hash.Hashable a) => [a] -> Map.HashMap a Int
 mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))
+
+-- The symmetric difference of two lists, ie the bit outside the intersection:
+--     .───────..-─--───.     
+--   *'*******,'`********`.   
+--  *********╱    ╲******* ╲  
+-- ;* ******;      :********* 
+-- :*********      ;********; 
+--  ╲********╲    *********╱  
+--   *********╲  ╱********╱   
+--    `******* `. *******'    
+--      `──---'  `─────'      
+(\|\) :: Ord a => [a] -> [a] -> [a]
+(\|\) xs ys = (xs L.\\ ys) `L.union` (ys L.\\ xs)

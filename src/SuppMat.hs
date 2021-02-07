@@ -229,9 +229,9 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
    longtable (Just Center) theTSpec
     (
       "\n" <>
-      (caption ("Description " <> commS "&" <> " experimental support for the \
-        \ modules of " <> ((texy . nodeName . nodeMeta . fst) inAdj))) <>
-         "\n" <> endhead <> lnbk <> "\n" <>
+      (caption ("Description " <> commS "&" <> " experimental support for nodes\
+        \ in the " <> ((texy . nodeName . nodeMeta . fst) inAdj))) <> " module"
+         <> "\n" <> endhead <> lnbk <> "\n" <>
       toprule Nothing <> "\n" <>
       sMTableUnits    <> "\n" <>
       midrule Nothing <> "\n" <>

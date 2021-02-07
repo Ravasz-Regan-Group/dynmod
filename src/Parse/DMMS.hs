@@ -29,7 +29,7 @@ import qualified Data.List as L
 import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.Bifunctor as B
 import Data.Void
-import Data.Char (isSeparator, toLower)
+import Data.Char (toLower, isSpace)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
@@ -42,13 +42,18 @@ sc = L.space space1 lineCmnt blockCmnt
     lineCmnt  = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
 
--- Space handling that excludes eol
-space1' :: (MonadParsec e s m, Token s ~ Char) => m ()
-space1' = void $ takeWhile1P (Just "white space no eol") 
-    (\c -> isSeparator c || (c == '\t'))
+-- | Is it a horizontal space character? (Taken from Megaparsec >= 9.0.0)
+isHSpace :: Char -> Bool
+isHSpace x = isSpace x && x /= '\n' && x /= '\r'
 
-sc' :: Parser ()
-sc' = L.space space1' lineCmnt blockCmnt
+-- | Like 'space1', but does not accept newlines and carriage returns.
+-- | Taken from Megaparsec >= 9.0.0
+hspace1 :: (MonadParsec e s m, Token s ~ Char) => m ()
+hspace1 = void $ takeWhile1P (Just "white space") isHSpace
+{-# INLINE hspace1 #-}
+
+hsc :: Parser ()
+hsc = L.space hspace1 lineCmnt blockCmnt
   where
     lineCmnt  = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
@@ -56,30 +61,30 @@ sc' = L.space space1' lineCmnt blockCmnt
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-lexeme' :: Parser a -> Parser a
-lexeme' = L.lexeme sc'
+hlexeme :: Parser a -> Parser a
+hlexeme = L.lexeme hsc
 
 symbol :: T.Text -> Parser T.Text
 symbol = L.symbol sc
 
-symbol' :: T.Text -> Parser T.Text
-symbol' = L.symbol sc'
+hsymbol :: T.Text -> Parser T.Text
+hsymbol = L.symbol hsc
 
--- | 'braces' parses something between parenthesis.
+-- | 'braces' parses something between braces.
 
 -- braces :: Parser a -> Parser a
--- braces = between (symbol "(") (symbol ")")
+-- braces = between (symbol "{") (symbol "}")
 
--- braces' :: Parser a -> Parser a
--- braces' = between (symbol' "(") (symbol' ")")
+-- hbraces :: Parser a -> Parser a
+-- hbraces = between (hsymbol "{") (hsymbol "}")
 
 -- | 'parens' parses something between parenthesis.
 
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
-parens' :: Parser a -> Parser a
-parens' = between (symbol' "(") (symbol' ")")
+hparens :: Parser a -> Parser a
+hparens = between (hsymbol "(") (hsymbol ")")
 
 -- | 'number' parses an number in scientific format.
 
@@ -100,8 +105,8 @@ integer = lexeme L.decimal
 colon :: Parser T.Text
 colon = symbol ":"
 
-colon' :: Parser T.Text
-colon' = symbol' ":"
+hcolon :: Parser T.Text
+hcolon = hsymbol ":"
 
 hash :: Parser T.Text
 hash = symbol "#"
@@ -116,8 +121,8 @@ stateAssign = symbol "*="
 comma :: Parser T.Text
 comma = symbol ","
 
-comma' :: Parser T.Text
-comma' = symbol' ","
+hcomma :: Parser T.Text
+hcomma = hsymbol ","
 
 -- | 'rword' generates a parser for a specified reserved word. 
 
@@ -412,7 +417,7 @@ versionParse mVer = (lexeme . try) $ (rword mVer) >> colon >> Ver.semver'
 modelPaperParse :: Parser [T.Text]
 modelPaperParse = do
     _ <- symbol "ModelPaper"
-    _ <- colon'
+    _ <- hcolon
     paperKeys <- sepBy citeKeyParse comma
     _ <- eol
     return paperKeys
@@ -421,8 +426,8 @@ modelPaperParse = do
 biasPairParse :: T.Text -> Parser [(NodeName, NodeState)]
 biasPairParse bias = (lexeme . try) 
     (rword bias
-        >> colon'
-        >> sepBy (parens' ((,) <$> variable <*> (comma >> integer))) comma'
+        >> hcolon
+        >> sepBy (hparens ((,) <$> variable <*> (comma >> integer))) hcomma
         <* eol
     )
 
@@ -462,7 +467,7 @@ colorCheck ts
 
 -- Parse a straight Text metadata item. 
 metaItem :: T.Text -> Parser T.Text
-metaItem aMeta = (lexeme . try) (rword aMeta >> colon' >>
+metaItem aMeta = (lexeme . try) (rword aMeta >> hcolon >>
     (T.pack <$> manyTill (anySingle <?> "metaItem") eol))
 
 -- Parser a node
@@ -490,12 +495,10 @@ gateLinkCheck :: (DMNode, [(NodeName, DMLink)])
 gateLinkCheck parsed@((DMNode _ pNode), links) = 
     let linkInputs = L.sort $ fst <$> links
         gateInputs = L.sort $ gateOrder pNode
-        symmetricDifference = (linkInputs L.\\ gateInputs) `L.union`
-            (gateInputs L.\\ linkInputs)
     in
     case gateInputs == linkInputs of
         True  -> return parsed
-        False -> fail $ show $ GateInLinkMismatch symmetricDifference
+        False -> fail $ show $ GateInLinkMismatch $ linkInputs \|\ gateInputs
 
 -- Make sure that the NodeName from the parsed NodeGate is the same as the
 -- NodeName from the parsed NodeMetaData
@@ -518,8 +521,8 @@ extractCitations aMeta = do
 
 -- Return a (possibly empty) list of citation key lists. 
 pullCitations :: T.Text -> Parser [[T.Text]]
-pullCitations aMeta = (lexeme' (rword aMeta >> colon' >>
-    many (try (skipManyTill (noneOf ['\n', '\r']) citationParse)) <* 
+pullCitations aMeta = (hlexeme (rword aMeta >> hcolon >>
+    many (try (skipManyTill (noneOf ['\n', '\r']) citationParse)) <*
         (skipManyTill ((noneOf ['\n', '\r']) <?> "pullCitations") eol )))
             >>= check
     where
@@ -536,7 +539,7 @@ pullCitations aMeta = (lexeme' (rword aMeta >> colon' >>
 
 -- Parse the keys of a LaTeX "\cite{}" command. 
 citationParse :: Parser [T.Text]
-citationParse = (between (symbol "\\cite{") (symbol "}")
+citationParse = (between (hsymbol "\\cite{") (hsymbol "}")
     (sepBy1 citeKeyParse' comma) )
 
 -- Parse Node metadata
@@ -598,7 +601,7 @@ nodeTypeParse = lexeme $ rword "NodeType" >>
             )
         ) 
     <|>
-        (colon' >>
+        (hcolon >>
             Undefined_NT <$ undefParse
         )
     )
@@ -637,7 +640,7 @@ linkEffectParse = lexeme $ rword "LinkEffect" >>
             )
         )
     <|>
-        (colon' >>
+        (hcolon >>
             Undefined_LE <$ undefParseNone
         )
     )
@@ -680,7 +683,7 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             )
         )
     <|>
-        (colon' >>
+        (hcolon >>
             Undefined_LT <$ undefParse
         )
     )
@@ -747,10 +750,8 @@ gateOrdCheck :: LogicalGate
              -> Validation GateInvalid (LogicalGate, TruthTableGate)
 gateOrdCheck lG@(_, lOrder, _) tG@(_, tOrder, _) =
   case arePermutes lOrder tOrder of
-    False -> Failure $ TableExprInNodeMismatch (tOrder, lReOrder)
+    False -> Failure $ TableExprInNodeMismatch $ tOrder \|\ lOrder
     True  -> Success $ (lG, tG)
-    where
-        lReOrder = sortWithOrder tOrder lOrder        
 
 -- Parse a NodeGate into a pair, where the first is the gate as parsed from a
 -- discrete logical expression, if that exists in the dmms file, and the second
@@ -921,7 +922,7 @@ entryTypeParse = (lexeme . try) (p >>= check)
                 else return x
 
 citeKeyParse :: Parser BibTeXKey
-citeKeyParse = lexeme' (p >>= check)
+citeKeyParse = hlexeme (p >>= check)
   where
     p       = T.pack <$> ((:) <$> (letterChar <|> char '_') <*> 
                     (many (alphaNumChar
