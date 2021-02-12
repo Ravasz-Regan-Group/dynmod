@@ -632,12 +632,14 @@ data ModelLayerInvalid =
                   | StatesRefdStatesMisMatch StatesRefdStatesMisMatch
                   | NodeInlinkMismatch NodeInlinkMismatch
                   | NodeNamesRepeated NodeNamesRepeated
+                  | NodeDimensionsInconsistent NodeDimensionsInconsistent
      deriving (Show, Eq)
 type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
                                         -- any node
 type StatesRefdStatesMisMatch = [(NodeName, [NodeState])]
 type NodeInlinkMismatch = ([NodeName], [NodeName])
 type NodeNamesRepeated = [NodeName]
+type NodeDimensionsInconsistent = [Int]
 
 data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys
     deriving (Show, Eq)

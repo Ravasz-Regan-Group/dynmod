@@ -251,6 +251,7 @@ modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
     >>= nodeUniqueCheck
     >>= nodeStateCheck
     >>= nodeLinkCheck
+    >>= coordDimensionCheck
     >>= modelGraphAssembler
 
 nodeUniqueCheck :: [(DMNode, [(NodeName, DMLink)])]
@@ -368,7 +369,7 @@ tableMaxAdjust maxima n = DMNode nMeta newGate
 -- Check that for the NodeName associated with each DMLink there exists an
 -- actual DMNode with that NodeName
 nodeLinkCheck :: [(DMNode, [(NodeName, DMLink)])]
-               -> Parser [(DMNode, [(NodeName, DMLink)])]
+              -> Parser [(DMNode, [(NodeName, DMLink)])]
 nodeLinkCheck nodesWLinks = case lSet == nSet of
     True  -> return nodesWLinks
     False -> fail $ show $ err
@@ -379,6 +380,35 @@ nodeLinkCheck nodesWLinks = case lSet == nSet of
       err = NodeInlinkMismatch (nList, lList)
       nList = L.sort $ Set.toList nSet
       lList = L.sort $ Set.toList lSet
+
+-- Check that all of the NodeCoordinates in a given layer are of the same
+-- dimension, or empty. If they are, fill the empty ones with appropriately
+-- dimensioned origin points. 
+coordDimensionCheck :: [(DMNode, [(NodeName, DMLink)])]
+                    -> Parser [(DMNode, [(NodeName, DMLink)])]
+coordDimensionCheck nodesWLinks = case L.nub nodeDims of
+    [] -> fail "Expected some DMNodes"
+    [n] -> case n < 2 of
+        True  -> return $ zip (padNodeDim 2 <$> nodes) links
+        False -> return $ nodesWLinks
+    [0,n] -> case n < 2 of
+        True  -> return $ zip (padNodeDim 2 <$> nodes) links
+        False -> return $ zip (padNodeDim n <$> nodes) links
+    (n:m:ms) -> fail $ show $ NodeDimensionsInconsistent (n:m:ms)
+    where
+        nodeDims = L.sort $ (U.length . nodeCoordinate . nodeMeta) <$> nodes 
+        (nodes, links) = unzip nodesWLinks 
+
+-- Extend the dimension of the coordinate a DMNode to the given Int, adding on
+-- zeroes as necessary. 
+padNodeDim :: Int -> DMNode -> DMNode
+padNodeDim dim oldN@(DMNode (NodeMeta nN nG nT nCol oldCoord nI) nGate)
+    | oldDim >= dim = oldN
+    | otherwise = (DMNode (NodeMeta nN nG nT nCol newCoord nI) nGate)
+    where
+        newCoord = oldCoord U.++ padVec
+        padVec = U.replicate (dim - oldDim) (0 :: Double)
+        oldDim = U.length oldCoord
 
 -- Assemble the DMNodes & DMLinks into an fgl graph. The fromJust is justified
 -- because we have already ensured that every NodeName associated with a DMLink
