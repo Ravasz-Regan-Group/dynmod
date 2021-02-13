@@ -270,17 +270,15 @@ nodeUniqueCheck nodesWLinks = case repeated nodeNames of
 -- exist for that NodeGate in the DMMS file. 
 nodeStateCheck :: [(DMNode, [(NodeName, DMLink)])]
                -> Parser [(DMNode, [(NodeName, DMLink)])]
-nodeStateCheck nodesWLinks = case ( isSubset exNodes nodes
-                                  , isSubset exprStates nodeStates)
-                             of
-    (False, True) -> fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
-    (True, False) -> fail $ show $
-        StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
-    (False, False) -> fail $ show $
-        StatesRefdStatesMisMatch (exprRefs L.\\ nodeRefs)
-    (True, True) -> case sequenceA (tableSizeCheck nodeMaxes <$> dmNodes) of
-        Failure errs -> fail (T.unpack $ T.unlines $ ((T.pack . show) <$>) errs)
-        Success ns -> return $ zip ns links
+nodeStateCheck nodesWLinks =  case isSubset exNodes nodes of
+    False -> fail $ show $ NodeRefdNodesMismatch (exNodes L.\\ nodes)
+    True -> case filter (\(n, m) -> n /= m) $ zip exprRefs equivalentNodeRefs of
+        zs@(_:_) -> fail $ show $ StatesRefdStatesMisMatch $
+            (\(a, b) -> (fst a, (snd a, snd b))) <$> zs
+        []  -> case sequenceA (tableSizeCheck nodeMaxes <$> dmNodes) of
+            Failure errs -> fail $
+                T.unpack $ T.unlines $ ((T.pack . show) <$>) errs
+            Success ns -> return $ zip ns links
     where
         links = snd <$> nodesWLinks
         dmNodes = fst <$> nodesWLinks
@@ -288,11 +286,11 @@ nodeStateCheck nodesWLinks = case ( isSubset exNodes nodes
         exprRefs = L.sort $ refdNodesStatesNG $
             concatMap (fmap snd . gateAssigns) nodeGates
         exNodes = fst <$> exprRefs
-        exprStates = snd <$> exprRefs
         nodes = gNodeName <$> nodeGates
         assigns = gateAssigns <$> nodeGates
         nodeRefs = L.sort $ zip nodes $ (fst <$>) <$> assigns
-        nodeStates = snd <$> nodeRefs
+        equivalentNodeRefs = filter (isExprNode exprRefs) nodeRefs
+        isExprNode refs (n, _) = elem n $ fst <$> refs
         nodeMaxes :: [(NodeName, NodeState)]
         nodeMaxes = (\(x, ns) -> (x, maximum ns)) <$> nodeRefs
 

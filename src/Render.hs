@@ -15,7 +15,6 @@ import qualified Data.HashSet as Set
 import qualified Data.Versions as Ver
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
-import Data.Maybe (fromJust)
 import qualified Data.List as L
 
 renderGML :: GML -> T.Text
@@ -122,9 +121,10 @@ renderColor c = case L.lookup c cPairs of
 renderGate :: LayerRange -> DMNode -> T.Text
 renderGate lr n = dmmsWrap "NodeGate" entries
     where
-        entries = renderDiscreteG lr nGate <> "\n" <> renderTableG combos nGate
+        entries = case gateOrigin nGate of
+            DMMSTruthTable -> renderTableG nGate
+            _ -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
         nGate = nodeGate n
-        combos = fromJust $ nodeCombinations lr n
 
 renderDiscreteG :: LayerRange -> NodeGate -> T.Text
 renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries
@@ -146,9 +146,11 @@ renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries
 
 renderExpr :: Set.HashSet NodeName -> NodeExpr -> T.Text
 renderExpr _ (GateLit b) = (T.pack . show) b
-renderExpr s (GateConst n st)
-    | Set.member n s = n
-    | otherwise      = n <> ":" <> (T.pack . show) st
+renderExpr s (GateConst n st) = case Set.member n s of
+    True -> case st of
+        0 -> "not " <> n
+        _ -> n
+    False -> n <> ":" <> (T.pack . show) st
 renderExpr s (Not expr) = "not " <> parRenderExpr s expr
 renderExpr s (Binary And expr1 expr2) =
     (parRenderExpr s expr1) <> " and " <> (parRenderExpr s expr2)
@@ -161,17 +163,21 @@ parRenderExpr s ex = case ex of
     (GateConst _ _) -> renderExpr s ex
     _               -> "(" <> renderExpr s ex <> ")"
 
--- Rendering a table requires knowing the full range of all the nodes referenced
--- in all the NodeExprs of all the NodeStateAssigns, so those must be passed in
--- also. 
-renderTableG :: [ExprInput] -> NodeGate -> T.Text
-renderTableG cs ng = dmmsWrap "TruthTable" entries
+renderTableG :: NodeGate -> T.Text
+renderTableG ng = dmmsWrap "TruthTable" entries
     where
-        entries = topLine <> "\n" <> rows
+        entries = topLine <> "\n" <> (T.intercalate "\n" rows)
         topLine = T.intercalate "\t" $ gateOrder ng <> [gNodeName ng]
-        rows = T.intercalate "\n" $ L.sort $ prettyGateEval order assigns <$> cs
-        assigns = gateAssigns ng
-        order = gateOrder ng
+        rows = L.sort $ zipWith (<>) inputRows tOutputs
+        inputRows =
+            (T.intercalate "\t" . ((T.pack . show) <$>) . U.toList) <$> vecs
+        tOutputs = ((<>) "\t" . T.pack . show) <$> outputs
+        (vecs, outputs) = (unzip . Map.toList . gateTable) ng
+        
+        
+-- rows = T.intercalate "\n" $ L.sort $ prettyGateEval order assigns <$> cs
+-- assigns = gateAssigns ng
+-- order = gateOrder ng
 
 renderNamedLink :: (NodeName, DMLink) -> T.Text
 renderNamedLink (inName, dmL) = dmmsWrap "InLink" entries <> " //" <> inName

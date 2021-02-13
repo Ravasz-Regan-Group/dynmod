@@ -51,10 +51,13 @@ workDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
 workDMMS f options (Right parsed) = do
     let dmModel = (fst . snd) parsed
         citeDict = (snd . snd) parsed
+        fileVersion = fst parsed
         layers = modelLayers dmModel
         tts = layerTTs <$> layers
         bNPs = mkBooleanNet dmModel
     putStrLn "Good parse"
+    when ((gmlWrite options) && (updateGMLN options /= ""))
+        (fail "-g will overwrite the existing gml file!")
     when (pubWarn options)
         (pubWWrite f (dmModel, citeDict))
     when (coordColors options)
@@ -63,7 +66,7 @@ workDMMS f options (Right parsed) = do
         (writeSupp f (snd parsed))
     when (gmlWrite options)
         (writeGML f dmModel)
-    when ((updateGMLN options) /= "") $ do
+    when (updateGMLN options /= "") $ do
         let gFileText = updateGMLN options
         gFilePath <- resolveFile' $ T.unpack gFileText
         (_, ext) <- splitExtension gFilePath
@@ -72,17 +75,14 @@ workDMMS f options (Right parsed) = do
                 let strGMLFName = toFilePath gFilePath
                 gmlFileContent <- RW.readFile gFilePath
                 let gmlPOut = M.runParser gmlParse strGMLFName gmlFileContent
---                 let mg = case gmlPOut of
---                      (Left _) -> "Bad parse"
---                      (Right g)  -> LT.toStrict $ PS.pShowNoColor $ g
---                 gTest <- parseRelFile "test/parseGMLTest.hs"
---                 RW.writeFile gTest mg
                 updateDMMS f parsed gmlPOut
             _ -> fail $ "Not a gml file: " <> ext
     when (parseTest options) $ do
-        pTest <- parseRelFile "test/parseTest.hs"
-        RW.writeFile pTest $ LT.toStrict
-            $ PS.pShowNoColor $ dmModel
+        pTest <- parseRelFile "test/parseTest.dmms"
+        let modelRender = renderDMMS fileVersion dmModel citeDict
+        RW.writeFile pTest modelRender
+--         pTest <- parseRelFile "test/parseTest.hs"
+--         RW.writeFile pTest $ LT.toStrict $ PS.pShowNoColor $ dmModel
     unless (noTTWrite options)
         (ttWrite f tts bNPs)
 

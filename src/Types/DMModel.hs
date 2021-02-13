@@ -366,7 +366,7 @@ instance Texy LinkType where
     texy Catalysis           = (footnotesize . fromLaTeX . TeXRaw) "Cat"
     texy Epigenetic          = (footnotesize . fromLaTeX . TeXRaw) "Epi"
     texy Transcription_Conflict
-                             = (footnotesize . fromLaTeX . TeXRaw) "Tr_conf"
+                             = (footnotesize . fromLaTeX . TeXRaw) "TrConf"
     texy Secretion           = (footnotesize . fromLaTeX . TeXRaw) "Secr"
 
 type EntrezGeneID = Int
@@ -636,7 +636,7 @@ data ModelLayerInvalid =
      deriving (Show, Eq)
 type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
                                         -- any node
-type StatesRefdStatesMisMatch = [(NodeName, [NodeState])]
+type StatesRefdStatesMisMatch = [(NodeName, ([NodeState], [NodeState]))]
 type NodeInlinkMismatch = ([NodeName], [NodeName])
 type NodeNamesRepeated = [NodeName]
 type NodeDimensionsInconsistent = [Int]
@@ -1001,9 +1001,11 @@ gateCombinations asns = fmap Map.fromList combosList
         combosList = fmap (zip nNames) (sequenceA nStates)
 
 -- Produces the nodes, and states of those nodes, that are referenced,
--- (explicitly or otherwise), in a given list of NodeExprs.
+-- (explicitly or otherwise), in a given list of NodeExprs. Make sire that, even
+-- if a node is only referenced as :0, the :1 state is also included. 
 refdNodesStatesNG :: [NodeExpr] -> [(NodeName, [NodeState])]
-refdNodesStatesNG exprs = (\(nName, s) -> (nName, [0..s])) <$> (Map.toList nMap)
+refdNodesStatesNG exprs = (\(nName, s) -> (nName, [0..(max 1 s)])) <$>
+                                                        (Map.toList nMap)
     where
         nMap = foldr (Map.unionWith max) Map.empty (exprNodes <$> exprs)
 
