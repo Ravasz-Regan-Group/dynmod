@@ -417,6 +417,7 @@ lTDesc Catalysis = "Increasing the rate of metabolite production by an enzyme."
 lTDesc Epigenetic = "Process that alters gene expression via modifying chromatin condensation or altering DNA methylation."
 lTDesc Transcription_Conflict = ""
 lTDesc Secretion = "Secretion or shedding of a protein or other regulatory molecule to the extracellular environment."
+lTDesc RNAi = "This process represents inhibitory binding of cytoplasmic mRNAs by RISC-bound microRNAs that block translation and/or enhance mRNA degradation."
 
 -- Official descriptions of the various LinkEffects
 lEDesc :: LinkEffect -> T.Text

@@ -337,6 +337,7 @@ data LinkType =   Undefined_LT
                 | Epigenetic
                 | Transcription_Conflict
                 | Secretion
+                | RNAi
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
@@ -368,6 +369,7 @@ instance Texy LinkType where
     texy Transcription_Conflict
                              = (footnotesize . fromLaTeX . TeXRaw) "TrConf"
     texy Secretion           = (footnotesize . fromLaTeX . TeXRaw) "Secr"
+    texy RNAi                = (footnotesize . fromLaTeX . TeXRaw) "RNAi"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

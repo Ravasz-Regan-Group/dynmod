@@ -707,7 +707,8 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> Epigenetic          <$ rword "Epigenetic"
             <|> Transcription_Conflict
                                     <$ rword "Transcription_Conflict"
-            <|> Secretion          <$ rword "Secretion"
+            <|> Secretion           <$ rword "Secretion"
+            <|> RNAi                <$ rword "RNAi"
             )
         )
     <|>
