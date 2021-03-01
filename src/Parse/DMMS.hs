@@ -748,7 +748,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
                 . ((T.pack . show) <$>)) <$> tSortedtGOrderedELCombos
             tSortedtGOrderedELCombos = L.sort $ (snd <$>) <$> tGOrderedELCombos
             tGOrderedELCombos = (sortWithOrderOn fst tOrder) <$> excessLCombos
-            excessLCombos = Map.toList <$> (deleteMult tCombos lCombos)
+            excessLCombos = Map.toList <$> (lCombos L.\\ tCombos )
             tCombos = fst $ unzip $ tTInputOutput tOrder tTable
             lCombos = gateCombinations $ snd <$> assigns
             tGatePrint = (T.concat $ L.intersperse "  " $ tOrder <> [tName])

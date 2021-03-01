@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.4.3.1
+version:             0.5.0.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -30,6 +30,7 @@ library:
   - Types.DMModel
   - Parse.GML
   - Types.GML
+  - Compare
   - Visualize
   - ReadWrite
   - Utilities

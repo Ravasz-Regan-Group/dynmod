@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 67522c39bbd780327ca79b2e72f92ff31dd3547fb6e1d4370512acf12736cb78
+-- hash: 8b9a164c0cb7a947517deef780da517ba5326709adc3e27310b277fd37521b93
 
 name:           dynmod
 version:        0.4.3.1
@@ -31,6 +31,7 @@ library
       Types.DMModel
       Parse.GML
       Types.GML
+      Compare
       Visualize
       ReadWrite
       Utilities

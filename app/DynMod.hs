@@ -12,6 +12,7 @@ import Utilities
 import Visualize
 import qualified ReadWrite as RW
 import SuppMat
+import Compare
 import Text.LaTeX.Base.Render (render)
 import qualified Options.Applicative as O
 import Path
@@ -77,6 +78,15 @@ workDMMS f options (Right parsed) = do
                 let gmlPOut = M.runParser gmlParse strGMLFName gmlFileContent
                 updateDMMS f parsed gmlPOut
             _ -> fail $ "Not a gml file: " <> ext
+    when (compareText options /= "") $ do
+        cFilePath <- resolveFile' $ T.unpack $ compareText options
+        (_, ext) <- splitExtension cFilePath
+        compFileContent <- RW.readFile cFilePath
+        let compFileName = toFilePath cFilePath
+        case ext of
+            ".dmms" -> dmmsCompare f cFilePath dmModel $
+                M.runParser modelFileParse compFileName compFileContent
+            _ -> fail $ "Not a dmms file: " <> ext
     when (parseTest options) $ do
         pTest <- parseRelFile "test/parseTest.dmms"
         let modelRender = renderDMMS fileVersion dmModel citeDict
@@ -199,7 +209,38 @@ updateDMMS f (dmmsVer, (dmm, cd)) (Right gml) = case gmlValidate gml of
             uFNamePath <- addExtension ext uFNamePathNoExt
             let uFPath = dirPath </> uFNamePath
             writeDMMS uFPath dmmsVer updatedDMM cd
-            
+
+-- Compare two DMMS files
+dmmsCompare :: Path Abs File
+            -> Path Abs File
+            -> DMModel
+            -> Either
+                (M.ParseErrorBundle T.Text Void)
+                (FileFormatVersion, (DMModel, CitationDictionary))
+            -> IO ()
+dmmsCompare _ _ _ (Left cParseErr) = PS.pPrint (M.errorBundlePretty cParseErr)
+dmmsCompare lF rF lDMM (Right (_, (rDMM, _))) = do
+    putStrLn "Good right parse"
+    (lPathNoExt, _) <- splitExtension lF
+    (rPathNoExt, _) <- splitExtension rF
+-- Write the compare text to the directory of the right-hand file, since by
+-- convention this is "new" model being compared to the "old" left-hand file.
+    compDir <- (parseAbsDir . fromAbsFile) rPathNoExt
+    let dmDiffValidation = dmMCompare lDMM rDMM
+        lDMMSName = T.pack $ fromRelFile $ filename lPathNoExt
+        rDMMSName = T.pack $ fromRelFile $ filename rPathNoExt
+        diffName = T.unpack $ lDMMSName <> "_" <> rDMMSName <> "_diff"
+    diffRelName <- parseRelFile diffName
+    diffPath <- addExtension ".txt" (compDir </> diffRelName)
+    case dmDiffValidation of
+        Failure compErr -> fail $ show compErr
+        Success dmDiff -> writeCompare diffPath lDMMSName rDMMSName dmDiff
+
+-- Write a DMModelDiff to disk
+writeCompare :: Path Abs File -> ModelName -> ModelName -> DMModelDiff -> IO()
+writeCompare f lDMMSName rDMMSName diff = do
+    let diffText = renderDMMSDiff lDMMSName rDMMSName diff
+    RW.writeFile f diffText
 
 -- Option Parsing
 data Input = Input
@@ -209,6 +250,7 @@ data Input = Input
     , suppPDF     :: Bool
     , gmlWrite    :: Bool
     , updateGMLN  :: T.Text
+    , compareText :: T.Text
     , noTTWrite   :: Bool
     , parseTest   :: Bool
     } deriving (Eq, Show)
@@ -224,7 +266,7 @@ input = Input
        <> O.help "Whether to write publication warnings to <FILE>_warnings.txt")
     <*> O.switch
         ( O.long "coord_colors"
-       <> O.short 'c'
+       <> O.short 'e'
        <> O.help "Whether to write node coordinates & colors to \
             \<FILE>_graph_details.txt")
     <*> O.switch
@@ -245,6 +287,14 @@ input = Input
        <> O.help "Whether to update the parsed dmms file with color and \
             \coordinate information from a specified GML file. The networks \
             \in the two files must match. "
+        )
+    <*> O.strOption
+        ( O.long "compare"
+       <> O.short 'c'
+       <> O.value ""
+       <> O.metavar "SOURCE_FILE"
+       <> O.help "Whether to compare one DMMS file with another and write out \
+            \the comparison to disk. "
         )
     <*> O.switch
         ( O.long "no_ttwrite"

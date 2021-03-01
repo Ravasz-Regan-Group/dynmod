@@ -714,9 +714,9 @@ fineNodesmatch :: [NodeName] -> [NodeName] -> Validation ModelInvalid [NodeName]
 fineNodesmatch mapFineNodes moNodes
     | arePermutes mapFineNodes moNodes = Success mapFineNodes
     | isSubset mapFineNodes moNodes    = Failure $ MissingFineMapNodes $
-                                            deleteMult mapFineNodes moNodes
+                                            moNodes L.\\ mapFineNodes
     | otherwise                           = Failure $ ExcessFineMapNodes $
-                                            deleteMult moNodes mapFineNodes
+                                            mapFineNodes L.\\ moNodes
 
 -- Check that the coarse-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the ModelGraph. This assumes that there are no
@@ -726,9 +726,9 @@ coarseNodesMatch :: [NodeName] -> [NodeName]
 coarseNodesMatch mapCoarseNodes graphNodes
     | arePermutes mapCoarseNodes graphNodes = Success mapCoarseNodes
     | isSubset mapCoarseNodes graphNodes    = Failure $ MissingCoarseMapNodes $
-                                            deleteMult mapCoarseNodes graphNodes
+                                            graphNodes L.\\ mapCoarseNodes
     | otherwise                             = Failure $ ExcessCoarseMapNodes $
-                                            deleteMult graphNodes mapCoarseNodes
+                                            mapCoarseNodes L.\\ graphNodes
 
 -- Check that the ModelMapping itself is surjective. This assumes that the fine
 -- and coarse nodes from the ModelMapping do in fact correspond exactly to the

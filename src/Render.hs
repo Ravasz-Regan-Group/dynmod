@@ -3,12 +3,15 @@
 module Render 
     ( renderGML
     , renderDMMS
+    , renderDMMSDiff
     )
     where
 
 import Types.GML
 import Types.DMModel
 import Constants
+import Compare
+import Utilities
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
@@ -16,6 +19,7 @@ import qualified Data.Versions as Ver
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
 import qualified Data.List as L
+import Data.Function (on)
 
 renderGML :: GML -> T.Text
 renderGML = flip gmlListRender 0
@@ -173,14 +177,13 @@ renderTableG ng = dmmsWrap "TruthTable" entries
             (T.intercalate "\t" . ((T.pack . show) <$>) . U.toList) <$> vecs
         tOutputs = ((<>) "\t" . T.pack . show) <$> outputs
         (vecs, outputs) = (unzip . Map.toList . gateTable) ng
-        
-        
--- rows = T.intercalate "\n" $ L.sort $ prettyGateEval order assigns <$> cs
--- assigns = gateAssigns ng
--- order = gateOrder ng
 
 renderNamedLink :: (NodeName, DMLink) -> T.Text
-renderNamedLink (inName, dmL) = dmmsWrap "InLink" entries <> " //" <> inName
+renderNamedLink (inName, dmL) =
+    dmmsWrap "InLink" (renderNamedLinkContent (dmL, inName)) <> " //" <> inName
+
+renderNamedLinkContent :: (DMLink, NodeName) -> T.Text
+renderNamedLinkContent (dmL, inName) = entries
     where
         entries = T.intercalate "\n"
             [rInNode, rEffect, rType, rDesc, rNotes]
@@ -210,3 +213,126 @@ renderCitation (_,(BibTeXEntry eKey eType fields)) = opener <> entries <> closer
 
 fieldRender :: (BibTeXField, BibTeXRecord) -> T.Text
 fieldRender (k, r) = k <> " = " <> r
+
+
+-- Consumes the names, in order, of the  compared DMMS files, and their diff. 
+renderDMMSDiff :: T.Text -> T.Text -> DMModelDiff -> T.Text
+renderDMMSDiff dmms1 dmms2 dmMDiff =
+    dmms1 <> "vs" <> dmms2 <> "\n\n" <> renderDMModelDiff dmMDiff
+
+renderDMModelDiff :: DMModelDiff -> T.Text
+renderDMModelDiff (CoarseDiff mmD ((lN1, lN2), lD) dmD) =
+    "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
+    "ModelMapping diff:\n" <> renderMappingDiff mmD <> "\n" <>
+    "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n" <>
+    renderDMModelDiff dmD
+renderDMModelDiff (FineDiff ((lN1, lN2), lD)) =
+    "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
+    "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n"
+
+renderMappingDiff :: MappingDiff -> T.Text
+renderMappingDiff (SD (LD ldSwitchNames)
+                      (RD rdSwitchNames)
+                      (FC (SD (LD ldSwitchContent)
+                              (RD rdSwitchContent)
+                              (FC fcNameContent)
+                          )
+                      )
+                  ) = ldSN <> rdSN <> ldSC <> rdSC <> fcSC
+    where
+        ldSN | null ldSwitchNames = ""
+             | otherwise = "Left unique Switch names:\n" <>
+                T.intercalate "\n" (renderSwitch <$> ldSwitchNames) <> "\n\n"
+        rdSN | null rdSwitchNames = ""
+             | otherwise = "Right unique Switch names:\n" <>
+                T.intercalate "\n" (renderSwitch <$> rdSwitchNames) <> "\n\n"
+        ldSC | null ldSwitchContent = ""
+             | otherwise = "Left shared Switch names but unique content:\n" <>
+                 T.intercalate "\n" (renderSwitch <$> ldSwitchContent) <> "\n\n"
+        rdSC | null ldSwitchContent = ""
+             | otherwise = "Right shared Switch names but unique content:\n" <>
+                 T.intercalate "\n" (renderSwitch <$> rdSwitchContent) <> "\n\n"
+        fcSC | null fcNameContent = ""
+             | otherwise = "Identical Switches:\n" <>
+                 T.intercalate "\n" (renderSwitch <$> fcNameContent) <> "\n\n"
+
+renderLayerDiff :: SplitDiff [NodeName] [NodeDiff] -> T.Text
+renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
+    lUNs <> rUNs <> sharedNodeDiffRenders
+    where
+        lUNs
+            | null lNNames = ""
+            | otherwise = "Left unique NodeNames:\n" <>
+                T.intercalate ", " lNNames <> "\n\n"
+        rUNs
+            | null rNNames = ""
+            | otherwise = "Right unique NodeNames:\n" <>
+                T.intercalate ", " rNNames <> "\n\n"
+        sharedNodeDiffRenders
+            | null nDiffs = ""
+            | otherwise = "Shared DMNode diffs:\n" <> 
+                T.unlines (renderNodeDiff <$> nDiffs)
+
+renderNodeDiff :: NodeDiff -> T.Text
+renderNodeDiff (NodeDiff nN nTD lDs tD) =
+    "Node: " <> nN <>
+    typesMaybe <> "\n" <>
+    "InLink diffs:\n" <> renderLinkDiff lDs <>
+    tablesMaybe
+    where
+    typesMaybe = case nTD of
+        Nothing -> ""
+        Just (lType, rType) -> "\n" <> "NodeTypes vary: " <>
+            ((T.pack . show) lType) <> " vs " <> ((T.pack . show) rType) <> "\n"
+    tablesMaybe = case tD of
+        Nothing -> "\n" <>
+            "Gate Inlinks differ, so comparing the gate outputs is nonsensical"
+        Just tDiff -> "\nGate diff:\n" <> renderTableDiff tDiff
+
+renderLinkDiff :: LinkDiff -> T.Text
+renderLinkDiff (SD (LD lLinks) (RD rLinks) (FC lteDiffs)) =
+    lU <> rU <> lteDiffRenders
+    where
+        lU
+            | null lLinks = ""
+            | otherwise = "\nLeft unique InLinks\n" <> 
+                T.intercalate "\n" (renderNamedLinkContent <$> lLinks) <> "\n"
+        rU
+            | null rLinks = ""
+            | otherwise = "\nRight unique InLinks\n" <> 
+                T.intercalate "\n" (renderNamedLinkContent <$> rLinks) <> "\n"
+        lteDiffRenders
+            |null lteDiffs = ""
+            | otherwise = "Shared InLink diffs:\n" <>
+                T.intercalate "\n" (renderLTEDiff <$> lteDiffs)
+
+renderLTEDiff :: LTEDiff -> T.Text
+renderLTEDiff (LTEDiff nN lT lE) = case (lT, lE) of
+    (Nothing, Nothing) -> "Inlink " <> nN <> " perfectly shared."
+    (Just t, Nothing) -> "Inlink " <> nN <> " has differing NodeTypes: " <>
+        ((T.pack . show . fst) t) <> " vs " <> ((T.pack . show . fst) t)
+    (Nothing, Just e) -> "Inlink " <> nN <> " has differing NodeEffects: " <>
+        ((T.pack . show . fst) e) <> " vs " <> ((T.pack . show . fst) e)
+    (Just t, Just e) -> "Inlink " <> nN <>
+        " has differing NodeTypes: " <>
+        ((T.pack . show . fst) t) <> " vs " <> ((T.pack . show . fst) t) <>
+        "\n" <> "and NodeEffects: " <>
+        ((T.pack . show . fst) e) <> " vs " <> ((T.pack . show . fst) e)
+
+renderTableDiff :: TableDiff -> T.Text
+renderTableDiff (nodes, (SD (LD lTable) (RD rTable) (FC sTable))) =
+    topLine <> "\n" <> (T.intercalate "\n" rows)
+    where
+        rows = zipWith (<>) inputRows tOutputs
+        topLine = T.intercalate "\t" $ fst orders <> [nN]
+        orders = isoBimap (gateOrder . nodeGate) nodes
+        nN = (nodeName . nodeMeta . fst) nodes
+        inputRows =
+            (T.intercalate "\t" . ((T.pack . show) <$>) . U.toList) <$> vecs
+        tOutputs = ((<>) "\t" . T.pack . show) <$> outs
+        (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR <> sList
+        sList = ((<>) "\t" . T.pack . show) <<$>> (Map.toList sTable)
+        zipdLR = ((<>) "\t" . T.pack . show) <<$>> (zipWith zipper lList rList)
+        zipper (x, y) (_, b) = (x, (y, b))
+        lList = L.sortBy (compare `on` fst) $ Map.toList lTable
+        rList = L.sortBy (compare `on` fst) $ Map.toList rTable

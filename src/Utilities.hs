@@ -12,6 +12,7 @@ import Data.Text.Lazy (toStrict)
 import qualified Data.List as L
 import Data.Foldable (foldl')
 import Control.Applicative (liftA2)
+import Data.Bifunctor (Bifunctor(..), bimap)
 
 infixl 4 <<$>>, <<*>>, <<<$>>>
 
@@ -64,11 +65,6 @@ errorRollup = foldr ePop []
                                   True  -> ((\(Failure e) -> e) v) : es
                                   False -> es
 
--- Delete all the items in xs list from ys. 
-deleteMult :: (Eq a) => [a] -> [a] -> [a]
-deleteMult _ [] = []
-deleteMult [] ys = ys
-deleteMult (x:xs) ys = deleteMult xs $ L.delete x ys
 
 -- In a list of n HashSets, this finds any element in any set that occurs in
 -- more than one set. 
@@ -154,7 +150,7 @@ mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))
 --     .───────..-─--───.     
 --   *'*******,'`********`.   
 --  *********╱    ╲******* ╲  
--- ;* ******;      :********* 
+-- ;********;      :********* 
 -- :*********      ;********; 
 --  ╲********╲    *********╱  
 --   *********╲  ╱********╱   
@@ -162,3 +158,9 @@ mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))
 --      `──---'  `─────'      
 (\|\) :: Ord a => [a] -> [a] -> [a]
 (\|\) xs ys = (xs L.\\ ys) `L.union` (ys L.\\ xs)
+
+pairSame :: Eq a => (a, a) -> Bool
+pairSame (x, y) = x == y
+
+isoBimap :: Bifunctor p => (a -> b) -> p a a -> p b b
+isoBimap f = bimap f f
