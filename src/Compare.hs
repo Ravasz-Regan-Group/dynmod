@@ -55,7 +55,7 @@ data LTEDiff = LTEDiff { inNodeName :: NodeName
 type TableDiff = ((DMNode, DMNode), SplitDiff TruthTable TruthTable)
                      
 dmMCompare :: DMModel -> DMModel -> Validation InvalidCompare DMModelDiff
-dmMCompare mL mR = case mrDepth /= mlDepth of
+dmMCompare mL mR = case mrDepth == mlDepth of
     False -> Failure DifferentLayerDepth
     True  -> Success $ dmMCompare' mL mR
     where
