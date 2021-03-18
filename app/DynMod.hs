@@ -13,6 +13,7 @@ import Visualize
 import qualified ReadWrite as RW
 import SuppMat
 import Compare
+import Paths_dynmod (version)
 import Text.LaTeX.Base.Render (render)
 import qualified Options.Applicative as O
 import Path
@@ -22,11 +23,11 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.Text as T
 import qualified Text.Pretty.Simple as PS
 import qualified Data.Graph.Inductive as Gr
-import Data.Void
-import Control.Monad (zipWithM_, when, unless)
 import qualified Text.Megaparsec as M
+import Data.Void
+import Control.Monad (zipWithM_, when)
 import Control.Monad.Reader (runReader)
-import Paths_dynmod (version)
+import GHC.Conc (par, pseq)
 import Data.Version (showVersion)
 
 main :: IO ()
@@ -37,11 +38,69 @@ main = do
     fileclInput <- RW.readFile mFilePath
     let strFileName = toFilePath mFilePath
     case ext of
-        ".dmms" ->
+      ".dmms"
+        | updateGMLN clInput /= "" ->
+            let otherOptionNames :: [T.Text]
+                otherOptionNames =            [ "warnings"
+                                              , "coord_colors"
+                                              , "supplementary"
+                                              , "gml"
+                                              , "compare"
+                                              , "ttwrite"]
+                otherOptionsBools = sequenceA [ pubWarn
+                                              , coordColors
+                                              , suppPDF
+                                              , gmlWrite
+                                              , (== "") . compareText
+                                              , ttWrite
+                                              ] clInput
+                otherOptions = filter snd $ zip otherOptionNames
+                                                otherOptionsBools
+            in case otherOptions of
+                (_:_) -> fail $ "--update is incompatible with " <> (T.unpack $
+                    T.intercalate ", " $ fst <$> otherOptions) <> ". "
+                _ -> do
+                    let gFileText = updateGMLN clInput
+                    gFilePath <- resolveFile' $ T.unpack gFileText
+                    (_, gExt) <- splitExtension gFilePath
+                    case gExt of
+                        ".gml" -> do
+                            let strGMLFName = toFilePath gFilePath
+                            gmlFileContent <- RW.readFile gFilePath
+                            let gmlPOut = M.runParser gmlParse
+                                                      strGMLFName
+                                                      gmlFileContent
+                            case M.runParser modelFileParse
+                                             strFileName
+                                             fileclInput of
+                               (Left err) -> PS.pPrint (M.errorBundlePretty err)
+                               (Right parsed) -> do
+                                    putStrLn "Good parse"
+                                    updateDMMS mFilePath parsed gmlPOut
+                        _ -> fail $ "Not a gml file: " <> ext
+        | compareText clInput /= "" -> do
+            cFilePath <- resolveFile' $ T.unpack $ compareText clInput
+            (_, cExt) <- splitExtension cFilePath
+            compFileContent <- RW.readFile cFilePath
+            let compFileName = toFilePath cFilePath
+                lComp = M.runParser modelFileParse strFileName fileclInput
+                rComp = M.runParser modelFileParse compFileName compFileContent
+            case cExt of 
+                ".dmms" -> case lComp `par` (rComp `pseq` (lComp, rComp)) of
+                    (Left err1, Left err2) -> do
+                        PS.pPrint (M.errorBundlePretty err1)
+                        PS.pPrint (M.errorBundlePretty err2)
+                    (Left err, _) -> PS.pPrint (M.errorBundlePretty err)
+                    (_, Left err) -> PS.pPrint (M.errorBundlePretty err)
+                    (Right leftP, Right rightP) -> 
+                        dmmsCompare mFilePath cFilePath ((fst . snd) leftP)
+                                                        ((fst . snd) rightP)
+                _ -> fail $ "Not a dmms file: " <> toFilePath cFilePath
+        | otherwise ->
             let pOut = M.runParser modelFileParse strFileName fileclInput in
             workDMMS mFilePath clInput pOut
-        _ -> fail $ "Not a dmms file: " <> ext
- 
+      _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
+
 workDMMS :: Path Abs File
          -> Input
          -> Either
@@ -53,9 +112,6 @@ workDMMS f options (Right parsed) = do
     let dmModel = (fst . snd) parsed
         citeDict = (snd . snd) parsed
         fileVersion = fst parsed
-        layers = modelLayers dmModel
-        tts = layerTTs <$> layers
-        bNPs = mkBooleanNet dmModel
     putStrLn "Good parse"
     when ((gmlWrite options) && (updateGMLN options /= ""))
         (fail "-g will overwrite the existing gml file!")
@@ -67,40 +123,20 @@ workDMMS f options (Right parsed) = do
         (writeSupp f (snd parsed))
     when (gmlWrite options)
         (writeGML f dmModel)
-    when (updateGMLN options /= "") $ do
-        let gFileText = updateGMLN options
-        gFilePath <- resolveFile' $ T.unpack gFileText
-        (_, ext) <- splitExtension gFilePath
-        case ext of
-            ".gml" -> do
-                let strGMLFName = toFilePath gFilePath
-                gmlFileContent <- RW.readFile gFilePath
-                let gmlPOut = M.runParser gmlParse strGMLFName gmlFileContent
-                updateDMMS f parsed gmlPOut
-            _ -> fail $ "Not a gml file: " <> ext
-    when (compareText options /= "") $ do
-        cFilePath <- resolveFile' $ T.unpack $ compareText options
-        (_, ext) <- splitExtension cFilePath
-        compFileContent <- RW.readFile cFilePath
-        let compFileName = toFilePath cFilePath
-        case ext of
-            ".dmms" -> dmmsCompare f cFilePath dmModel $
-                M.runParser modelFileParse compFileName compFileContent
-            _ -> fail $ "Not a dmms file: " <> ext
     when (parseTest options) $ do
         pTest <- parseRelFile "test/parseTest.dmms"
         let modelRender = renderDMMS fileVersion dmModel citeDict
         RW.writeFile pTest modelRender
 --         pTest <- parseRelFile "test/parseTest.hs"
 --         RW.writeFile pTest $ LT.toStrict $ PS.pShowNoColor $ dmModel
-    unless (noTTWrite options)
-        (ttWrite f tts bNPs)
+    when (ttWrite options)
+        (ttFWrite f (layerTTs <$> (modelLayers dmModel)) (mkBooleanNet dmModel))
 
 
 -- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
 -- directory with the dmms' name. 
-ttWrite :: Path Abs File -> ModelTTFiles -> [(ModelName, BooleanNet)] -> IO ()
-ttWrite mFilePath fs bNetPs = do
+ttFWrite :: Path Abs File -> ModelTTFiles -> [(ModelName, BooleanNet)] -> IO ()
+ttFWrite mFilePath fs bNetPs = do
     (pathNoExt, _) <- splitExtension mFilePath
     let ttFiles = snd <<$>> (snd <$> fs)
         ttFileNames = (T.unpack . fst) <<$>> (snd <$> fs)
@@ -214,22 +250,19 @@ updateDMMS f (dmmsVer, (dmm, cd)) (Right gml) = case gmlValidate gml of
 dmmsCompare :: Path Abs File
             -> Path Abs File
             -> DMModel
-            -> Either
-                (M.ParseErrorBundle T.Text Void)
-                (FileFormatVersion, (DMModel, CitationDictionary))
+            -> DMModel
             -> IO ()
-dmmsCompare _ _ _ (Left cParseErr) = PS.pPrint (M.errorBundlePretty cParseErr)
-dmmsCompare lF rF lDMM (Right (_, (rDMM, _))) = do
-    putStrLn "Good right parse"
+dmmsCompare lF rF lDMM rDMM = do
+    putStrLn "Good parses"
     (lPathNoExt, _) <- splitExtension lF
     (rPathNoExt, _) <- splitExtension rF
 -- Write the compare text to the directory of the right-hand file, since by
 -- convention this is "new" model being compared to the "old" left-hand file.
-    compDir <- (parseAbsDir . fromAbsFile) rPathNoExt
-    let dmDiffValidation = dmMCompare lDMM rDMM
+    let compDir = parent rF
+        dmDiffValidation = dmMCompare lDMM rDMM
         lDMMSName = T.pack $ fromRelFile $ filename lPathNoExt
         rDMMSName = T.pack $ fromRelFile $ filename rPathNoExt
-        diffName = T.unpack $ lDMMSName <> "_" <> rDMMSName <> "_diff"
+        diffName = T.unpack $ lDMMSName <> "__" <> rDMMSName <> "_diff"
     diffRelName <- parseRelFile diffName
     diffPath <- addExtension ".txt" (compDir </> diffRelName)
     case dmDiffValidation of
@@ -251,7 +284,7 @@ data Input = Input
     , gmlWrite    :: Bool
     , updateGMLN  :: T.Text
     , compareText :: T.Text
-    , noTTWrite   :: Bool
+    , ttWrite     :: Bool
     , parseTest   :: Bool
     } deriving (Eq, Show)
 
@@ -283,23 +316,24 @@ input = Input
         ( O.long "update"
        <> O.short 'u'
        <> O.value ""
-       <> O.metavar "SOURCE_FILE"
+       <> O.metavar "GML_FILE"
        <> O.help "Whether to update the parsed dmms file with color and \
             \coordinate information from a specified GML file. The networks \
-            \in the two files must match. "
+            \in the two files must match. The update is written to \
+            \<FILE>_GML_UPDATE.dmms. "
         )
     <*> O.strOption
         ( O.long "compare"
        <> O.short 'c'
        <> O.value ""
-       <> O.metavar "SOURCE_FILE"
+       <> O.metavar "DMMS_FILE"
        <> O.help "Whether to compare one DMMS file with another and write out \
-            \the comparison to disk. "
+            \the comparison to <File>__<DMMS_FILE>_diff.txt>. "
         )
     <*> O.switch
-        ( O.long "no_ttwrite"
+        ( O.long "ttwrite"
        <> O.short 't'
-       <> O.help "Whether to refrain from writing out tt files. "
+       <> O.help "Whether to write out tt files. "
         )
     -- Whether to write a pShowNoColor of the DMMS we've parsed.
     <*> O.switch
@@ -320,8 +354,6 @@ opts = O.info (O.helper <*> versionOpt <*> input)
    <> O.progDesc "Parse a dmms file and output a Truth Table directory. \
    \Options: write publication level warnings to a file, write node coordinates\
    \ and color to a file, write a supplementary publication of the rmms file to\
-   \ PDF, update a dmms file from a gml file, refrain from writing out tt files\ 
-   \."
+   \ PDF, update a dmms file from a gml file, compare one DMMS file with \
+   \another, write out tt files."
    <> O.header "dynmod - processing dmms files")
-
-

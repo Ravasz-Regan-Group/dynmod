@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 158787f69b91fac64be9f812329f6638844b933d9fd401bf5f261e95842bcf58
+-- hash: c0937e4b1e206dc0889e714279fc3ebd91c991c5804b6c393b0e24250fbfbc59
 
 name:           dynmod
 version:        0.5.0.0
@@ -77,7 +77,7 @@ executable dynmod
       Paths_dynmod
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N3 -O2 -Wall
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -Wall
   build-depends:
       HaTeX
     , base >=4.7 && <5

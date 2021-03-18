@@ -218,13 +218,14 @@ fieldRender (k, r) = k <> " = " <> r
 -- Consumes the names, in order, of the  compared DMMS files, and their diff. 
 renderDMMSDiff :: T.Text -> T.Text -> DMModelDiff -> T.Text
 renderDMMSDiff dmms1 dmms2 dmMDiff =
-    dmms1 <> "vs" <> dmms2 <> "\n\n" <> renderDMModelDiff dmMDiff
+    dmms1 <> " vs " <> dmms2 <> "\n\n" <> renderDMModelDiff dmMDiff
 
 renderDMModelDiff :: DMModelDiff -> T.Text
 renderDMModelDiff (CoarseDiff mmD ((lN1, lN2), lD) dmD) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
     "ModelMapping diff:\n" <> renderMappingDiff mmD <> "\n" <>
-    "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n" <>
+    "ModelLayer diff:\n" <> renderLayerDiff lD <>
+    "\n****************************************\n" <>
     renderDMModelDiff dmD
 renderDMModelDiff (FineDiff ((lN1, lN2), lD)) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
@@ -278,7 +279,7 @@ renderNodeDiff (NodeDiff nN nTD lDs tD) =
     "Node: " <> nN <>
     typesMaybe <> "\n" <>
     "InLink diffs:\n" <> renderLinkDiff lDs <>
-    tablesMaybe
+    tablesMaybe <> "\n--------------------------------------------------\n"
     where
     typesMaybe = case nTD of
         Nothing -> ""

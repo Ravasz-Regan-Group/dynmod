@@ -91,8 +91,8 @@ layerCompare mlL mlR = let
     lNodeNames = nN <$> lNodes
     rNodes = [x | x <- nodesWLinksR, notElem (nN x) (nN <$> nodesWLinksL)]
     rNodeNames = nN <$> rNodes
-    fcNodesWLinksL = [x | x <- nodesWLinksL, elem (nN x) (nN <$> nodesWLinksL)]
-    fcNodesWLinksR = [x | x <- nodesWLinksR, elem (nN x) (nN <$> nodesWLinksR)]
+    fcNodesWLinksL = [x | x <- nodesWLinksL, elem (nN x) (nN <$> nodesWLinksR)]
+    fcNodesWLinksR = [x | x <- nodesWLinksR, elem (nN x) (nN <$> nodesWLinksL)]
     nDiff = nodesCompare fcNodesWLinksL fcNodesWLinksR
   in (layerNames, SD (LD lNodeNames) (RD rNodeNames) (FC nDiff))
 
