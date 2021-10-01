@@ -17,7 +17,8 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-15.10
+# resolver: lts-15.10 -  return to this if 16.31 fails on Windows
+resolver: lts-16.31
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -38,8 +39,8 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- Unique-0.4.7.7
-- HaTeX-3.22.2.0
+- Unique-0.4.7.8
+#- HaTeX-3.22.2.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
