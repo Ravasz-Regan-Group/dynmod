@@ -330,9 +330,9 @@ renderTableDiff (nodes, (SD (LD lTable) (RD rTable) (FC sTable))) =
         nN = (nodeName . nodeMeta . fst) nodes
         inputRows =
             (T.intercalate "\t" . ((T.pack . show) <$>) . U.toList) <$> vecs
-        tOutputs = ((<>) "\t" . T.pack . show) <$> outs
+        tOutputs = ((<>) "\t") <$> outs
         (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR <> sList
-        sList = ((<>) "\t" . T.pack . show) <<$>> (Map.toList sTable)
+        sList = (T.pack . show) <<$>> (Map.toList sTable)
         zipdLR = ((<>) "\t" . T.pack . show) <<$>> (zipWith zipper lList rList)
         zipper (x, y) (_, b) = (x, (y, b))
         lList = L.sortBy (compare `on` fst) $ Map.toList lTable
