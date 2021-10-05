@@ -51,7 +51,7 @@ main = do
                                               , coordColors
                                               , suppPDF
                                               , gmlWrite
-                                              , (== "") . compareText
+                                              , (/= "") . compareText
                                               , ttWrite
                                               ] clInput
                 otherOptions = filter snd $ zip otherOptionNames
