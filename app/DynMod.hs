@@ -25,6 +25,7 @@ import qualified Text.Pretty.Simple as PS
 import qualified Data.Graph.Inductive as Gr
 import qualified Text.Megaparsec as M
 import Data.Void
+import Control.Applicative ((<|>))
 import Control.Monad (zipWithM_, when)
 import Control.Monad.Reader (runReader)
 import GHC.Conc (par, pseq)
@@ -38,29 +39,9 @@ main = do
     fileclInput <- RW.readFile mFilePath
     let strFileName = toFilePath mFilePath
     case ext of
-      ".dmms"
-        | updateGMLN clInput /= "" ->
-            let otherOptionNames :: [T.Text]
-                otherOptionNames =            [ "warnings"
-                                              , "coord_colors"
-                                              , "supplementary"
-                                              , "gml"
-                                              , "compare"
-                                              , "ttwrite"]
-                otherOptionsBools = sequenceA [ pubWarn
-                                              , coordColors
-                                              , suppPDF
-                                              , gmlWrite
-                                              , (/= "") . compareText
-                                              , ttWrite
-                                              ] clInput
-                otherOptions = filter snd $ zip otherOptionNames
-                                                otherOptionsBools
-            in case otherOptions of
-                (_:_) -> fail $ "--update is incompatible with " <> (T.unpack $
-                    T.intercalate ", " $ fst <$> otherOptions) <> ". "
-                _ -> do
-                    let gFileText = updateGMLN clInput
+        ".dmms" ->
+            case activity clInput of 
+                Update gFileText -> do
                     gFilePath <- resolveFile' $ T.unpack gFileText
                     (_, gExt) <- splitExtension gFilePath
                     case gExt of
@@ -78,31 +59,40 @@ main = do
                                     putStrLn "Good parse"
                                     updateDMMS mFilePath parsed gmlPOut
                         _ -> fail $ "Not a gml file: " <> ext
-        | compareText clInput /= "" -> do
-            cFilePath <- resolveFile' $ T.unpack $ compareText clInput
-            (_, cExt) <- splitExtension cFilePath
-            compFileContent <- RW.readFile cFilePath
-            let compFileName = toFilePath cFilePath
-                lComp = M.runParser modelFileParse strFileName fileclInput
-                rComp = M.runParser modelFileParse compFileName compFileContent
-            case cExt of 
-                ".dmms" -> case lComp `par` (rComp `pseq` (lComp, rComp)) of
-                    (Left err1, Left err2) -> do
-                        PS.pPrint (M.errorBundlePretty err1)
-                        PS.pPrint (M.errorBundlePretty err2)
-                    (Left err, _) -> PS.pPrint (M.errorBundlePretty err)
-                    (_, Left err) -> PS.pPrint (M.errorBundlePretty err)
-                    (Right leftP, Right rightP) -> 
-                        dmmsCompare mFilePath cFilePath ((fst . snd) leftP)
-                                                        ((fst . snd) rightP)
-                _ -> fail $ "Not a dmms file: " <> toFilePath cFilePath
-        | otherwise ->
-            let pOut = M.runParser modelFileParse strFileName fileclInput in
-            workDMMS mFilePath clInput pOut
-      _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
+                Compare compareText -> do
+                    cFilePath <- resolveFile' $ T.unpack $ compareText
+                    (_, cExt) <- splitExtension cFilePath
+                    compFileContent <- RW.readFile cFilePath
+                    let compFileName = toFilePath cFilePath
+                        lComp = M.runParser modelFileParse
+                                            strFileName
+                                            fileclInput
+                        rComp = M.runParser modelFileParse
+                                            compFileName
+                                            compFileContent
+                    case cExt of 
+                        ".dmms" ->
+                            case lComp `par` (rComp `pseq` (lComp, rComp)) of
+                                (Left err1, Left err2) -> do
+                                    PS.pPrint (M.errorBundlePretty err1)
+                                    PS.pPrint (M.errorBundlePretty err2)
+                                (Left err, _) ->
+                                    PS.pPrint (M.errorBundlePretty err)
+                                (_, Left err) ->
+                                    PS.pPrint (M.errorBundlePretty err)
+                                (Right leftP, Right rightP) -> 
+                                    dmmsCompare mFilePath
+                                                cFilePath ((fst . snd) leftP)
+                                                          ((fst . snd) rightP)
+                        _ ->
+                            fail $ "Not a dmms file: " <> toFilePath cFilePath
+                Procedure ps -> let
+                    pOut = M.runParser modelFileParse strFileName fileclInput in
+                    workDMMS mFilePath ps pOut
+        _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
 
 workDMMS :: Path Abs File
-         -> Input
+         -> Procedures
          -> Either
                 (M.ParseErrorBundle T.Text Void)
                 (FileFormatVersion, (DMModel, CitationDictionary))
@@ -113,8 +103,6 @@ workDMMS f options (Right parsed) = do
         citeDict = (snd . snd) parsed
         fileVersion = fst parsed
     putStrLn "Good parse"
-    when ((gmlWrite options) && (updateGMLN options /= ""))
-        (fail "-g will overwrite the existing gml file!")
     when (pubWarn options)
         (pubWWrite f (dmModel, citeDict))
     when (coordColors options)
@@ -276,24 +264,63 @@ writeCompare f lDMMSName rDMMSName diff = do
     RW.writeFile f diffText
 
 -- Option Parsing
-data Input = Input
-    { fileN       :: T.Text
-    , pubWarn     :: Bool
+data Input = Input {
+      fileN    :: T.Text
+    , activity :: Activity
+    } deriving (Eq, Show)
+    
+data Activity = Update UpdateGMLN
+              | Compare CompareDMMS
+              | Procedure Procedures
+              deriving (Eq, Show)
+
+type UpdateGMLN = T.Text
+type CompareDMMS = T.Text
+data Procedures = Procedures {
+      pubWarn     :: Bool
     , coordColors :: Bool
     , suppPDF     :: Bool
     , gmlWrite    :: Bool
-    , updateGMLN  :: T.Text
-    , compareText :: T.Text
     , ttWrite     :: Bool
     , parseTest   :: Bool
     } deriving (Eq, Show)
 
 input :: O.Parser Input
-input = Input
-    <$> O.strArgument
-        (O.metavar "FILE"
-        <> O.help "Path to a dmms file to parse")
-    <*> O.switch
+input = Input <$> O.strArgument
+                  (O.metavar "FILE"
+                  <> O.help "Path to a dmms file to parse")
+              <*> activityParser
+
+activityParser :: O.Parser Activity
+activityParser = updateParser <|> compareParser <|> procedureParser
+
+updateParser :: O.Parser Activity
+updateParser = Update
+    <$> O.strOption
+        ( O.long "update"
+       <> O.short 'u'
+       <> O.metavar "GML_FILE"
+       <> O.help "Whether to update the parsed dmms file with color and \
+            \coordinate information from a specified GML file. The networks \
+            \in the two files must match. The update is written to \
+            \<FILE>_GML_UPDATE.dmms. "
+        )
+
+compareParser :: O.Parser Activity
+compareParser = Compare
+    <$> O.strOption
+        ( O.long "compare"
+       <> O.short 'c'
+       <> O.value ""
+       <> O.metavar "DMMS_FILE"
+       <> O.help "Whether to compare one DMMS file with another and write out \
+            \the comparison to <File>__<DMMS_FILE>_diff.txt>. "
+        )
+    
+
+procedureParser :: O.Parser Activity
+procedureParser = Procedure <$> (Procedures
+    <$> O.switch
         ( O.long "warnings"
        <> O.short 'w'
        <> O.help "Whether to write publication warnings to <FILE>_warnings.txt")
@@ -312,24 +339,6 @@ input = Input
        <> O.short 'g'
        <> O.help "Whether to write out a simple GML file of the dmms file"
         )
-    <*> O.strOption
-        ( O.long "update"
-       <> O.short 'u'
-       <> O.value ""
-       <> O.metavar "GML_FILE"
-       <> O.help "Whether to update the parsed dmms file with color and \
-            \coordinate information from a specified GML file. The networks \
-            \in the two files must match. The update is written to \
-            \<FILE>_GML_UPDATE.dmms. "
-        )
-    <*> O.strOption
-        ( O.long "compare"
-       <> O.short 'c'
-       <> O.value ""
-       <> O.metavar "DMMS_FILE"
-       <> O.help "Whether to compare one DMMS file with another and write out \
-            \the comparison to <File>__<DMMS_FILE>_diff.txt>. "
-        )
     <*> O.switch
         ( O.long "ttwrite"
        <> O.short 't'
@@ -342,6 +351,7 @@ input = Input
        <> O.help ""
        <> O.hidden
        <> O.internal)
+       )
 
 versionOpt :: O.Parser (a -> a)
 versionOpt = O.infoOption
@@ -351,9 +361,9 @@ versionOpt = O.infoOption
 opts :: O.ParserInfo Input
 opts = O.info (O.helper <*> versionOpt <*> input)
     ( O.fullDesc
-   <> O.progDesc "Parse a dmms file and output a Truth Table directory. \
+   <> O.progDesc "Parse a dmms file and perform various actions with it. \
    \Options: write publication level warnings to a file, write node coordinates\
-   \ and color to a file, write a supplementary publication of the rmms file to\
-   \ PDF, update a dmms file from a gml file, compare one DMMS file with \
+   \ and color to a file, write a supplementary publication of the dmms file to\
+   \ PDF, update a dmms file from a gml file, compare one dmms file with \
    \another, write out tt files."
    <> O.header "dynmod - processing dmms files")

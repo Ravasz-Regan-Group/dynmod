@@ -250,7 +250,7 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
 -- whether or not that input is Boolean or integer valued (more than on or off).
 -- We therefore need the entirety of the ModelLayer that it sits in. We process
 -- the entirety of the DMModel because we are in a Reader DMMode LaTeX anyway.
--- This assumes that all NodeNames in an entire parsed rmms file ARE UNIQUE.
+-- This assumes that all NodeNames in an entire parsed dmms file ARE UNIQUE.
 -- That is the spec, and checked for, but it bears repeating
 modelLaTeXGate :: Reader DMModel (Map.HashMap NodeName LaTeX)
 modelLaTeXGate = do
