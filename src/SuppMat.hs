@@ -249,7 +249,7 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
 -- once, because the depiction of a GateConst NodeName NodeState depends on
 -- whether or not that input is Boolean or integer valued (more than on or off).
 -- We therefore need the entirety of the ModelLayer that it sits in. We process
--- the entirety of the DMModel because we are in a Reader DMMode LaTeX anyway.
+-- the entirety of the DMModel because we are in a Reader DMModel LaTeX anyway.
 -- This assumes that all NodeNames in an entire parsed dmms file ARE UNIQUE.
 -- That is the spec, and checked for, but it bears repeating
 modelLaTeXGate :: Reader DMModel (Map.HashMap NodeName LaTeX)

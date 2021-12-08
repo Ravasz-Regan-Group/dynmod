@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 09094009b9553d292bb1959855fad63f9cd220c1f19bbdcde2c2c505371ce74a
+-- hash: 6be03e2609562436c8908086eb687d6d20d9c8553963dad69e1ff259bffa8a7f
 
 name:           dynmod
 version:        0.5.2.0
@@ -43,7 +43,6 @@ library
       Text.LaTeX.Packages.ColorTbl
   other-modules:
       Text.LaTeX.DynMod.Extra
-      Types.Experiment
       Paths_dynmod
   hs-source-dirs:
       src
