@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.5.2.0
+version:             0.5.2.1
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -73,6 +73,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -eventlog
     - -O2
     - -Wall
     dependencies:

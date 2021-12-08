@@ -311,7 +311,6 @@ compareParser = Compare
     <$> O.strOption
         ( O.long "compare"
        <> O.short 'c'
-       <> O.value ""
        <> O.metavar "DMMS_FILE"
        <> O.help "Whether to compare one DMMS file with another and write out \
             \the comparison to <File>__<DMMS_FILE>_diff.txt>. "
