@@ -288,7 +288,10 @@ renderNodeDiff (NodeDiff nN nTD lDs tD) =
     tablesMaybe = case tD of
         Nothing -> "\n" <>
             "Gate Inlinks differ, so comparing the gate outputs is nonsensical"
-        Just tDiff -> "\nGate diff:\n" <> renderTableDiff tDiff
+        Just tDiff -> case renderedTD of
+            ""  -> "\nGates perfectly matched"
+            _ -> "\nGate diff:\n" <> renderedTD
+            where renderedTD = renderTableDiff tDiff
 
 renderLinkDiff :: LinkDiff -> T.Text
 renderLinkDiff (SD (LD lLinks) (RD rLinks) (FC lteDiffs)) =
@@ -321,8 +324,10 @@ renderLTEDiff (LTEDiff nN lT lE) = case (lT, lE) of
         ((T.pack . show . fst) e) <> " vs " <> ((T.pack . show . fst) e)
 
 renderTableDiff :: TableDiff -> T.Text
-renderTableDiff (nodes, (SD (LD lTable) (RD rTable) (FC sTable))) =
-    topLine <> "\n" <> (T.intercalate "\n" rows)
+renderTableDiff (nodes, (SD (LD lTable) (RD rTable) _)) = case rows of
+    []  -> ""
+    mis -> topLine <> "\n" <> (T.intercalate "\n" mis)
+    
     where
         rows = zipWith (<>) inputRows tOutputs
         topLine = T.intercalate "\t" $ fst orders <> [nN]
@@ -331,8 +336,7 @@ renderTableDiff (nodes, (SD (LD lTable) (RD rTable) (FC sTable))) =
         inputRows =
             (T.intercalate "\t" . ((T.pack . show) <$>) . U.toList) <$> vecs
         tOutputs = ((<>) "\t") <$> outs
-        (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR <> sList
-        sList = (T.pack . show) <<$>> (Map.toList sTable)
+        (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR
         zipdLR = ((<>) "\t" . T.pack . show) <<$>> (zipWith zipper lList rList)
         zipper (x, y) (_, b) = (x, (y, b))
         lList = L.sortBy (compare `on` fst) $ Map.toList lTable

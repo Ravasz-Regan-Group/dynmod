@@ -791,7 +791,7 @@ gatePairParse = between (symbol "NodeGate{") (symbol "NodeGate}")
     (runPermutation $ (,)
         <$> toPermutationWithDefault Nothing (Just <$> parseDiscreteLogic)
         <*> toPermutationWithDefault Nothing (Just <$> truthTableParse))
-  
+
 parseDiscreteLogic :: Parser LogicalGate
 parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
     ((try pInt <|> pBin) >>= gateConsistencyCheck)
@@ -872,8 +872,6 @@ truthTableParse = between (symbol "TruthTable{")
                           (symbol "TruthTable}")
                            slurpTable
                   >>= tableConsistencyCheck
-
-
 
 -- This checks for the following:
 -- 1. Are all possible output states reached

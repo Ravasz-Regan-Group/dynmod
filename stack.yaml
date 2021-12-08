@@ -48,8 +48,8 @@ extra-deps:
 # Extra package databases containing global packages
 # extra-package-dbs: []
 
-#apply-ghc-options: everything
-#rebuild-ghc-options: true
+apply-ghc-options: everything
+rebuild-ghc-options: true
 
 # Control whether we use the GHC we find on the path
 # system-ghc: true
