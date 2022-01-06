@@ -127,7 +127,8 @@ renderGate lr n = dmmsWrap "NodeGate" entries
     where
         entries = case gateOrigin nGate of
             DMMSTruthTable -> renderTableG nGate
-            _ -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
+            LogicalExpression -> renderDiscreteG lr nGate
+            Both -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
         nGate = nodeGate n
 
 renderDiscreteG :: LayerRange -> NodeGate -> T.Text
