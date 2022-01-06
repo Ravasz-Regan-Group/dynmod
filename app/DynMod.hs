@@ -41,24 +41,7 @@ main = do
     case ext of
         ".dmms" ->
             case activity clInput of 
-                Update gFileText -> do
-                    gFilePath <- resolveFile' $ T.unpack gFileText
-                    (_, gExt) <- splitExtension gFilePath
-                    case gExt of
-                        ".gml" -> do
-                            let strGMLFName = toFilePath gFilePath
-                            gmlFileContent <- RW.readFile gFilePath
-                            let gmlPOut = M.runParser gmlParse
-                                                      strGMLFName
-                                                      gmlFileContent
-                            case M.runParser modelFileParse
-                                             strFileName
-                                             fileclInput of
-                               (Left err) -> PS.pPrint (M.errorBundlePretty err)
-                               (Right parsed) -> do
-                                    putStrLn "Good parse"
-                                    updateDMMS mFilePath parsed gmlPOut
-                        _ -> fail $ "Not a gml file: " <> ext
+                Update upd -> updateDMMS mFilePath fileclInput upd
                 Compare compareText -> do
                     cFilePath <- resolveFile' $ T.unpack $ compareText
                     (_, cExt) <- splitExtension cFilePath
@@ -90,6 +73,58 @@ main = do
                     pOut = M.runParser modelFileParse strFileName fileclInput in
                     workDMMS mFilePath ps pOut
         _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
+
+updateDMMS :: Path Abs File
+           -> T.Text
+           -> Updates
+           -> IO ()
+updateDMMS f dmmsContent u = updateDMMS' u where
+  updateDMMS' (GML gFileText) = do
+    gFilePath <- resolveFile' $ T.unpack gFileText
+    (_, gExt) <- splitExtension gFilePath
+    let strFileName = toFilePath f
+        dirPath = parent f
+        fNamePath = filename f
+    (fNamePathNoExt, ext) <- splitExtension fNamePath
+    case gExt of
+      ".gml" -> do
+        let strGMLFName = toFilePath gFilePath
+        gmlFileContent <- RW.readFile gFilePath
+        case M.runParser gmlParse strGMLFName gmlFileContent of
+          (Left gErr) -> PS.pPrint (M.errorBundlePretty gErr)
+          (Right gml) -> case gmlValidate gml of
+            Failure errs -> fail $ "Invalid GML:\n" <>
+              (LT.unpack . PS.pShowNoColor) errs
+            Success vGML -> case M.runParser modelFileParse strFileName
+                                                            dmmsContent of
+              (Left dErr) -> PS.pPrint (M.errorBundlePretty dErr)
+              (Right (dmmsVer, (dmm, cd))) -> do
+                putStrLn "Good parse"
+                case updateDMModel dmm vGML of
+                  Failure updateErrs -> fail $ "Failed Update:\n" <>
+                    (LT.unpack . PS.pShowNoColor) updateErrs
+                  Success gUpdatedDMM -> do
+                    let gUFName = (toFilePath fNamePathNoExt) ++ "_GML_UPDATE"
+                    gUFNamePathNoExt <- parseRelFile gUFName
+                    gUFNamePath <- addExtension ext gUFNamePathNoExt
+                    let gUFPath = dirPath </> gUFNamePath
+                    writeDMMS gUFPath dmmsVer gUpdatedDMM cd
+      _ -> fail $ "Not a gml file: " <> ext
+  updateDMMS' (PT pb) = do
+    let strFileName = toFilePath f
+        dirPath = parent f
+        fNamePath = filename f
+    (fNamePathNoExt, ext) <- splitExtension fNamePath
+    case M.runParser modelFileParse strFileName dmmsContent of
+      (Left dErr) -> PS.pPrint (M.errorBundlePretty dErr)
+      (Right (dmmsVer, (dmm, cd))) -> do
+        when pb $ do
+          let tPurgedDMMSText = purgeTableRenderDMMS dmmsVer dmm cd
+              tPFName = (toFilePath fNamePathNoExt) ++ "_Table_Purge_UPDATE"
+          tPFNamePathNoExt <- parseRelFile tPFName
+          tPFNamePath <- addExtension ext tPFNamePathNoExt
+          let tPFPath = dirPath </> tPFNamePath
+          RW.writeFile tPFPath tPurgedDMMSText
 
 workDMMS :: Path Abs File
          -> Procedures
@@ -212,27 +247,6 @@ writeDMMS f ver dmm cDict = do
     let dmmsText = renderDMMS ver dmm cDict
     RW.writeFile f dmmsText
 
-updateDMMS :: Path Abs File
-           -> (FileFormatVersion, (DMModel, CitationDictionary))
-           -> Either (M.ParseErrorBundle T.Text Void) GML
-           -> IO ()
-updateDMMS _ _ (Left err)= PS.pPrint (M.errorBundlePretty err)
-updateDMMS f (dmmsVer, (dmm, cd)) (Right gml) = case gmlValidate gml of
-    Failure errs -> fail $ "Invalid GML:\n" <>
-            (LT.unpack . PS.pShowNoColor) errs
-    Success vGML -> case updateDMModel dmm vGML of
-        Failure updateErrs -> fail $ "Failed Update:\n" <>
-            (LT.unpack . PS.pShowNoColor) updateErrs
-        Success updatedDMM -> do
-            putStrLn "Good update"
-            let dirPath = parent f
-                fNamePath = filename f
-            (fNamePathNoExt, ext) <- splitExtension fNamePath
-            let uFName = (toFilePath fNamePathNoExt) ++ "_GML_UPDATE"
-            uFNamePathNoExt <- parseRelFile uFName
-            uFNamePath <- addExtension ext uFNamePathNoExt
-            let uFPath = dirPath </> uFNamePath
-            writeDMMS uFPath dmmsVer updatedDMM cd
 
 -- Compare two DMMS files
 dmmsCompare :: Path Abs File
@@ -269,13 +283,19 @@ data Input = Input {
     , activity :: Activity
     } deriving (Eq, Show)
     
-data Activity = Update UpdateGMLN
+data Activity = Update Updates
               | Compare CompareDMMS
               | Procedure Procedures
               deriving (Eq, Show)
 
+data Updates = GML UpdateGMLN
+             | PT PurgeTables
+             deriving (Eq, Show)
 type UpdateGMLN = T.Text
+type PurgeTables = Bool
+
 type CompareDMMS = T.Text
+
 data Procedures = Procedures {
       pubWarn     :: Bool
     , coordColors :: Bool
@@ -295,7 +315,10 @@ activityParser :: O.Parser Activity
 activityParser = updateParser <|> compareParser <|> procedureParser
 
 updateParser :: O.Parser Activity
-updateParser = Update
+updateParser = Update <$> (gmlUpdateParser <|> tablePurgeParser)
+
+gmlUpdateParser :: O.Parser Updates
+gmlUpdateParser = GML
     <$> O.strOption
         ( O.long "update"
        <> O.short 'u'
@@ -304,6 +327,16 @@ updateParser = Update
             \coordinate information from a specified GML file. The networks \
             \in the two files must match. The update is written to \
             \<FILE>_GML_UPDATE.dmms. "
+        )
+
+tablePurgeParser :: O.Parser Updates
+tablePurgeParser = PT
+    <$> O.switch
+        ( O.long "purge_tables"
+       <> O.short 'x'
+       <> O.help "Whether to edit the given DMMS file to remove TruthTables \
+            \from NodeGates where both DiscreteLogic expressions and \
+            \TruthTables exist. "
         )
 
 compareParser :: O.Parser Activity

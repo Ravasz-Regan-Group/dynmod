@@ -4,6 +4,7 @@ module Render
     ( renderGML
     , renderDMMS
     , renderDMMSDiff
+    , purgeTableRenderDMMS
     )
     where
 
@@ -342,3 +343,53 @@ renderTableDiff (nodes, (SD (LD lTable) (RD rTable) _)) = case rows of
         zipper (x, y) (_, b) = (x, (y, b))
         lList = L.sortBy (compare `on` fst) $ Map.toList lTable
         rList = L.sortBy (compare `on` fst) $ Map.toList rTable
+
+-- Write out a DMModel to Text, but do not write out a TruthTable if the
+-- GateOrigin is LogicalExpression OR Both. 
+purgeTableRenderDMMS :: FileFormatVersion
+                     -> DMModel
+                     -> CitationDictionary
+                     -> T.Text
+purgeTableRenderDMMS ver dmm cDict =
+    T.intercalate "\n\n" [ "FormatVersion: " <> (Ver.prettySemVer ver)
+                         , purgeTableRenderDMModel dmm
+                         , renderCDict cDict
+                         ]
+
+purgeTableRenderDMModel :: DMModel -> T.Text
+purgeTableRenderDMModel (Fine (ModelLayer mg mmd)) = dmmsWrap "Model" entries
+    where
+        entries = renderMMeta mmd <> "\n\n"
+               <> purgeTableRenderMGraph mg
+purgeTableRenderDMModel (LayerBinding mm (ModelLayer mg mmd) dmm) =
+    dmmsWrap "Model" entries
+        where
+            entries = renderMMeta mmd <> "\n\n"
+                   <> renderMMaping mm <> "\n\n"
+                   <> purgeTableRenderMGraph mg  <> "\n\n"
+                   <> purgeTableRenderDMModel dmm
+
+purgeTableRenderMGraph :: ModelGraph -> T.Text
+purgeTableRenderMGraph mg = dmmsWrap "ModelGraph" entries
+    where
+        entries = T.intercalate "\n\n" nodes
+        nodes = purgeTableRenderDMMSNode ranges <$> dmmsNS
+        ranges = Map.fromList $ (nodeRange . fst) <$> dmmsNS
+        dmmsNS = dmmsNodes mg
+
+purgeTableRenderDMMSNode :: LayerRange -> DMMSNode -> T.Text
+purgeTableRenderDMMSNode r (n, ls) = dmmsWrap "Node" entries <> " //" <> nName
+    where
+        entries = T.intercalate "\n\n" $ [meta, gate] <> links
+        meta = renderNMeta $ nodeMeta n
+        gate = purgeTableRenderGate r n
+        links = renderNamedLink <$> ls
+        nName = (nodeName . nodeMeta) n
+
+purgeTableRenderGate :: LayerRange -> DMNode -> T.Text
+purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries
+    where
+        entries = case gateOrigin nGate of
+            DMMSTruthTable -> renderTableG nGate
+            _ -> renderDiscreteG lr nGate
+        nGate = nodeGate n
