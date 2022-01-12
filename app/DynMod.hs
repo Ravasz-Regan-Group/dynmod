@@ -312,7 +312,7 @@ input = Input <$> O.strArgument
               <*> activityParser
 
 activityParser :: O.Parser Activity
-activityParser = updateParser <|> compareParser <|> procedureParser
+activityParser = procedureParser <|> updateParser <|> compareParser
 
 updateParser :: O.Parser Activity
 updateParser = Update <$> (gmlUpdateParser <|> tablePurgeParser)
