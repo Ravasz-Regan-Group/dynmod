@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.5.3.1
+version:             0.5.3.2
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -43,6 +43,7 @@ library:
   ghc-options:
   - -Wall
   - -O2
+  - -j # Parallel compilation at the module level
   dependencies :
   - megaparsec
   - parser-combinators
@@ -75,6 +76,7 @@ executables:
     - -with-rtsopts=-N2
     - -O2
     - -Wall
+    - -j # Parallel compilation at the module level
     dependencies:
     - dynmod
     - megaparsec

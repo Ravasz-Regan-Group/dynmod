@@ -73,6 +73,7 @@ module Types.DMModel
     , refdNodesStatesTM
     , exprNodes
     , modelLayers
+    , modelMappings
     , coarseLayer
     , mkLayerBinding
     , layerNodes
@@ -972,12 +973,9 @@ rowsStrictlyIncreasing inputs = case isStrictlyIncreasing inputs of
 -- contains the duplicated rows and their (zero-indexed) locations. 
 noDupeInputs :: [[NodeState]]
              -> Validation TableInvalid [[NodeState]]
-noDupeInputs inputs =
-    let (_, _, nonDuped) = Uniq.complex inputs
-    in
-    case inputs == nonDuped of
-        True  -> Success inputs
-        False -> Failure DuplicatedInputRows
+noDupeInputs inputs
+    | Uniq.allUnique inputs = Success inputs
+    | otherwise = Failure DuplicatedInputRows
 
 -- In case it turns out that finding where duplicated rows are is challenging, 
 -- This is how to return a map of them. It makes the error reporting harder, so
@@ -1087,6 +1085,11 @@ modelEdges' (LayerBinding _ mL dmM) = (layerEdges' mL) : (modelEdges' dmM)
 modelLayers :: DMModel ->  [ModelLayer]
 modelLayers (Fine mL) = [mL]
 modelLayers (LayerBinding _ mL dmM) = mL : (modelLayers dmM)
+
+-- Extract all the ModelMappings from a DMModel
+modelMappings :: DMModel ->  [ModelMapping]
+modelMappings (Fine _) = []
+modelMappings (LayerBinding mM _ dmM) = mM : (modelMappings dmM)
 
 -- Extract the DMNodes from a ModelLayer
 layerNodes :: ModelLayer -> [DMNode]

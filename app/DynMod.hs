@@ -153,30 +153,48 @@ workDMMS f options (Right parsed) = do
 --         pTest <- parseRelFile "test/parseTest.hs"
 --         RW.writeFile pTest $ LT.toStrict $ PS.pShowNoColor $ dmModel
     when (ttWrite options)
-        (ttFWrite f (layerTTs <$> (modelLayers dmModel)) (mkBooleanNet dmModel))
+        (ttFWrite f
+                  (layerTTs <$> (modelLayers dmModel))
+                  (mkBooleanNet dmModel)
+                  (let mMs = T.intercalate "\n" <$> (renderSwitch <<$>>
+                                (modelMappings dmModel))
+                       mNs = (modelName . modelMeta) <$> modelLayers dmModel
+                   in zip mNs mMs)
+        )
 
 
 -- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
--- directory with the dmms' name. 
-ttFWrite :: Path Abs File -> ModelTTFiles -> [(ModelName, BooleanNet)] -> IO ()
-ttFWrite mFilePath fs bNetPs = do
+-- directory with the dmms' name. Also write out the SwitchMappings to the same
+-- directory as the dmms file. 
+ttFWrite :: Path Abs File
+         -> ModelTTFiles
+         -> [(ModelName, BooleanNet)]
+         -> [(ModelName, T.Text)]
+         -> IO ()
+ttFWrite mFilePath fs bNetPs mMs = do
     (pathNoExt, _) <- splitExtension mFilePath
     let ttFiles = snd <<$>> (snd <$> fs)
         ttFileNames = (T.unpack . fst) <<$>> (snd <$> fs)
         bNFiles = snd <$> bNetPs
         bNFileNames = (T.unpack . fst) <$> bNetPs
+        mMsFiles = snd <$> mMs
+        mMsFileNames = (T.unpack . flip T.append "_ModelMapping"  . fst) <$> mMs
     topDir <- parseAbsDir $ fromAbsFile pathNoExt
     ttFileNameRels <- mapM (mapM parseRelFile) ttFileNames
     ttFileNamesWExt <- mapM (mapM (addExtension ".csv")) ttFileNameRels
     bNFileNameRels <- mapM parseRelFile bNFileNames
     bNFileNamesWExt <- mapM (addExtension ".booleannet") bNFileNameRels
+    mMsFileNameRels <- mapM parseRelFile mMsFileNames
+    mMsFileNamesWExt <- mapM (addExtension ".txt") mMsFileNameRels
     layerDirs <- mapM parseRelDir ((T.unpack . fst) <$> fs)
     let ttDirs = (topDir </>) <$> layerDirs
     mapM_ ensureDir ttDirs
     let ttPaths = zipWith (<$>) ((</>) <$> ttDirs) ttFileNamesWExt
         bNPaths = (topDir </>) <$> bNFileNamesWExt
+        mMPaths = mMsFileNamesWExt
     zipWithM_ (zipWithM_ RW.writeFile) ttPaths ttFiles
     zipWithM_ RW.writeFile bNPaths bNFiles
+    zipWithM_ RW.writeFile mMPaths mMsFiles
 
 -- Write publication warnings to disk
 pubWWrite :: Path Abs File -> (DMModel, CitationDictionary) -> IO ()

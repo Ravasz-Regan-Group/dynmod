@@ -3,6 +3,7 @@
 module Render 
     ( renderGML
     , renderDMMS
+    , renderSwitch
     , renderDMMSDiff
     , purgeTableRenderDMMS
     )

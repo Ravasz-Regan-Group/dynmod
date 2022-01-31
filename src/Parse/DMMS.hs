@@ -732,7 +732,9 @@ tableDisCheck (Nothing, Just (nName, gOrder, tTable)) = return $ NodeGate
 tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
     Failure err -> fail $ show err
     Success (lGate@(lName, _, assigns), tGate@(tName, tOrder, tTable))
-      -> case isSubset lCombos tCombos of
+      -> case L.isSubsequenceOf tSortedtGorderedCLCombosList
+                                tSortedtGorderedCTCombosList
+         of
         False -> fail $ T.unpack $ "TableExprStateMismatch \n" <> T.unlines
             (tGatePrint:prettyCombos)
         True -> case accOutputMis tGate lGate of
@@ -752,6 +754,14 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             tCombos = fst $ unzip $ tTInputOutput tOrder tTable
             lCombos = gateCombinations $ snd <$> assigns
             tGatePrint = (T.concat $ L.intersperse "  " $ tOrder <> [tName])
+            lCombosList = Map.toList <$> lCombos
+            tGorderedLCombosList = (sortWithOrderOn fst tOrder) <$> lCombosList
+            tSortedtGorderedCLCombosList =
+                L.sortOn (snd <$>) tGorderedLCombosList
+            tCombosList = Map.toList <$> tCombos
+            tGorderedTCombosList = (sortWithOrderOn fst tOrder) <$> tCombosList
+            tSortedtGorderedCTCombosList =
+                L.sortOn (snd <$>) tGorderedTCombosList
 tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
 
 -- We want to accumulate from the TruthTable and NodeGate those rows whose
