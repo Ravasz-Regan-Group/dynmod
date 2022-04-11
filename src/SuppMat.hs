@@ -25,6 +25,7 @@ import Text.LaTeX.Packages.Color
 import Text.LaTeX.Packages.Geometry
 import Text.LaTeX.Packages.AMSMath
 import Text.LaTeX.Packages.Babel
+import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import qualified Data.Graph.Inductive as Gr
@@ -412,9 +413,9 @@ mkBibText (BibTeXEntry{entryKey = key, entryType = tp, entryFields = fs}) =
         f (field, record) = field <> " = " <> record
 
 -- Render a DMModel into a List of (ModelName, BooleanNet) pairs. A pair is only
--- created from a ModeLayer if every node in that ModeLayer is boolean. mkBNExpr
--- is kept internal to ensure that it does not accidentally get used on a
--- non-boolean NodeExpr
+-- created from a ModeLayer if every node in that ModeLayer is boolean. 
+-- mkLEBNExpr and mkTTBNExpr are kept internal to ensure that they do not 
+-- accidentally get used on a non-boolean NodeExpr. 
 mkBooleanNet :: DMModel -> [(ModelName, BooleanNet)]
 mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
     where
@@ -422,19 +423,39 @@ mkBooleanNet dmM = zip modelNs $ mkBooleanNet' <$> boolLs
             where
                 bNGates = zipWith (\n ex -> n <> " *= " <> ex) bNNames bNExpr
                 bNNames = gNodeName <$> gates
-                bNExpr = (mkBNExpr . snd . last . gateAssigns) <$> gates
+                bNExpr = mkBNExpr <$> gates
                 gates = (((nodeGate . snd) <$>) . Gr.labNodes . modelGraph) mL
-        mkBNExpr :: NodeExpr -> T.Text
-        mkBNExpr (GateLit b) = (toStrict . PS.pShowNoColor) b
-        mkBNExpr (GateConst n _) = n
-        mkBNExpr (Not expr) = "not " <> (exprPars mkBNExpr expr)
-        mkBNExpr (Binary And expr1 expr2) =
-            (exprPars mkBNExpr expr1) <> " and " <> (exprPars mkBNExpr expr2)
-        mkBNExpr (Binary Or expr1 expr2) =
-            (exprPars mkBNExpr expr1) <> " or " <> (exprPars mkBNExpr expr2)
+        mkBNExpr :: NodeGate -> T.Text
+        mkBNExpr nG = case gateOrigin nG of
+            DMMSTruthTable ->  mkTTBNExpr nG
+            _              -> (mkLEBNExpr . snd . last . gateAssigns) nG
         modelNs = (modelName . modelMeta) <$> boolLs
         boolLs = filter isModelLayerBoolean layers
         layers = modelLayers dmM
+
+mkLEBNExpr :: NodeExpr -> T.Text
+mkLEBNExpr (GateLit b) = (toStrict . PS.pShowNoColor) b
+mkLEBNExpr (GateConst n i)
+    | i /= 0 = n
+    | otherwise = "not " <> n
+mkLEBNExpr (Not expr) = "not " <> (exprPars mkLEBNExpr expr)
+mkLEBNExpr (Binary And expr1 expr2) =
+    (exprPars mkLEBNExpr expr1) <> " and " <> (exprPars mkLEBNExpr expr2)
+mkLEBNExpr (Binary Or expr1 expr2) =
+    (exprPars mkLEBNExpr expr1) <> " or " <> (exprPars mkLEBNExpr expr2)
+
+mkTTBNExpr :: NodeGate -> T.Text
+mkTTBNExpr nG = T.intercalate " or " $ ander nNames <$> orLists
+    where
+        ander nns nss = T.intercalate " and " $ zipWith onOff nns nss
+        onOff :: NodeName -> NodeState -> T.Text
+        onOff nN nS
+            | nS == 0 = "(not " <> nN <> ")"
+            |otherwise = nN
+        orLists = L.sort $ U.toList <$> orVecs
+        orVecs = (Map.keys . (Map.filter (\i -> i == 1)) . gateTable) nG
+        nNames = gateOrder nG
+
 
 type BooleanNet = T.Text
 

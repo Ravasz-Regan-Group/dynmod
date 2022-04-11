@@ -414,7 +414,7 @@ prettyTTable nN gO tT = (nN, gatePrint <> T.singleton '\n' <> prettyRows)
         rows = (L.sortOn fst . Map.toList) tT
         gatePrint = T.concat $ L.intersperse (T.singleton '\t') $ gO <> [nN]
 
-
+-- Produce a [NodeStateAssign] from a TruthTable. 
 tTableToAssigns :: NodeName -> GateOrder -> TruthTable -> [NodeStateAssign]
 tTableToAssigns nN gO tT = tableToLogical (gO <> [nN]) inputRows outputs
     where

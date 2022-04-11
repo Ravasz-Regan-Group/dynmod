@@ -189,6 +189,8 @@ ttFWrite mFilePath fs bNetPs mMs = do
     layerDirs <- mapM parseRelDir ((T.unpack . fst) <$> fs)
     let ttDirs = (topDir </>) <$> layerDirs
     mapM_ ensureDir ttDirs
+    mapM_ removeDirRecur ttDirs
+    mapM_ ensureDir ttDirs
     let ttPaths = zipWith (<$>) ((</>) <$> ttDirs) ttFileNamesWExt
         bNPaths = (topDir </>) <$> bNFileNamesWExt
         mMPaths = mMsFileNamesWExt
