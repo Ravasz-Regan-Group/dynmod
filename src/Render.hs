@@ -170,6 +170,39 @@ parRenderExpr s ex = case ex of
     (GateConst _ _) -> renderExpr s ex
     _               -> "(" <> renderExpr s ex <> ")"
 
+
+-- For when we want to render a gate but do not have the LayerRange available.  
+renderDiscreteGBlind :: NodeGate -> T.Text
+renderDiscreteGBlind ng
+    | length assigns == 1 = "\t" <> nName <> " *= " <> 
+                                        (renderExprBlind $ last exprs)
+    | otherwise = T.intercalate "\n" rExprs
+        where
+            rExprs = ("\t" <>) <$> (zipWith ((<> ) . (<> " *= ")) gStates $
+                renderExprBlind <$> exprs)
+            gStates = ((assignName <>) . T.pack . show . fst) <$> assigns
+            exprs = snd <$> assigns
+           -- We never write out the zeroth state in a dmms,
+           -- so only take the tail of the gate assignments.
+            assigns = (tail . gateAssigns) ng
+            assignName = nName <> ":"
+            nName = gNodeName ng
+
+renderExprBlind :: NodeExpr -> T.Text
+renderExprBlind (GateLit b) = (T.pack . show) b
+renderExprBlind (GateConst n st) = n <> ":" <> (T.pack . show) st
+renderExprBlind (Not expr) = "not " <> parRenderExprBlind expr
+renderExprBlind (Binary And expr1 expr2) =
+    (parRenderExprBlind expr1) <> " and " <> (parRenderExprBlind expr2)
+renderExprBlind (Binary Or expr1 expr2) =
+    (parRenderExprBlind expr1) <> " or " <> (parRenderExprBlind expr2)
+
+parRenderExprBlind :: NodeExpr -> T.Text
+parRenderExprBlind ex = case ex of
+    (GateLit _)     -> renderExprBlind ex
+    (GateConst _ _) -> renderExprBlind ex
+    _               -> "(" <> renderExprBlind ex <> ")"
+
 renderTableG :: NodeGate -> T.Text
 renderTableG ng = dmmsWrap "TruthTable" entries
     where
@@ -226,10 +259,19 @@ renderDMMSDiff dmms1 dmms2 dmMDiff =
 renderDMModelDiff :: DMModelDiff -> T.Text
 renderDMModelDiff (CoarseDiff mmD ((lN1, lN2), lD) dmD) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
-    "ModelMapping diff:\n" <> renderMappingDiff mmD <> "\n" <>
-    "ModelLayer diff:\n" <> renderLayerDiff lD <>
+    mmDRenderWrapped <>
+    mlDRenderWrapped <>
     "\n****************************************\n" <>
     renderDMModelDiff dmD
+    where
+        mmDRenderWrapped
+            | T.null mmDRender = ""
+            | otherwise = "ModelMapping diff:\n" <> mmDRender <> "\n"
+        mmDRender = renderMappingDiff mmD
+        mlDRenderWrapped
+            | T.null mmDRender = ""
+            | otherwise = "ModelLayer diff:\n" <> mlDRender <> "\n"
+        mlDRender = renderLayerDiff lD
 renderDMModelDiff (FineDiff ((lN1, lN2), lD)) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
     "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n"
@@ -246,19 +288,19 @@ renderMappingDiff (SD (LD ldSwitchNames)
     where
         ldSN | null ldSwitchNames = ""
              | otherwise = "Left unique Switch names:\n" <>
-                T.intercalate "\n" (renderSwitch <$> ldSwitchNames) <> "\n\n"
+                T.intercalate "\n" (renderSwitch <$> ldSwitchNames) <> "\n"
         rdSN | null rdSwitchNames = ""
              | otherwise = "Right unique Switch names:\n" <>
-                T.intercalate "\n" (renderSwitch <$> rdSwitchNames) <> "\n\n"
+                T.intercalate "\n" (renderSwitch <$> rdSwitchNames) <> "\n"
         ldSC | null ldSwitchContent = ""
              | otherwise = "Left shared Switch names but unique content:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> ldSwitchContent) <> "\n\n"
+                 T.intercalate "\n" (renderSwitch <$> ldSwitchContent) <> "\n"
         rdSC | null ldSwitchContent = ""
              | otherwise = "Right shared Switch names but unique content:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> rdSwitchContent) <> "\n\n"
+                 T.intercalate "\n" (renderSwitch <$> rdSwitchContent) <> "\n"
         fcSC | null fcNameContent = ""
              | otherwise = "Identical Switches:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> fcNameContent) <> "\n\n"
+                 T.intercalate "\n" (renderSwitch <$> fcNameContent) <> "\n"
 
 renderLayerDiff :: SplitDiff [NodeName] [NodeDiff] -> T.Text
 renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
@@ -267,51 +309,70 @@ renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
         lUNs
             | null lNNames = ""
             | otherwise = "Left unique NodeNames:\n" <>
-                T.intercalate ", " lNNames <> "\n\n"
+                T.intercalate ", " lNNames <> "\n"
         rUNs
             | null rNNames = ""
             | otherwise = "Right unique NodeNames:\n" <>
-                T.intercalate ", " rNNames <> "\n\n"
+                T.intercalate ", " rNNames <> "\n"
         sharedNodeDiffRenders
-            | null nDiffs = ""
-            | otherwise = "Shared DMNode diffs:\n" <> 
-                T.unlines (renderNodeDiff <$> nDiffs)
+            | and $ T.null <$> nDiffRenders = ""
+            | otherwise = "Shared DMNode diffs:\n" <> T.concat nDiffRenders
+                where
+                    nDiffRenders = renderNodeDiff <$> nDiffs
 
 renderNodeDiff :: NodeDiff -> T.Text
-renderNodeDiff (NodeDiff nN nTD lDs tD) =
-    "Node: " <> nN <>
-    typesMaybe <> "\n" <>
-    "InLink diffs:\n" <> renderLinkDiff lDs <>
-    tablesMaybe <> "\n--------------------------------------------------\n"
+renderNodeDiff (NodeDiff nN nTD lDs tD)
+    | (T.null typesMaybe) && (T.null rLinkDiffs) && (T.null tablesMaybe) = ""
+    | otherwise =
+        "Node: " <> nN <>
+        typesMaybe <>
+        rLinkDiffs <>
+        tablesMaybe <>
+            "\n--------------------------------------------------\n"
     where
     typesMaybe = case nTD of
         Nothing -> ""
         Just (lType, rType) -> "\n" <> "NodeTypes vary: " <>
             ((T.pack . show) lType) <> " vs " <> ((T.pack . show) rType) <> "\n"
+    rLinkDiffs = renderLinkDiff lDs
     tablesMaybe = case tD of
-        Nothing -> "\n" <>
-            "Gate Inlinks differ, so comparing the gate outputs is nonsensical"
-        Just tDiff -> case renderedTD of
-            ""  -> "\nGates perfectly matched"
+        Left gates -> "\n" <> "Gate Inlinks differ, so comparing the gate\
+                \ outputs is nonsensical. " <>
+            "The gates follow, if their GateOrigins were LogicalExpressions. "
+            <> maybeLeftGate <> maybeRightGate
+                where
+                    maybeLeftGate
+                        | (gateOrigin . fst) gates == DMMSTruthTable = ""
+                        | otherwise = "\n" <> (renderDiscreteGBlind $ fst gates)
+                    maybeRightGate
+                        | (gateOrigin . snd) gates == DMMSTruthTable = ""
+                        | otherwise = "\n" <> (renderDiscreteGBlind $ snd gates)
+        Right tDiff -> case renderedTD of
+            ""  -> ""
             _ -> "\nGate diff:\n" <> renderedTD
             where renderedTD = renderTableDiff tDiff
 
 renderLinkDiff :: LinkDiff -> T.Text
-renderLinkDiff (SD (LD lLinks) (RD rLinks) (FC lteDiffs)) =
-    lU <> rU <> lteDiffRenders
+renderLinkDiff (SD (LD lLinks) (RD rLinks) (FC lteDiffs))
+    | (T.null lU) && (T.null rU) && (T.null lteDiffRenders) = ""
+    | otherwise = "\nInLink diffs:\n" <> lU <> rU <> lteDiffRenders
     where
         lU
             | null lLinks = ""
-            | otherwise = "\nLeft unique InLinks\n" <> 
-                T.intercalate "\n" (renderNamedLinkContent <$> lLinks) <> "\n"
+            | otherwise = "\nLeft unique InLinks: " <> 
+                T.intercalate "," (snd <$> lLinks) <> "\n"
         rU
             | null rLinks = ""
-            | otherwise = "\nRight unique InLinks\n" <> 
-                T.intercalate "\n" (renderNamedLinkContent <$> rLinks) <> "\n"
+            | otherwise = "\nRight unique InLinks: " <> 
+                T.intercalate "," (snd <$> rLinks) <> "\n"
         lteDiffRenders
-            |null lteDiffs = ""
+            | and $ nullLTEDiff <$> lteDiffs = ""
             | otherwise = "Shared InLink diffs:\n" <>
                 T.intercalate "\n" (renderLTEDiff <$> lteDiffs)
+
+nullLTEDiff :: LTEDiff -> Bool
+nullLTEDiff (LTEDiff _ Nothing Nothing) = True
+nullLTEDiff _ = False
 
 renderLTEDiff :: LTEDiff -> T.Text
 renderLTEDiff (LTEDiff nN lT lE) = case (lT, lE) of

@@ -445,8 +445,9 @@ mkLEBNExpr (Binary Or expr1 expr2) =
     (exprPars mkLEBNExpr expr1) <> " or " <> (exprPars mkLEBNExpr expr2)
 
 mkTTBNExpr :: NodeGate -> T.Text
-mkTTBNExpr nG = T.intercalate " or " $ ander nNames <$> orLists
+mkTTBNExpr nG = T.intercalate " or " ands
     where
+        ands = (\x -> "(" <> x <> ")") <$> (ander nNames <$> orLists)
         ander nns nss = T.intercalate " and " $ zipWith onOff nns nss
         onOff :: NodeName -> NodeState -> T.Text
         onOff nN nS

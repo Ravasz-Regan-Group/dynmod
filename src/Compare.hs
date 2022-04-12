@@ -45,7 +45,7 @@ type LayerDiff = ((ModelName, ModelName), SplitDiff [NodeName] [NodeDiff])
 data NodeDiff = NodeDiff { nDiffName :: NodeName
                          , nTypeDiff :: Maybe (NodeType, NodeType)
                          , linkDiff :: LinkDiff
-                         , tableDiff :: Maybe TableDiff
+                         , tableDiff :: Either (NodeGate, NodeGate) TableDiff
                          } deriving (Show, Eq)
 type LinkDiff = SplitDiff [(DMLink, NodeName)] [LTEDiff]
 data LTEDiff = LTEDiff { inNodeName :: NodeName
@@ -133,7 +133,7 @@ lteCompare ((lLink, _), (rLink, rN)) = let
              | otherwise = Just (linkEffect lLink, linkEffect rLink)
   in LTEDiff rN ltdMaybe ledMaybe
 
-ttCompare :: (InAdj, InAdj) -> Maybe TableDiff
+ttCompare :: (InAdj, InAdj) -> Either (NodeGate, NodeGate) TableDiff
 ttCompare inAdjPair = (,) nodes <$> (SD <$> (LD <$> diffLMap)
                                         <*> (RD <$> diffRMap)
                                         <*> (FC <$> sameMap))
@@ -150,10 +150,10 @@ ttCompare inAdjPair = (,) nodes <$> (SD <$> (LD <$> diffLMap)
         alignedNodes = tableAlign nodes
         nodes = isoBimap fst inAdjPair
 
-tableAlign :: (DMNode, DMNode) -> Maybe (DMNode, DMNode)
+tableAlign :: (DMNode, DMNode) -> Either (NodeGate, NodeGate) (DMNode, DMNode)
 tableAlign nodes = case arePermutes lOrder rOrder of
-  False -> Nothing
-  True -> Just $ const (DMNode rNM (NodeGate rNN rGO rAss nRTT rGOr)) <$> nodes
+  False -> Left $ isoBimap nodeGate nodes
+  True -> Right $ const (DMNode rNM (NodeGate rNN rGO rAss nRTT rGOr)) <$> nodes
   where
     nRTT = Map.fromList $ vecReorder <$> Map.toList rTT
     vecReorder = swap . (fmap (flip U.backpermute reorderVec)) . swap
