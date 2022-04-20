@@ -4,16 +4,16 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 560bcd80552c07d6c438cae14302431021c67fbe8368fe109768c5a981bbc91c
+-- hash: 61921b5a4339c4195b827fea9daf52ae3df4cd1ff1aafe932fb536683b7dda97
 
 name:           dynmod
-version:        0.5.3.4
+version:        0.6.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
 author:         Peter Regan
 maintainer:     peter.regan@gmail.com
-copyright:      2019 Peter Regan
+copyright:      2019-2022 Peter Regan
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Parse.DMMS
       Types.DMModel
+      Types.Simulation
       Parse.GML
       Types.GML
       Compare
@@ -41,6 +42,8 @@ library
       Render
       Text.LaTeX.Packages.Booktabs
       Text.LaTeX.Packages.ColorTbl
+      Properties.LayerCharacteristics
+      Properties.Attractors
   other-modules:
       Text.LaTeX.DynMod.Extra
       Paths_dynmod
@@ -54,15 +57,20 @@ library
     , bytestring
     , colour
     , containers
+    , deepseq
     , fgl
     , hashable
     , megaparsec
     , mtl
+    , parallel
     , parser-combinators
     , path
     , pretty-simple
+    , random
     , safe-exceptions
     , scientific
+    , split
+    , splitmix
     , text
     , unordered-containers
     , validation
@@ -77,10 +85,11 @@ executable dynmod
       Paths_dynmod
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N2 -O2 -Wall -j
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -j -Wall -j
   build-depends:
       HaTeX
     , base >=4.7 && <5
+    , deepseq
     , dynmod
     , fgl
     , megaparsec
@@ -89,19 +98,10 @@ executable dynmod
     , path
     , path-io
     , pretty-simple
+    , random
+    , split
     , text
+    , unordered-containers
     , validation
-  default-language: Haskell2010
-
-test-suite dynmod-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      Paths_dynmod
-  hs-source-dirs:
-      test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N2
-  build-depends:
-      base >=4.7 && <5
-    , dynmod
+    , vector
   default-language: Haskell2010

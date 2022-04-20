@@ -1,10 +1,10 @@
 name:                dynmod
-version:             0.5.3.4
+version:             0.6.0.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
 maintainer:          "peter.regan@gmail.com"
-copyright:           "2019 Peter Regan"
+copyright:           "2019-2022 Peter Regan"
 
 extra-source-files:
 - README.md
