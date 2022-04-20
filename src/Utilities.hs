@@ -2,17 +2,25 @@
 
 module Utilities where
 
-import Data.Validation
+-- All of the following is just to make initStdGen, and will go away when we
+-- move to GHC 9.2.1. 
+import System.Random
+import System.Random.Internal
+import qualified System.Random.SplitMix as SM
+
+import qualified Data.Sequence as Seq
+import qualified Data.List as L
+import Data.Foldable (foldl', toList)
+import Data.Bifunctor (Bifunctor(..), bimap)
+import Control.Applicative (liftA2)
+import qualified Data.Vector.Unboxed as UVec
 import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Hashable as Hash
 import qualified Text.Pretty.Simple as PS
+import Data.Validation
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
-import qualified Data.List as L
-import Data.Foldable (foldl')
-import Control.Applicative (liftA2)
-import Data.Bifunctor (Bifunctor(..), bimap)
 
 infixl 4 <<$>>, <<*>>, <<<$>>>
 
@@ -111,6 +119,9 @@ thdOf4 (_, _, n, _) = n
 fthOf4 :: (a, b, c, d) -> d
 fthOf4 (_, _, _, o) = o
 
+mapFst :: (a -> b) -> (a, c) -> (b, c)
+mapFst f (x, y) = (f x, y)
+
 -- Convert an uncurried function to a curried function.
 curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
 curry3 f a b c = f (a,b,c)
@@ -164,3 +175,13 @@ pairSame (x, y) = x == y
 
 isoBimap :: Bifunctor p => (a -> b) -> p a a -> p b b
 isoBimap f = bimap f f
+
+fillDown :: Int -> [Int]
+fillDown n = [0..n]
+
+seqToVec :: UVec.Unbox a => Seq.Seq a -> UVec.Vector a
+seqToVec = UVec.fromList . toList
+
+-- The following should go away when we move to GHC 9.2.1. 
+initStdGen :: IO StdGen
+initStdGen = StdGen <$> SM.initSMGen

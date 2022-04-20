@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d89c73a84220425012c0fb11aca6bc32fb7a076cea0f916c603a6e4554398299
+-- hash: 72cd177153ed62626fdb9d281926e1a9c7baac08c47fa636bec55165f70a4ea1
 
 name:           dynmod
 version:        0.5.2.2
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Parse.DMMS
       Types.DMModel
+      Types.Simulation
       Parse.GML
       Types.GML
       Compare
@@ -41,12 +42,14 @@ library
       Render
       Text.LaTeX.Packages.Booktabs
       Text.LaTeX.Packages.ColorTbl
+      Properties.LayerCharacteristics
+      Properties.Attractors
   other-modules:
       Text.LaTeX.DynMod.Extra
       Paths_dynmod
   hs-source-dirs:
       src
-  ghc-options: -Wall -O2
+  ghc-options: -Wall -O2 -j
   build-depends:
       HaTeX
     , Unique
@@ -54,15 +57,20 @@ library
     , bytestring
     , colour
     , containers
+    , deepseq
     , fgl
     , hashable
     , megaparsec
     , mtl
+    , parallel
     , parser-combinators
     , path
     , pretty-simple
+    , random
     , safe-exceptions
     , scientific
+    , split
+    , splitmix
     , text
     , unordered-containers
     , validation
@@ -77,10 +85,11 @@ executable dynmod
       Paths_dynmod
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N2 -O2 -Wall
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -j -Wall
   build-depends:
       HaTeX
     , base >=4.7 && <5
+    , deepseq
     , dynmod
     , fgl
     , megaparsec
@@ -89,19 +98,10 @@ executable dynmod
     , path
     , path-io
     , pretty-simple
+    , random
+    , split
     , text
+    , unordered-containers
     , validation
-  default-language: Haskell2010
-
-test-suite dynmod-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      Paths_dynmod
-  hs-source-dirs:
-      test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N2
-  build-depends:
-      base >=4.7 && <5
-    , dynmod
+    , vector
   default-language: Haskell2010

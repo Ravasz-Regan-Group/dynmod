@@ -29,7 +29,7 @@ import qualified Data.List as L
 import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.Bifunctor as B
 import Data.Void
-import Data.Char (toLower, isSpace)
+import Data.Char (toLower)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
@@ -41,16 +41,6 @@ sc = L.space space1 lineCmnt blockCmnt
   where
     lineCmnt  = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
-
--- | Is it a horizontal space character? (Taken from Megaparsec >= 9.0.0)
-isHSpace :: Char -> Bool
-isHSpace x = isSpace x && x /= '\n' && x /= '\r'
-
--- | Like 'space1', but does not accept newlines and carriage returns.
--- | Taken from Megaparsec >= 9.0.0
-hspace1 :: (MonadParsec e s m, Token s ~ Char) => m ()
-hspace1 = void $ takeWhile1P (Just "white space") isHSpace
-{-# INLINE hspace1 #-}
 
 hsc :: Parser ()
 hsc = L.space hspace1 lineCmnt blockCmnt
@@ -732,7 +722,9 @@ tableDisCheck (Nothing, Just (nName, gOrder, tTable)) = return $ NodeGate
 tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
     Failure err -> fail $ show err
     Success (lGate@(lName, _, assigns), tGate@(tName, tOrder, tTable))
-      -> case isSubset lCombos tCombos of
+      -> case L.isSubsequenceOf tSortedtGorderedCLCombosList
+                                tSortedtGorderedCTCombosList
+         of
         False -> fail $ T.unpack $ "TableExprStateMismatch \n" <> T.unlines
             (tGatePrint:prettyCombos)
         True -> case accOutputMis tGate lGate of
@@ -752,6 +744,14 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
             tCombos = fst $ unzip $ tTInputOutput tOrder tTable
             lCombos = gateCombinations $ snd <$> assigns
             tGatePrint = (T.concat $ L.intersperse "  " $ tOrder <> [tName])
+            lCombosList = Map.toList <$> lCombos
+            tGorderedLCombosList = (sortWithOrderOn fst tOrder) <$> lCombosList
+            tSortedtGorderedCLCombosList =
+                L.sortOn (snd <$>) tGorderedLCombosList
+            tCombosList = Map.toList <$> tCombos
+            tGorderedTCombosList = (sortWithOrderOn fst tOrder) <$> tCombosList
+            tSortedtGorderedCTCombosList =
+                L.sortOn (snd <$>) tGorderedTCombosList
 tableDisCheck (Nothing, Nothing) = fail "Expecting a NodeGate"
 
 -- We want to accumulate from the TruthTable and NodeGate those rows whose

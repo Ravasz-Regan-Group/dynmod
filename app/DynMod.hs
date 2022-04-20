@@ -1,9 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Main where
 
 import Types.DMModel
 import Types.GML
+import Types.Simulation
+import Properties.Attractors
+import Properties.LayerCharacteristics
 import Parse.DMMS
 import Parse.GML
 import Render
@@ -19,17 +23,23 @@ import qualified Options.Applicative as O
 import Path
 import Path.IO
 import Data.Validation (Validation(..))
+import Data.Version (showVersion)
 import qualified Data.Text.Lazy as LT
+import qualified Data.List.Split as Split
 import qualified Data.Text as T
 import qualified Text.Pretty.Simple as PS
 import qualified Data.Graph.Inductive as Gr
 import qualified Text.Megaparsec as M
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
+import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as B
+import Control.Monad.State.Strict
 import Data.Void
 import Control.Applicative ((<|>))
-import Control.Monad (zipWithM_, when)
 import Control.Monad.Reader (runReader)
 import GHC.Conc (par, pseq)
-import Data.Version (showVersion)
+import qualified Data.List as L
 
 main :: IO ()
 main = do
@@ -88,17 +98,113 @@ main = do
                             fail $ "Not a dmms file: " <> toFilePath cFilePath
                 Procedure ps -> let
                     pOut = M.runParser modelFileParse strFileName fileclInput in
-                    workDMMS mFilePath ps pOut
+                    procedureDMMS mFilePath ps pOut
+                Experiment es -> let
+                    pOut = M.runParser modelFileParse strFileName fileclInput in
+                    experimentDMMS mFilePath es pOut
         _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
 
-workDMMS :: Path Abs File
+experimentDMMS :: Path Abs File
+               -> Experiments
+               -> Either
+                (M.ParseErrorBundle T.Text Void)
+                (FileFormatVersion, (DMModel, CitationDictionary))
+               -> IO ()
+experimentDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
+experimentDMMS f options (Right parsed) = do
+    let dmModel = (fst . snd) parsed
+        fLayer = fineLayer dmModel
+    putStrLn "Good parse"
+    when (sample options)
+        (case modelMappings dmModel of
+            [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
+            mms -> do
+                gen <- initStdGen
+                let rN = 300
+                    rP = 0.02
+                    nN = 30
+                    aN = 5
+                    mEnv = ModelEnv fLayer rN rP nN aN []
+                    LayerSpecs lniMap _ _ _ = layerPrep mEnv
+                    fG = modelGraph fLayer
+                    ins = inputs fG
+                    inComsSizeS = (show . length) $ inputCombos ins [] lniMap 
+                putStrLn "Starting run. Input nodes:"
+                PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
+                putStrLn $ "In " ++ inComsSizeS ++ " combinations"
+                putStr "With settings: "
+                PS.pPrint (rN, rP, nN, aN)
+                let mMap = last mms
+                    atts = evalState (attractors mEnv) gen
+--                     attSet = evalState (attractors' mEnv) gen
+--                     atts = (HM.keysSet . fst) attSet
+--                     lC = evalState (characteristics mEnv) gen
+--                     (aS, lStats) = unLayerChars lC
+--                     statSize = HM.size lStats
+--                     atts = HM.keysSet aS
+--              Note that mMap is just the last ModelMapping in the DMMS file. 
+--              All this assumes that we're working with at 2-layer dmms file,
+--              which will need to be revisited in the general case
+                writeAttractorSet f lniMap mMap atts
+--                 putStrLn $ (show statSize) ++ " states found. "
+                )
+            
+
+writeAttractorSet :: Path Abs File
+                  -> LayerNameIndexMap
+                  -> ModelMapping
+                  -> (HS.HashSet Attractor)
+                  -> IO ()
+writeAttractorSet f lniMap mapping attSet = do
+    (fName, _) <- splitExtension $ filename f
+    let attVecList = HS.toList attSet
+        attNumber = length attVecList
+        switchNodeOrder = concatMap snd mapping
+        reordattVecList = case sequence (sequence <$>
+            (layerVecReorder lniMap switchNodeOrder <<$>> attVecList)) of
+                (Left err) -> fail $ "Attractor reorder failed: " <>
+                                     (T.unpack err)
+                (Right r)  -> r
+        attLLists = U.toList <<$>> (B.toList <$> reordattVecList)
+        attSizes = L.length <$> attLLists
+        flatAttTanspLists = L.transpose (mconcat attLLists)
+        switchRows = mappingFormat mapping
+        attFile = mkAttTable attSizes switchRows flatAttTanspLists <> "\n\n" <>
+            ((T.pack . show) attNumber)
+        fNameString = fromRelFile fName
+        attFileName = fNameString ++ "_attractors"
+
+    attFileNameRel <- parseRelFile attFileName
+    attFileNameRelWExt <- (addExtension ".csv") attFileNameRel
+    RW.writeFile attFileNameRelWExt attFile
+
+-- It is already a parser error if a switch has a switch name but no member
+-- nodes, so the list in the tuple with each switch name is guaranteed to be
+-- non-empty. 
+mappingFormat :: ModelMapping -> [T.Text]
+mappingFormat ms = concatMap switchFormat ms
+    where
+        switchFormat (_, []) = error "EmptySwitch"
+        switchFormat (sName, (n:ns)) = headR:tailRs
+            where
+                headR = sName <> ", " <> n <> ", "
+                tailRs = (\x -> ", " <> x <> ", ") <$> ns
+
+mkAttTable :: [Int] -> [T.Text] -> [[Int]] -> T.Text
+mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
+    where
+        mkAttRow (r, intR) = r <> "," <> (spacedRow sizes intR)
+        spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
+            ((T.pack . show) <<$>> Split.splitPlaces ss r)
+
+procedureDMMS :: Path Abs File
          -> Procedures
          -> Either
                 (M.ParseErrorBundle T.Text Void)
                 (FileFormatVersion, (DMModel, CitationDictionary))
          -> IO ()
-workDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
-workDMMS f options (Right parsed) = do
+procedureDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
+procedureDMMS f options (Right parsed) = do
     let dmModel = (fst . snd) parsed
         citeDict = (snd . snd) parsed
         fileVersion = fst parsed
@@ -272,6 +378,7 @@ data Input = Input {
 data Activity = Update UpdateGMLN
               | Compare CompareDMMS
               | Procedure Procedures
+              | Experiment Experiments
               deriving (Eq, Show)
 
 type UpdateGMLN = T.Text
@@ -284,6 +391,9 @@ data Procedures = Procedures {
     , ttWrite     :: Bool
     , parseTest   :: Bool
     } deriving (Eq, Show)
+data Experiments = Experiments {
+      sample :: Bool
+    } deriving (Eq, Show)
 
 input :: O.Parser Input
 input = Input <$> O.strArgument
@@ -292,7 +402,10 @@ input = Input <$> O.strArgument
               <*> activityParser
 
 activityParser :: O.Parser Activity
-activityParser = updateParser <|> compareParser <|> procedureParser
+activityParser =  updateParser
+              <|> compareParser
+              <|> procedureParser
+              <|> experimentParser
 
 updateParser :: O.Parser Activity
 updateParser = Update
@@ -351,6 +464,16 @@ procedureParser = Procedure <$> (Procedures
        <> O.hidden
        <> O.internal)
        )
+
+experimentParser :: O.Parser Activity
+experimentParser = Experiment <$> (Experiments
+    <$> O.switch
+        ( O.long "run_sample"
+       <> O.short 'r'
+       <> O.help "Whether to sample the state space of the fine layer of the\
+            \ dmms file in order to find attractors and builds statistics. "
+        )
+    )
 
 versionOpt :: O.Parser (a -> a)
 versionOpt = O.infoOption

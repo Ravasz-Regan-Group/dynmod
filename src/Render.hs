@@ -127,7 +127,8 @@ renderGate lr n = dmmsWrap "NodeGate" entries
     where
         entries = case gateOrigin nGate of
             DMMSTruthTable -> renderTableG nGate
-            _ -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
+            LogicalExpression -> renderDiscreteG lr nGate
+            Both -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
         nGate = nodeGate n
 
 renderDiscreteG :: LayerRange -> NodeGate -> T.Text
@@ -146,7 +147,7 @@ renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries
         assigns = (tail . gateAssigns) ng
         assignName = nName <> ":"
         nName = gNodeName ng
-        boolNS = Map.keysSet $ Map.filter (\v -> length v == 2) r
+        boolNS = Map.keysSet $ Map.filter (== 1) r
 
 renderExpr :: Set.HashSet NodeName -> NodeExpr -> T.Text
 renderExpr _ (GateLit b) = (T.pack . show) b
