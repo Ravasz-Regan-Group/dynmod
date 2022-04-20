@@ -28,6 +28,7 @@ library:
   exposed-modules:
   - Parse.DMMS
   - Types.DMModel
+  - Types.Simulation
   - Parse.GML
   - Types.GML
   - Compare
@@ -40,6 +41,8 @@ library:
   - Render
   - Text.LaTeX.Packages.Booktabs
   - Text.LaTeX.Packages.ColorTbl
+  - Properties.LayerCharacteristics
+  - Properties.Attractors
   ghc-options:
   - -Wall
   - -O2
@@ -65,6 +68,11 @@ library:
   - path
   - pretty-simple
   - mtl
+  - parallel
+  - deepseq
+  - random
+  - splitmix # Remove this when you move to GHC 9.2.1
+  - split
 
 executables:
   dynmod:
@@ -73,8 +81,9 @@ executables:
     ghc-options:
     - -threaded
     - -rtsopts
-    - -with-rtsopts=-N2
+    - -with-rtsopts=-N
     - -O2
+    - -j # Parallel compilation at the module level
     - -Wall
     - -j # Parallel compilation at the module level
     dependencies:
@@ -89,15 +98,20 @@ executables:
     - HaTeX
     - mtl
     - validation
+    - random
+    - unordered-containers
+    - vector
+    - split
+    - deepseq
 
-tests:
-  dynmod-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N2
+#tests:
+#  dynmod-test:
+#    main:                Spec.hs
+#    source-dirs:         test
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N2
 #    - -O2
-    dependencies:
-    - dynmod
+#    dependencies:
+#    - dynmod

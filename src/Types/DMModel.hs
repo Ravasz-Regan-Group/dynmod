@@ -75,8 +75,10 @@ module Types.DMModel
     , modelLayers
     , modelMappings
     , coarseLayer
+    , fineLayer
     , mkLayerBinding
     , layerNodes
+    , layerRanges
     , nodeCombinations
     , nodeRange
     , exprPars
@@ -98,8 +100,10 @@ module Types.DMModel
     , OrphanedModelCites
     , ExcessDictCites
     , CiteDictionaryInvalid(..)
-    
     ) where
+
+-- See the SUPPRESSED tag for functions that aren't used but might be useful in
+-- the future. 
 
 import Utilities
 import Text.LaTeX.Base.Class (fromLaTeX, commS)
@@ -126,6 +130,10 @@ import Data.String (IsString(..))
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
+
+-- The Fine layer of a DMModel represents a genetic regualory network. Layers
+-- above it are progressively coarser dynamically modular layers that represent 
+-- the functions of that network. 
 
 type LocalColor = C.Colour Double
 defaultColor :: LocalColor -- Erzsó red
@@ -206,8 +214,11 @@ data GateOrigin = LogicalExpression
                 | Both
                 deriving (Show, Eq)
 
-type NodeRange = (NodeName, [NodeState])
-type LayerRange = Map.HashMap NodeName [NodeState]
+-- The states a DMNode can take is checked at parse-time to be of the form
+-- [0..n], where n is the highest state, and other states between it and zero
+-- are included. So specifying the range of a DMNode requires only a single Int.
+type NodeRange = (NodeName, NodeState)
+type LayerRange = Map.HashMap NodeName NodeState
 
 
 -- The first pair is a description, with accompanying list of \cites. 
@@ -227,6 +238,11 @@ type CitationLists = [[T.Text]]
 -- Update. The validation and simulation aspects are being separated, so
 -- the gates using our own custom type here for validation will not be 
 -- computationally punitive. - Pete Regan January 13, 2020
+
+-- Update. Because it will be important to change the influence of certain
+-- clauses of discrete expressions on the fly, evaluating gates as discrete
+-- logical expressions from the custom data type will be the way forward for
+-- now. - Pete Regan January 31, 2022
 
 
 data NodeType = Undefined_NT
@@ -436,7 +452,7 @@ assignsToTTable gO ass = Map.fromList inputOutputPairs
 -- Convert a TruthTabe to a List of (ExprInput, NodeState). Useful when you need
 -- to compare a TruthTable to NodeGate. Ordered as you would write out the rows
 -- or a truth table (eg 0001, 0010, 0011, 0100, etc), though including the 
--- possibility of some columns whose maximum is > 1 in that case of integer
+-- possibility of some columns whose maximum is > 1 in the case of integer
 -- rather than boolean gates. 
 tTInputOutput :: GateOrder -> TruthTable -> [(ExprInput, NodeState)]
 tTInputOutput gO tT = zip exprInputs outputs
@@ -529,12 +545,12 @@ layerTTs mL = (mName, prettyTTables)
         nodeNames = (nodeName . nodeMeta) <$> nodes
         nodes = layerNodes mL
 
--- Make the top line of the appropriate Truth Table for a DMNode
-mkGatePrint :: DMNode -> T.Text
-mkGatePrint node = T.concat $ L.intersperse (T.singleton '\t') $ o <> [n]
-    where
-        o = (gateOrder . nodeGate) node
-        n = (nodeName . nodeMeta) node
+-- Make the top line of the appropriate Truth Table for a DMNode SUPPRESSED
+-- mkGatePrint :: DMNode -> T.Text
+-- mkGatePrint node = T.concat $ L.intersperse (T.singleton '\t') $ o <> [n]
+--     where
+--         o = (gateOrder . nodeGate) node
+--         n = (nodeName . nodeMeta) node
 
 -- A DMNode and all of its InLinks. Useful in formating supplementary tables. 
 type InAdj = (DMNode, [(DMLink, NodeName)])
@@ -979,11 +995,11 @@ noDupeInputs inputs
 
 -- In case it turns out that finding where duplicated rows are is challenging, 
 -- This is how to return a map of them. It makes the error reporting harder, so
--- I'm not going to do it unless I have to. 
-duplicatedRowMap :: [[NodeState]] -> ([[Int]], [[NodeState]])
-duplicatedRowMap inputs = (coordinates, inputs)
-    where (_, dupes, _) = Uniq.complex inputs
-          coordinates = sequenceA (L.elemIndices <$> dupes) inputs
+-- I'm not going to do it unless I have to. SUPPRESSED
+-- duplicatedRowMap :: [[NodeState]] -> ([[Int]], [[NodeState]])
+-- duplicatedRowMap inputs = (coordinates, inputs)
+--     where (_, dupes, _) = Uniq.complex inputs
+--           coordinates = sequenceA (L.elemIndices <$> dupes) inputs
 
 
 
@@ -1001,8 +1017,8 @@ gateCombinations asns = fmap Map.fromList combosList
         combosList = fmap (zip nNames) (sequenceA nStates)
 
 -- Produces the nodes, and states of those nodes, that are referenced,
--- (explicitly or otherwise), in a given list of NodeExprs. Make sire that, even
--- if a node is only referenced as :0, the :1 state is also included. 
+-- (explicitly or otherwise), in a given list of NodeExprs. Makes sure that, 
+-- even if a node is only referenced as :1, the :0 state is also included. 
 refdNodesStatesNG :: [NodeExpr] -> [(NodeName, [NodeState])]
 refdNodesStatesNG exprs = (\(nName, s) -> (nName, [0..(max 1 s)])) <$>
                                                         (Map.toList nMap)
@@ -1031,19 +1047,19 @@ exprNodes (Binary Or expr1 expr2) =
 
 -- Generate all the possible inputs sets of a model, separated by layers. Each
 -- ModelLayer will have a [[ExprInput]] of possible inputs, one [ExprInput] for
--- each node. The DMModel as a whole will have a [[[ExprInput]]]
-modelCombinations :: DMModel -> [[[ExprInput]]]
-modelCombinations = (layerCombinations <$>) . modelLayers
+-- each node. The DMModel as a whole will have a [[[ExprInput]]] SUPPRESSED
+-- modelCombinations :: DMModel -> [[[ExprInput]]]
+-- modelCombinations = (layerCombinations <$>) . modelLayers
 
 -- Generate all the possible inputs sets of a ModelLayer, one [ExprInput] for
--- each node. 
-layerCombinations :: ModelLayer -> [[ExprInput]]
-layerCombinations mL = fromJust <$> comboLists
-    where
-        comboLists = (nodeCombinations ranges) <$> nodes
-        ranges :: LayerRange
-        ranges = Map.fromList $ nodeRange <$> nodes
-        nodes = layerNodes mL
+-- each node. SUPPRESSED
+-- layerCombinations :: ModelLayer -> [[ExprInput]]
+-- layerCombinations mL = fromJust <$> comboLists
+--     where
+--         comboLists = (nodeCombinations (ranges)) <$> nodes
+--         ranges :: LayerRange
+--         ranges = layerRanges mL
+--         nodes = layerNodes mL
 
 -- If we have a LayerRange, this gives the possible inputs to a given node in
 -- that ModelLayer. 
@@ -1053,7 +1069,8 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         combosList :: Maybe [[(NodeName, NodeState)]]
         combosList = (zip nNames) <<$>> (sequenceA <$> nStates)
         nStates :: Maybe [[NodeState]]
-        nStates = sequenceA $ sequenceA (Map.lookup <$> nNames) r
+        nStates = sequenceA $ sequenceA (Map.lookup <$> nNames)
+            (Map.map fillDown r)
         nNames :: [NodeName]
         nNames = fst <$> (refdNodesStatesNG nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
@@ -1063,13 +1080,13 @@ nodeRange :: DMNode -> NodeRange
 nodeRange n = (name, range)
     where
         name = (nodeName . nodeMeta) n
-        range = ((fst <$>) . gateAssigns . nodeGate) n
+        range = maximum $ ((fst <$>) . gateAssigns . nodeGate) n
 
 
--- Extract all the DMNodes from a DMModel
-modelNodes :: DMModel -> [[DMNode]]
-modelNodes (Fine ml) = [layerNodes ml]
-modelNodes (LayerBinding _ mL dmM) = (layerNodes mL) : (modelNodes dmM)
+-- Extract all the DMNodes from a DMModel SUPPRESSED
+-- modelNodes :: DMModel -> [[DMNode]]
+-- modelNodes (Fine ml) = [layerNodes ml]
+-- modelNodes (LayerBinding _ mL dmM) = (layerNodes mL) : (modelNodes dmM)
 
 -- Extract all the Gr.LNode DMNodes from a DMModel
 modelNodes' :: DMModel -> [[Gr.LNode DMNode]]
@@ -1095,6 +1112,10 @@ modelMappings (LayerBinding mM _ dmM) = mM : (modelMappings dmM)
 layerNodes :: ModelLayer -> [DMNode]
 layerNodes = (snd <$>) . Gr.labNodes . modelGraph
 
+-- Extract the node ranges from a ModeLayer
+layerRanges :: ModelLayer -> LayerRange
+layerRanges ml = Map.fromList $ nodeRange <$> (layerNodes ml)
+
 -- Extract the Gr.LNode DMNodes from a ModelLayer
 layerNodes' :: ModelLayer -> [Gr.LNode DMNode]
 layerNodes' = Gr.labNodes . modelGraph
@@ -1117,16 +1138,21 @@ modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
 modelCiteKeys (LayerBinding _ mLayer dmModel) =
     (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 
--- Extract all the names of the layers of  DMModel
-layerNames :: DMModel -> [T.Text]
-layerNames (Fine ml) = [(modelName . modelMeta) ml]
-layerNames (LayerBinding _ mLayer dmModel) =
-    ((modelName . modelMeta) mLayer) : (layerNames dmModel)
+-- Extract all the names of the layers of  DMModel SUPPRESSED
+-- layerNames :: DMModel -> [T.Text]
+-- layerNames (Fine ml) = [(modelName . modelMeta) ml]
+-- layerNames (LayerBinding _ mLayer dmModel) =
+--     ((modelName . modelMeta) mLayer) : (layerNames dmModel)
 
--- peel off the coarsest (topmost) ModelLayer of a DMModel
+-- Peel off the coarsest (topmost) ModelLayer of a DMModel
 coarseLayer :: DMModel -> ModelLayer
 coarseLayer (Fine ml) = ml
 coarseLayer (LayerBinding _ mLayer _) = mLayer
+
+-- Extract the Fine (bottom-most) ModelLayer of a DMModel. 
+fineLayer :: DMModel -> ModelLayer
+fineLayer (Fine ml) = ml
+fineLayer (LayerBinding _ _ dmM) = fineLayer dmM
 
 -- Turn a ModelGraph into a [DMMSNode], for when we want to render a ModelGraph
 -- to T.Text

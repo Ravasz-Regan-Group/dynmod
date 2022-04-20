@@ -29,7 +29,7 @@ import qualified Data.List as L
 import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.Bifunctor as B
 import Data.Void
-import Data.Char (toLower, isSpace)
+import Data.Char (toLower)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
@@ -41,16 +41,6 @@ sc = L.space space1 lineCmnt blockCmnt
   where
     lineCmnt  = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
-
--- | Is it a horizontal space character? (Taken from Megaparsec >= 9.0.0)
-isHSpace :: Char -> Bool
-isHSpace x = isSpace x && x /= '\n' && x /= '\r'
-
--- | Like 'space1', but does not accept newlines and carriage returns.
--- | Taken from Megaparsec >= 9.0.0
-hspace1 :: (MonadParsec e s m, Token s ~ Char) => m ()
-hspace1 = void $ takeWhile1P (Just "white space") isHSpace
-{-# INLINE hspace1 #-}
 
 hsc :: Parser ()
 hsc = L.space hspace1 lineCmnt blockCmnt
