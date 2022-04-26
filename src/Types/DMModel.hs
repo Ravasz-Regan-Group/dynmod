@@ -11,7 +11,7 @@ module Types.DMModel
     , FileFormatVersion
     , DMNode(..)
     , NodeMeta(..)
-    , LitInfo
+    , LitInfo(..)
     , Note
     , Description
     , NodeGate(..)
@@ -223,7 +223,11 @@ type LayerRange = Map.HashMap NodeName NodeState
 
 -- The first pair is a description, with accompanying list of \cites. 
 -- The second pair is a note, with accompanying list of \cites. 
-type LitInfo = ((Description, CitationLists), (Note, CitationLists))
+data LitInfo = LitInfo { desc :: Description
+                       , descCiteLists :: CitationLists
+                       , note :: Description
+                       , noteCiteLists :: CitationLists
+                       } deriving (Show, Eq, Ord)
 type Description = T.Text
 type Note = T.Text
 type CitationLists = [[T.Text]]
@@ -339,7 +343,7 @@ data LinkType =   Undefined_LT
                 | Complex_Formation
                 | Inhibitory_Binding
                 | Localization
-                | Binding_Localizaton
+                | Binding_Localization
                 | Protective_Binding
                 | Unbinding
                 | Phosphorylation
@@ -358,35 +362,36 @@ data LinkType =   Undefined_LT
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
-    texy Undefined_LT        = texy ("Undefined_LT" :: T.Text)
-    texy Enforced_Env        = (footnotesize . fromLaTeX . TeXRaw) "Env"
-    texy Indirect            = (footnotesize . fromLaTeX . TeXRaw) "Ind"
-    texy Complex_Process     = (footnotesize . fromLaTeX . TeXRaw) "ComplProc"
-    texy Persistence         = (footnotesize . fromLaTeX . TeXRaw) "Per"
-    texy Transcription       = (footnotesize . fromLaTeX . TeXRaw) "TR"
-    texy Translation         = (footnotesize . fromLaTeX . TeXRaw) "TL"
-    texy Ligand_Binding      = (footnotesize . fromLaTeX . TeXRaw) "Ligand"
-    texy Complex_Formation   = (footnotesize . fromLaTeX . TeXRaw) "Compl"
-    texy Inhibitory_Binding  = (footnotesize . fromLaTeX . TeXRaw) "IBind"
-    texy Localization        = (footnotesize . fromLaTeX . TeXRaw) "Loc"
-    texy Binding_Localizaton = (footnotesize . fromLaTeX . TeXRaw) "BLoc"
-    texy Protective_Binding  = (footnotesize . fromLaTeX . TeXRaw) "PBind"
-    texy Unbinding           = (footnotesize . fromLaTeX . TeXRaw) "Unbind"
-    texy Phosphorylation     = (footnotesize . fromLaTeX . TeXRaw) "P"
-    texy Dephosphorylation   = (footnotesize . fromLaTeX . TeXRaw) "DP"
+    texy Undefined_LT         = (footnotesize . texy)
+                                    ("Undefined_LT" :: T.Text)
+    texy Enforced_Env         = (footnotesize . fromLaTeX . TeXRaw) "Env"
+    texy Indirect             = (footnotesize . fromLaTeX . TeXRaw) "Ind"
+    texy Complex_Process      = (footnotesize . fromLaTeX . TeXRaw) "ComplProc"
+    texy Persistence          = (footnotesize . fromLaTeX . TeXRaw) "Per"
+    texy Transcription        = (footnotesize . fromLaTeX . TeXRaw) "TR"
+    texy Translation          = (footnotesize . fromLaTeX . TeXRaw) "TL"
+    texy Ligand_Binding       = (footnotesize . fromLaTeX . TeXRaw) "Ligand"
+    texy Complex_Formation    = (footnotesize . fromLaTeX . TeXRaw) "Compl"
+    texy Inhibitory_Binding   = (footnotesize . fromLaTeX . TeXRaw) "IBind"
+    texy Localization         = (footnotesize . fromLaTeX . TeXRaw) "Loc"
+    texy Binding_Localization = (footnotesize . fromLaTeX . TeXRaw) "BLoc"
+    texy Protective_Binding   = (footnotesize . fromLaTeX . TeXRaw) "PBind"
+    texy Unbinding            = (footnotesize . fromLaTeX . TeXRaw) "Unbind"
+    texy Phosphorylation      = (footnotesize . fromLaTeX . TeXRaw) "P"
+    texy Dephosphorylation    = (footnotesize . fromLaTeX . TeXRaw) "DP"
     texy Phosphorylation_Localization
-                             = (footnotesize . fromLaTeX . TeXRaw) "PLoc"
-    texy Ubiquitination      = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
-    texy Degradation         = (footnotesize . fromLaTeX . TeXRaw) "Deg"
-    texy GEF_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GEF"
-    texy GAP_Activity        = (footnotesize . fromLaTeX . TeXRaw) "GAP"
-    texy Proteolysis         = (footnotesize . fromLaTeX . TeXRaw) "Lysis"
-    texy Catalysis           = (footnotesize . fromLaTeX . TeXRaw) "Cat"
-    texy Epigenetic          = (footnotesize . fromLaTeX . TeXRaw) "Epi"
+                              = (footnotesize . fromLaTeX . TeXRaw) "PLoc"
+    texy Ubiquitination       = (footnotesize . fromLaTeX . TeXRaw) "Ubiq"
+    texy Degradation          = (footnotesize . fromLaTeX . TeXRaw) "Deg"
+    texy GEF_Activity         = (footnotesize . fromLaTeX . TeXRaw) "GEF"
+    texy GAP_Activity         = (footnotesize . fromLaTeX . TeXRaw) "GAP"
+    texy Proteolysis          = (footnotesize . fromLaTeX . TeXRaw) "Lysis"
+    texy Catalysis            = (footnotesize . fromLaTeX . TeXRaw) "Cat"
+    texy Epigenetic           = (footnotesize . fromLaTeX . TeXRaw) "Epi"
     texy Transcription_Conflict
-                             = (footnotesize . fromLaTeX . TeXRaw) "TrConf"
-    texy Secretion           = (footnotesize . fromLaTeX . TeXRaw) "Secr"
-    texy RNAi                = (footnotesize . fromLaTeX . TeXRaw) "RNAi"
+                              = (footnotesize . fromLaTeX . TeXRaw) "TrConf"
+    texy Secretion            = (footnotesize . fromLaTeX . TeXRaw) "Secr"
+    texy RNAi                 = (footnotesize . fromLaTeX . TeXRaw) "RNAi"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -665,6 +670,7 @@ data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys
 type RepeatedKeys = [BibTeXKey]
 
 data PubInvalid =   PubMissingDesc MissingDescription
+                  | DescUnescapedUnderScores DescText
                   | UndefinedNodeType UndefinedNodeType
                   | UnspecifiedNodeColor UnspecifiedNodeColor
                   | MissingCoord MissingCoord
@@ -681,6 +687,7 @@ data MissingDescription = ModelD T.Text
                         | NodeD T.Text
                         | InLinkD T.Text
                         deriving (Eq, Show, Ord)
+type DescText = T.Text -- A Text literal with an unescaped underscore somewhere.
 type UndefinedNodeType = NodeName 
 type UnspecifiedNodeColor = T.Text --Notice to pick an SVG color
 type MissingCoord = T.Text
@@ -1134,7 +1141,7 @@ modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
     nodeKeys = (Set.fromList . concat . ((lRefs . nodeInfo . nodeMeta . snd)
                 <$>) . Gr.labNodes . modelGraph) ml
     mPaperKeys = (Set.fromList . modelPaper . modelMeta) ml
-    lRefs ((_, xxs), (_, yys)) = (concat xxs) <> (concat yys)
+    lRefs (LitInfo _ xxs _ yys) = (concat xxs) <> (concat yys)
 modelCiteKeys (LayerBinding _ mLayer dmModel) =
     (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 

@@ -69,8 +69,8 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             rMName = "ModelName: " <> mName
             rMVer = "ModelVersion: " <> Ver.prettySemVer mVer
             rPaper = "ModelPaper: " <> T.intercalate "," paper
-            rMDesc = "ModelDescription: " <> (fst . fst) mInfo
-            rMNotes = "ModelNotes: " <> (fst . snd) mInfo
+            rMDesc = "ModelDescription: " <> desc mInfo
+            rMNotes = "ModelNotes: " <> note mInfo
             rBOF = "BiasOrderFirst: " <> (T.intercalate ", " $ pairShow <$> bOF)
             rBOL = "BiasOrderLast: " <> (T.intercalate ", " $ pairShow <$> bOL)
             pairShow (n, i) = "(" <> n <> ", " <> (T.pack . show) i <> ")" 
@@ -113,8 +113,8 @@ renderNMeta nm = dmmsWrap "NodeMetaData" entries
         rCoord = "NodeCoordinate: " <>
             (T.intercalate ", " $ (T.pack . show) <$>
                 ((U.toList . nodeCoordinate) nm))
-        rDesc = "NodeDescription: " <> (fst . fst) nInfo
-        rNotes = "NodeNotes: " <> (fst . snd) nInfo
+        rDesc = "NodeDescription: " <> desc nInfo
+        rNotes = "NodeNotes: " <> note nInfo
         nInfo = nodeInfo nm
 
 renderColor :: LocalColor -> T.Text
@@ -226,8 +226,8 @@ renderNamedLinkContent (dmL, inName) = entries
         rInNode = "InputNode: " <> inName
         rEffect = "LinkEffect: " <> ((T.pack . show . linkEffect) dmL)
         rType = "LinkType: " <> ((T.pack . show . linkType) dmL)
-        rDesc = "LinkDescription: " <> (fst . fst) lInfo
-        rNotes = "LinkNotes: " <> (fst . snd) lInfo
+        rDesc = "LinkDescription: " <> desc lInfo
+        rNotes = "LinkNotes: " <> note lInfo
         lInfo = linkInfo dmL
 
 -- Consume a dmms keyword, the content for that keyword, and properly wrap the

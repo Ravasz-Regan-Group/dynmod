@@ -3,6 +3,7 @@
 module Properties.Attractors 
     ( attractors
     , attractors'
+    , minAttractors
     ) where
 
 import Data.Tuple (swap)
@@ -10,6 +11,7 @@ import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
+import Types.DMModel (ModelLayer)
 import Types.Simulation
 
 -- Return just the attractors of the ModelLayer. This is slower, but uses less
@@ -98,3 +100,11 @@ attRunDown' stepper aSetTr lV = runDown' lV M.empty 0 aSetTr
                         threadHS = (HS.fromList . B.toList) orderedVec
                         newAS = M.insertWith HS.union att threadHS aS
                     in (newAS, newVecMap)
+
+
+minAttractors :: Int -> ModelLayer -> Simulation (HS.HashSet Attractor)
+minAttractors minS mL = do
+    atts <- attractors $ ModelEnv mL 100 0.02 50 0 []
+    case ((HS.size atts) < minS) of 
+                    True  -> minAttractors minS mL
+                    False -> return atts

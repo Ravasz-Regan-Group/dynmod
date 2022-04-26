@@ -134,7 +134,7 @@ isOrphanedModelCites :: PubInvalid -> Bool
 isOrphanedModelCites (OrphanedModelCites _) = True
 isOrphanedModelCites _                      = False
 
--- Eventually, we would like to publish these models. when that happens, they
+-- Eventually, we would like to publish these models. When that happens, they
 -- need to be described in supplementary materials. Everything that is optional
 -- in a working model needs to be nailed down at that point. 
 mkPublish :: (DMModel, CitationDictionary)
@@ -213,9 +213,33 @@ mkDescPublish :: MissingDescription -- The kind and name of the associated
               -- associated with the InLink, or the name of the DMModel. 
               -> LitInfo 
               -> Validation [PubInvalid] LitInfo
-mkDescPublish md lInfo =  case (fst . fst) lInfo of
+mkDescPublish md lInfo =  case desc lInfo of
     "" -> Failure [PubMissingDesc md]
-    _  -> Success $ lInfo
+    _  -> LitInfo <$> (hasDescUEUnderscores $ desc lInfo)
+                  <*> (pure $ descCiteLists lInfo)
+                  <*> (pure $ note lInfo)
+                  <*> (pure $ noteCiteLists lInfo)
+
+hasDescUEUnderscores :: Description -> Validation [PubInvalid] Description
+hasDescUEUnderscores d = case T.breakOnAll "_" d of
+    [] -> Success d
+    us -> case and $ isSuccess <$> checks of
+        True  -> Success d
+        False -> (mconcat . filter isFailure)  checks
+        where
+            checks = isEscaped <$> us
+            isEscaped (b, a) = case T.unsnoc b of
+                Nothing -> Failure [DescUnescapedUnderScores snippet]
+                    where
+                        snippet :: T.Text
+                        snippet = T.take 20 a
+                Just (_, '\\') -> Success $ b <> a
+                Just (xs, x) -> Failure [DescUnescapedUnderScores snippet]
+                    where 
+                        snippet :: T.Text
+                        snippet = (T.reverse . T.take 9 . T.reverse) xs <>
+                                     T.singleton x <>
+                                     T.take 10 a
 
 mkMGPublish :: ModelGraph -> Validation [PubInvalid] ModelGraph
 mkMGPublish mG = Gr.mkGraph <$> checkedNodes <*> checkedEdges

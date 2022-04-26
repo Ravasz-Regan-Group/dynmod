@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.6.0.0
+version:             0.6.0.1
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -43,6 +43,7 @@ library:
   - Text.LaTeX.Packages.ColorTbl
   - Properties.LayerCharacteristics
   - Properties.Attractors
+  - Figures
   ghc-options:
   - -Wall
   - -O2
@@ -73,6 +74,10 @@ library:
   - random
   - splitmix # Remove this when you move to GHC 9.2.1
   - split
+  - diagrams-lib
+  - diagrams-svg
+  - plots
+  - svg-builder
 
 executables:
   dynmod:

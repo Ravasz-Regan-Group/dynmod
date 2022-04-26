@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 61921b5a4339c4195b827fea9daf52ae3df4cd1ff1aafe932fb536683b7dda97
+-- hash: eed80f39752a294a3be571d07a84643f33c0b323da36a21ba0d28ef9299c91c7
 
 name:           dynmod
-version:        0.6.0.0
+version:        0.6.0.1
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -44,6 +44,7 @@ library
       Text.LaTeX.Packages.ColorTbl
       Properties.LayerCharacteristics
       Properties.Attractors
+      Figures
   other-modules:
       Text.LaTeX.DynMod.Extra
       Paths_dynmod
@@ -58,6 +59,8 @@ library
     , colour
     , containers
     , deepseq
+    , diagrams-lib
+    , diagrams-svg
     , fgl
     , hashable
     , megaparsec
@@ -65,12 +68,14 @@ library
     , parallel
     , parser-combinators
     , path
+    , plots
     , pretty-simple
     , random
     , safe-exceptions
     , scientific
     , split
     , splitmix
+    , svg-builder
     , text
     , unordered-containers
     , validation

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module Main where
 
@@ -6,7 +7,8 @@ import Types.DMModel
 import Types.GML
 import Types.Simulation
 import Properties.Attractors
-import Properties.LayerCharacteristics
+-- import Properties.LayerCharacteristics
+import Figures
 import Parse.DMMS
 import Parse.GML
 import Render
@@ -98,27 +100,43 @@ experimentDMMS f options (Right parsed) = do
     let dmModel = (fst . snd) parsed
         fLayer = fineLayer dmModel
     putStrLn "Good parse"
-    when (sample options)
-        (case modelMappings dmModel of
-            [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
-            mms -> do
-                gen <- initStdGen
-                let rN = 300
-                    rP = 0.02
-                    nN = 30
-                    aN = 5
-                    mEnv = ModelEnv fLayer rN rP nN aN []
-                    LayerSpecs lniMap _ _ _ = layerPrep mEnv
-                    fG = modelGraph fLayer
-                    ins = inputs fG
-                    inComsSizeS = (show . length) $ inputCombos ins [] lniMap 
-                putStrLn "Starting run. Input nodes:"
-                PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
-                putStrLn $ "In " ++ inComsSizeS ++ " combinations"
-                putStr "With settings: "
-                PS.pPrint (rN, rP, nN, aN)
-                let mMap = last mms
-                    atts = evalState (attractors mEnv) gen
+    case modelMappings dmModel of
+        [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
+        mms -> do
+            gen <- initStdGen
+            let EParams rN nN mult nProb = sample options
+                nsGrid = rnGrid rN nN mult
+            putStrLn $ show nsGrid
+            let attGrid = evalState (attractorGrid rN nN mult nProb fLayer) gen
+                hMapSVGText = attractorHMSVGText attGrid mult
+            (fName, _) <- splitExtension $ filename f
+            let fNameString = fromRelFile fName
+                hMapSVGFileName = fNameString ++
+                                  "_att_HM_" ++
+                                  (show rN) ++ "_" ++
+                                  (show nN) ++ "_" ++
+                                  (show mult) ++ "_" ++
+                                  (show $ (round . (100 *)) nProb)
+            hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
+            hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
+            RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
+            putStrLn $ show attGrid
+--                 let rN = 300
+--                     rP = 0.02
+--                     nN = 30
+--                     aN = 5
+--                     mEnv = ModelEnv fLayer rN rP nN aN []
+--                     LayerSpecs lniMap _ _ _ = layerPrep mEnv
+--                     fG = modelGraph fLayer
+--                     ins = inputs fG
+--                   inComsSizeS = (show . length) $ inputCombos ins [] lniMap 
+--                 putStrLn "Starting run. Input nodes:"
+--                 PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
+--                 putStrLn $ "In " ++ inComsSizeS ++ " combinations"
+--                 putStr "With settings: "
+--                 PS.pPrint (rN, rP, nN, aN)
+--                 let mMap = last mms
+--                     atts = evalState (attractors mEnv) gen
 --                     attSet = evalState (attractors' mEnv) gen
 --                     atts = (HM.keysSet . fst) attSet
 --                     lC = evalState (characteristics mEnv) gen
@@ -128,9 +146,8 @@ experimentDMMS f options (Right parsed) = do
 --              Note that mMap is just the last ModelMapping in the DMMS file. 
 --              All this assumes that we're working with at 2-layer dmms file,
 --              which will need to be revisited in the general case
-                writeAttractorSet f lniMap mMap atts
+--                 writeAttractorSet f lniMap mMap atts
 --                 putStrLn $ (show statSize) ++ " states found. "
-                )
 
 writeAttractorSet :: Path Abs File
                   -> LayerNameIndexMap
@@ -433,7 +450,14 @@ data Procedures = Procedures {
     } deriving (Eq, Show)
 
 data Experiments = Experiments {
-      sample :: Bool
+      sample :: EParams
+    } deriving (Eq, Show)
+
+data EParams = EParams {
+      randomState :: Int
+    , noisySteps :: Int
+    , multiplier :: Int
+    , noiseProb :: Double
     } deriving (Eq, Show)
 
 input :: O.Parser Input
@@ -443,9 +467,9 @@ input = Input <$> O.strArgument
               <*> activityParser
 
 activityParser :: O.Parser Activity
-activityParser =  updateParser
+activityParser =  procedureParser
+              <|> updateParser
               <|> compareParser
-              <|> procedureParser
               <|> experimentParser
 
 updateParser :: O.Parser Activity
@@ -521,13 +545,31 @@ procedureParser = Procedure <$> (Procedures
 
 experimentParser :: O.Parser Activity
 experimentParser = Experiment <$> (Experiments
-    <$> O.switch
-        ( O.long "run_sample"
-       <> O.short 'r'
-       <> O.help "Whether to sample the state space of the fine layer of the\
-            \ dmms file in order to find attractors and builds statistics. "
-        )
+    <$> paramParser
     )
+
+-- O.switch
+--         ( O.long "run_sample"
+--        <> O.short 'r'
+--        <> O.help "Whether to sample the state space of the fine layer of the\
+--             \ dmms file in order to find attractors and build statistics. "
+--         )
+
+paramReader :: O.ReadM EParams
+paramReader = do
+    o <- O.str
+    let [a, b, c, d] = map read $ Split.splitOn "," o
+    return $ EParams a b c d
+
+paramParser :: O.Parser EParams
+paramParser = O.option paramReader
+                       ( O.long "run_sample"
+                      <> O.short 'r'
+                      <> O.help "Whether to sample the state space of the fine\
+                            \ layer of the dmms file in order to find \
+                            \attractors and build statistics. "
+                       )
+
 
 versionOpt :: O.Parser (a -> a)
 versionOpt = O.infoOption

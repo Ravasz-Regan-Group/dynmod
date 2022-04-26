@@ -422,8 +422,9 @@ modelConfigParse = between (symbol "ModelMetaData{") (symbol "ModelMetaData}")
                 <*> toPermutation modelPaperParse
                 <*> toPermutation (biasPairParse "BiasOrderFirst")
                 <*> toPermutation (biasPairParse "BiasOrderLast")
-                <*> ((,) <$> toPermutation (extractCitations "ModelDescription")
-                         <*> toPermutation (extractCitations "ModelNotes")
+                <*> (doubleUncurry LitInfo
+                     <$> toPermutation (extractCitations "ModelDescription")
+                     <*> toPermutation (extractCitations "ModelNotes")
                     )
    )
 
@@ -569,8 +570,9 @@ nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}")
                  <*> toPermutation nodeTypeParse
                  <*> toPermutation metaColor
                  <*> toPermutation coordinateParse
-                 <*> ((,) <$> toPermutation (extractCitations "NodeDescription")
-                           <*> toPermutation (extractCitations "NodeNotes")))
+                 <*> (doubleUncurry LitInfo
+                      <$> toPermutation (extractCitations "NodeDescription")
+                      <*> toPermutation (extractCitations "NodeNotes")))
 
 
 -- Parse the (possibly empty) list of EntrezID genes associated with a node
@@ -643,7 +645,8 @@ dMLinkParse = between (symbol "InLink{") (symbol "InLink}") (runPermutation $
   (,) <$> toPermutation (identifier "InputNode")
       <*> (DMLink <$> toPermutation linkEffectParse
                   <*> toPermutation (linkTypeParse <?> "LinkType")
-                  <*> ((,) <$> toPermutation (extractCitations"LinkDescription")
+                  <*> (doubleUncurry LitInfo 
+                           <$> toPermutation (extractCitations"LinkDescription")
                            <*> toPermutation (extractCitations "LinkNotes"))))
 
 -- Parse the effect of a link. 
@@ -668,37 +671,37 @@ linkTypeParse :: Parser LinkType
 linkTypeParse = lexeme $ rword "LinkType" >>
     (try   
         (colon >>
-            (   Enforced_Env        <$ rword "Enforced_Env"
-            <|> Indirect            <$ rword "Indirect"
-            <|> Complex_Process     <$ rword "Complex_Process"
-            <|> Persistence         <$ rword "Persistence"
-            <|> Transcription       <$ rword "Transcription"
-            <|> Translation         <$ rword "Translation"
-            <|> Ligand_Binding      <$ rword "Ligand_Binding"
-            <|> Complex_Formation   <$ rword "Complex_Formation"
-            <|> Inhibitory_Binding  <$ rword "Inhibitory_Binding"
-            <|> Localization        <$ rword "Localization"
-            <|> Binding_Localizaton <$ rword "Binding_Localizaton"
-            <|> Protective_Binding  <$ rword "Protective_Binding"
-            <|> Unbinding           <$ rword "Unbinding"
+            (   Enforced_Env         <$ rword "Enforced_Env"
+            <|> Indirect             <$ rword "Indirect"
+            <|> Complex_Process      <$ rword "Complex_Process"
+            <|> Persistence          <$ rword "Persistence"
+            <|> Transcription        <$ rword "Transcription"
+            <|> Translation          <$ rword "Translation"
+            <|> Ligand_Binding       <$ rword "Ligand_Binding"
+            <|> Complex_Formation    <$ rword "Complex_Formation"
+            <|> Inhibitory_Binding   <$ rword "Inhibitory_Binding"
+            <|> Localization         <$ rword "Localization"
+            <|> Binding_Localization <$ rword "Binding_Localization"
+            <|> Protective_Binding   <$ rword "Protective_Binding"
+            <|> Unbinding            <$ rword "Unbinding"
 --          This must come before Phosphorylation, otherwise you will match on
 --          that and then get confused. This is out of order from the Datatype,
 --          but hopefully we won't need to edit too deep in this list. 
             <|> Phosphorylation_Localization
-                                    <$ rword "Phosphorylation_Localization"
-            <|> Phosphorylation     <$ rword "Phosphorylation"
-            <|> Dephosphorylation   <$ rword "Dephosphorylation"
-            <|> Ubiquitination      <$ rword "Ubiquitination"
-            <|> Degradation         <$ rword "Degradation"
-            <|> GEF_Activity        <$ rword "GEF_Activity"
-            <|> GAP_Activity        <$ rword "GAP_Activity"
-            <|> Proteolysis         <$ rword "Proteolysis"
-            <|> Catalysis           <$ rword "Catalysis"
-            <|> Epigenetic          <$ rword "Epigenetic"
+                                     <$ rword "Phosphorylation_Localization"
+            <|> Phosphorylation      <$ rword "Phosphorylation"
+            <|> Dephosphorylation    <$ rword "Dephosphorylation"
+            <|> Ubiquitination       <$ rword "Ubiquitination"
+            <|> Degradation          <$ rword "Degradation"
+            <|> GEF_Activity         <$ rword "GEF_Activity"
+            <|> GAP_Activity         <$ rword "GAP_Activity"
+            <|> Proteolysis          <$ rword "Proteolysis"
+            <|> Catalysis            <$ rword "Catalysis"
+            <|> Epigenetic           <$ rword "Epigenetic"
             <|> Transcription_Conflict
-                                    <$ rword "Transcription_Conflict"
-            <|> Secretion           <$ rword "Secretion"
-            <|> RNAi                <$ rword "RNAi"
+                                     <$ rword "Transcription_Conflict"
+            <|> Secretion            <$ rword "Secretion"
+            <|> RNAi                 <$ rword "RNAi"
             )
         )
     <|>

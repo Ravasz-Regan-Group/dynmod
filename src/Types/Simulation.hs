@@ -1,7 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
-module Types.Simulation where
+module Types.Simulation
+    ( Simulation
+    , ModelEnv (..)
+    , Attractor
+    , AttractorSet
+    , Folder (..)
+    , LayerVec
+    , LayerNameIndexMap
+    , PSStepper
+    , topStates
+    , mkAttractor
+    , layerVecReorder
+    ) where
 
 -- import Debug.Trace
 import qualified Data.List as L
@@ -47,7 +59,7 @@ data ModelEnv = ModelEnv {
 --  high? Many DMMS files will have a large number of inputs, some of which we
 --  are not investigating. constrainedInputs tells us which inputs to so ignore.
     , constrainedInputs :: [NodeName]
-    }
+    } deriving (Show, Eq)
 
 -- foldl' functions that accumulate a network property at random, noisy, and
 -- neighbor steps. 
@@ -75,7 +87,7 @@ data LayerSpecs = LayerSpecs {
                 , lRangeVec   :: LayerRangeVec
                 , tTableList  :: TruthTableList
                 , iVecList    :: IndexVecList
-                }
+                } deriving (Show, Eq)
 type NodeIndex = Int
 -- Specify an input combination, with each input NodeIndex and the state each is
 -- fixed to. 
@@ -406,7 +418,7 @@ layerVecReorder lniMap newOrder lVec
              permuteVec = U.fromList $ (lniMap M.!) <$> newOrder
              reorderedVec = U.backpermute lVec permuteVec
 
--- Basic network property algorithm step:
+-- Basic network property algorithm step (Klemm algorithm):
 --    ┌────────────┐                 ┌───────────┐                              
 --    │Random State│                 │Noisy Steps│                              
 --    └────────────┘                 └───────────┘                              

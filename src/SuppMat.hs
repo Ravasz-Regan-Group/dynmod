@@ -230,8 +230,8 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
    longtable (Just Center) theTSpec
     (
       "\n" <>
-      (caption ("Description " <> commS "&" <> " experimental support for nodes\
-        \ in the " <> ((texy . nodeName . nodeMeta . fst) inAdj))) <> " module"
+      (caption (((texy . nodeName . nodeMeta . fst) inAdj) <>
+         (texy (" module" :: T.Text))))
          <> "\n" <> endhead <> lnbk <> "\n" <>
       toprule Nothing <> "\n" <>
       sMTableUnits    <> "\n" <>
@@ -252,7 +252,7 @@ mkSMSubtables gmap = foldr (grouper gmap) TeXEmpty where
 -- We therefore need the entirety of the ModelLayer that it sits in. We process
 -- the entirety of the DMModel because we are in a Reader DMModel LaTeX anyway.
 -- This assumes that all NodeNames in an entire parsed dmms file ARE UNIQUE.
--- That is the spec, and checked for, but it bears repeating
+-- That is the spec, is checked for, but it bears repeating
 modelLaTeXGate :: Reader DMModel (Map.HashMap NodeName LaTeX)
 modelLaTeXGate = do
     dmM <- ask
@@ -337,14 +337,16 @@ smNodePrep :: Map.HashMap NodeName LaTeX -> DMNode -> LaTeX
 smNodePrep gmap n = 
   let nName = nodeName nMeta
       gate = fromJust $ Map.lookup nName gmap
-      nDesc = TeXRaw $ (fst . fst . nodeInfo) nMeta
+      nDesc = TeXRaw $ (desc . nodeInfo) nMeta
       nSymbol = (texy . nodeType) nMeta
       nMeta = nodeMeta n
   in
   (addLineSpace $ Just $ CustomMeasure $
             (dimexpr <> (texy (1.5 :: Float))) <> defaultAddSpace) <> "\n" <>
   (multicolumn 1 [ParColumnTop node1ASpecCall] (uScoreSub nName)
-    & (multicolumn 3 [ParColumnMid node1BSpecCall] gate)) <> lnbk <> "\n" <>
+    & (multicolumn 3 [ParColumnMid node1BSpecCall] gate)) <> 
+        lnbk <> "\n" <> (addLineSpace $ Just $ CustomMeasure $
+        (dimexpr <> (texy (1.5 :: Float))) <> defaultAddSpace) <> "\n" <>
   ((multicolumn 1 [ParColumnMid node2ASpecCall] TeXEmpty)
     & (multicolumn 1 [ParColumnMid node2BSpecCall] nSymbol)
     & (multicolumn 2 [ParColumnMid node2CSpecCall] nDesc)
@@ -354,7 +356,7 @@ smNodePrep gmap n =
 smLinkPrep :: (DMLink, NodeName) -> LaTeX
 smLinkPrep lk =
   let nName   = (uScoreSub . snd) lk
-      lDesc   = (TeXRaw . fst . fst . linkInfo . fst) lk
+      lDesc   = (TeXRaw . desc . linkInfo . fst) lk
       lType   = (texy . linkType . fst) lk
       lEffect = (texy . linkEffect . fst) lk
   in
@@ -477,8 +479,9 @@ legendTSpec = [ Separator TeXEmpty
 
 -- Create a table to display the symbols that represent the various NodeTypes.
 nTypeLegend :: LaTeX
-nTypeLegend = legendScafold legendRows
+nTypeLegend = legendScafold lCap legendRows
     where
+        lCap = TeXRaw "Node Type" 
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
         descList = nTDesc <$> optionList
@@ -488,8 +491,9 @@ nTypeLegend = legendScafold legendRows
 
 -- Create a table to display the symbols that represent the various LinkTypes.
 lTypeLegend :: LaTeX
-lTypeLegend = legendScafold legendRows
+lTypeLegend = legendScafold lCap legendRows
     where
+        lCap = TeXRaw "Link Type"
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
         descList = lTDesc <$> optionList
@@ -499,8 +503,9 @@ lTypeLegend = legendScafold legendRows
 
 -- Create a table to display the symbols that represent the various LinkEffects.
 lEffectLegend :: LaTeX
-lEffectLegend = legendScafold legendRows
+lEffectLegend = legendScafold lCap legendRows
     where
+        lCap = TeXRaw "Link Effect"
         legendRows = fold $ mkLRow <$> triples
         triples = zip3 symbolList typesList descList
         descList = lEDesc <$> optionList
@@ -510,21 +515,21 @@ lEffectLegend = legendScafold legendRows
 
 
 -- 
-legendScafold :: LaTeX -> LaTeX
-legendScafold rows = "\n" <>
+legendScafold :: LaTeX -> LaTeX -> LaTeX
+legendScafold lCaption rows = "\n" <>
     ("\n" <> (longtable (Just Center) legendTSpec $ "\n" <>
-    caption "Key to Link Effect Symbols" <> "\n" <>
+    caption "Key to " <> lCaption <> " Symbols" <> "\n" <>
     endhead <> lnbk <> "\n" <>
     toprule Nothing <> "\n" <>
-    "Symbol" & "Link Effect" & "Description" <>lnbk <> "\n" <>
+    "Symbol" & lCaption & "Description" <>lnbk <> "\n" <>
     midrule Nothing <> "\n" <>
     rows <>
     bottomrule Nothing <> "\n"
     ) <> "\n")
 
 mkLRow :: (LaTeX, T.Text, T.Text) -> LaTeX
-mkLRow (symbol, haskT, desc) =
-    symbol & texy haskT & texy desc <> lnbk <>
+mkLRow (symbol, haskT, aDesc) =
+    symbol & texy haskT & texy aDesc <> lnbk <>
         (addLineSpace $ Just $ CustomMeasure $
             (dimexpr <> (texy (0.75 :: Float))) <> defaultAddSpace) <> "\n"
 

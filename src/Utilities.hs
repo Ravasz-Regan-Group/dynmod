@@ -185,3 +185,9 @@ seqToVec = UVec.fromList . toList
 -- The following should go away when we move to GHC 9.2.1. 
 initStdGen :: IO StdGen
 initStdGen = StdGen <$> SM.initSMGen
+
+quadUncurry :: (a -> b -> c -> d -> e) -> ((a, b), (c, d)) -> e
+quadUncurry f ((a, b), (c, d)) = f a b c d
+
+doubleUncurry :: (a -> b -> c -> d -> e) -> (a, b) -> (c, d) -> e
+doubleUncurry f (a, b) (c, d) = f a b c d
