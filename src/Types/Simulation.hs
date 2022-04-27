@@ -8,6 +8,8 @@ module Types.Simulation
     , AttractorSet
     , Folder (..)
     , LayerVec
+    , LayerSpecs (..)
+    , layerPrep
     , LayerNameIndexMap
     , PSStepper
     , topStates
@@ -113,7 +115,7 @@ type PAStepper = LayerVec -> Simulation LayerVec
 topStates :: (Monoid a, P.NFData a) => Folder a -> ModelEnv -> Simulation a
 topStates folders mEnv = do
     let lInputs = inputs ((modelGraph . mLayer) mEnv)
-        lSpecs = layerPrep mEnv
+        lSpecs = (layerPrep . mLayer) mEnv
         cons = constrainedInputs mEnv
         inCombos = inputCombos lInputs cons (lNameIndexM lSpecs)
     iGens <- state $ genGen $ length inCombos
@@ -314,8 +316,8 @@ asyncStep vecLength ttMap ivMap lVec = do
 
 -- Construct (LayerNameIndexMap, LayerRangeVec, TruthTableList, IndexVecList)
 -- from a ModelLayer. Ordering is alphabetical by node name in each. 
-layerPrep :: ModelEnv -> LayerSpecs
-layerPrep mEnv = LayerSpecs lniMap lrVec ttList ivList
+layerPrep :: ModelLayer -> LayerSpecs
+layerPrep mL = LayerSpecs lniMap lrVec ttList ivList
     where
         lniMap = M.fromList $ zip (gNodeName <$> orderedNGates) [0..]
         lrVec = U.fromList $ ((\(_, n) -> (0, n)) . nodeRange) <$> orderedNodes
@@ -323,7 +325,7 @@ layerPrep mEnv = LayerSpecs lniMap lrVec ttList ivList
         ivList = U.fromList <$> ((lniMap M.!) <<$>> gateOrder <$> orderedNGates)
         orderedNGates = nodeGate <$> orderedNodes
         orderedNodes = L.sortOn (nodeName . nodeMeta) nodes
-        nodes = (layerNodes . mLayer) mEnv
+        nodes = layerNodes mL
 
 -- Find the inputs of the ModelGraph. Inductively, a node is an input if it has
 -- a self-loop and NO other inlinks, or is a node which has a self-loop, sibling

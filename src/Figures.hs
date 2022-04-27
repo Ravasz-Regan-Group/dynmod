@@ -19,18 +19,16 @@ import Types.Simulation
 import Properties.Attractors
 import Utilities
 
+-- (fromIntegral . HS.size) <<<$>>> atts
+
 attractorGrid :: Int -- Number of random state slots
               -> Int -- Number of noisy step slots
               -> Int -- Multiplier to turn state & steps slots into numbers
                      -- of random states and noisy steps per input combination
               -> Double -- Noisy step slip probability
               -> ModelLayer
-              -> Simulation [[Double]]
-attractorGrid rN nN multiplier nProb mEnv =
-                            (fromIntegral . HS.size) <<<$>>> atts
-    where
-        atts :: Simulation [[HS.HashSet Attractor]]
-        atts = (traverse . traverse) attractors
+              -> Simulation [[HS.HashSet Attractor]]
+attractorGrid rN nN multiplier nProb mEnv = (traverse . traverse) attractors
                             (mEnvGrid rN nN multiplier nProb mEnv)
 
 mEnvGrid :: Int -> Int -> Int -> Double -> ModelLayer -> [[ModelEnv]]

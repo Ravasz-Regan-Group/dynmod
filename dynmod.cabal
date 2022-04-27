@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: eed80f39752a294a3be571d07a84643f33c0b323da36a21ba0d28ef9299c91c7
+-- hash: e597522b4d5e6d4b35f050655d511c8b558caaddd596e63c12078c6de271aec6
 
 name:           dynmod
-version:        0.6.0.1
+version:        0.6.0.2
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues

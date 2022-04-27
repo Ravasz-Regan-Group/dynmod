@@ -108,7 +108,9 @@ experimentDMMS f options (Right parsed) = do
                 nsGrid = rnGrid rN nN mult
             putStrLn $ show nsGrid
             let attGrid = evalState (attractorGrid rN nN mult nProb fLayer) gen
-                hMapSVGText = attractorHMSVGText attGrid mult
+                doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
+                hMapSVGText = attractorHMSVGText doublesGrid mult
+                allAtts = mconcat $ mconcat <$> attGrid
             (fName, _) <- splitExtension $ filename f
             let fNameString = fromRelFile fName
                 hMapSVGFileName = fNameString ++
@@ -120,13 +122,13 @@ experimentDMMS f options (Right parsed) = do
             hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
             hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
             RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-            putStrLn $ show attGrid
+            putStrLn $ show doublesGrid
 --                 let rN = 300
 --                     rP = 0.02
 --                     nN = 30
 --                     aN = 5
 --                     mEnv = ModelEnv fLayer rN rP nN aN []
---                     LayerSpecs lniMap _ _ _ = layerPrep mEnv
+            let LayerSpecs lniMap _ _ _ = layerPrep fLayer
 --                     fG = modelGraph fLayer
 --                     ins = inputs fG
 --                   inComsSizeS = (show . length) $ inputCombos ins [] lniMap 
@@ -135,7 +137,7 @@ experimentDMMS f options (Right parsed) = do
 --                 putStrLn $ "In " ++ inComsSizeS ++ " combinations"
 --                 putStr "With settings: "
 --                 PS.pPrint (rN, rP, nN, aN)
---                 let mMap = last mms
+            let mMap = last mms
 --                     atts = evalState (attractors mEnv) gen
 --                     attSet = evalState (attractors' mEnv) gen
 --                     atts = (HM.keysSet . fst) attSet
@@ -146,7 +148,7 @@ experimentDMMS f options (Right parsed) = do
 --              Note that mMap is just the last ModelMapping in the DMMS file. 
 --              All this assumes that we're working with at 2-layer dmms file,
 --              which will need to be revisited in the general case
---                 writeAttractorSet f lniMap mMap atts
+            writeAttractorSet f lniMap mMap allAtts
 --                 putStrLn $ (show statSize) ++ " states found. "
 
 writeAttractorSet :: Path Abs File
