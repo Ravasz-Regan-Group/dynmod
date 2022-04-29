@@ -283,7 +283,8 @@ data NodeType = Undefined_NT
                 deriving (Show, Eq, Bounded, Enum)
 
 instance Texy NodeType where
-    texy Undefined_NT       = texy ("Undefined_NT" :: T.Text)
+    texy Undefined_NT       = (footnotesize . texy)
+                                    ("Undefined_NT" :: T.Text)
     texy Cell               = (footnotesize . fromLaTeX . TeXRaw) "Cell"
     texy DM_Switch          = (footnotesize . fromLaTeX . TeXRaw) "DM"
     texy Connector          = (footnotesize . fromLaTeX . TeXRaw) "Conn"

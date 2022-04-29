@@ -315,7 +315,7 @@ renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
             | otherwise = "Right unique NodeNames:\n" <>
                 T.intercalate ", " rNNames <> "\n"
         sharedNodeDiffRenders
-            | and $ T.null <$> nDiffRenders = ""
+            | all T.null nDiffRenders = ""
             | otherwise = "Shared DMNode diffs:\n" <> T.concat nDiffRenders
                 where
                     nDiffRenders = renderNodeDiff <$> nDiffs
@@ -366,7 +366,7 @@ renderLinkDiff (SD (LD lLinks) (RD rLinks) (FC lteDiffs))
             | otherwise = "\nRight unique InLinks: " <> 
                 T.intercalate "," (snd <$> rLinks) <> "\n"
         lteDiffRenders
-            | and $ nullLTEDiff <$> lteDiffs = ""
+            | all nullLTEDiff lteDiffs = ""
             | otherwise = "Shared InLink diffs:\n" <>
                 T.intercalate "\n" (renderLTEDiff <$> lteDiffs)
 

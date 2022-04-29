@@ -105,8 +105,6 @@ experimentDMMS f options (Right parsed) = do
         mms -> do
             gen <- initStdGen
             let EParams rN nN mult nProb = sample options
-                nsGrid = rnGrid rN nN mult
-            putStrLn $ show nsGrid
             let attGrid = evalState (attractorGrid rN nN mult nProb fLayer) gen
                 doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
                 hMapSVGText = attractorHMSVGText doublesGrid mult
@@ -122,7 +120,6 @@ experimentDMMS f options (Right parsed) = do
             hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
             hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
             RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-            putStrLn $ show doublesGrid
 --                 let rN = 300
 --                     rP = 0.02
 --                     nN = 30
@@ -336,8 +333,10 @@ pubWWrite file x = do
     let warnings =  mkPublish x
         prettyWarnings = prettyPublish warnings
     putStrLn $ case warnings of
-        Failure _ -> "See Metadata Warnings"
         Success _ -> "No Warnings"
+        Failure ws
+            | all isUnescaped ws -> "Some unescaped _, no other warnings"
+            | otherwise                -> "See Metadata Warnings"
     RW.writeFile warningFileNameWExt prettyWarnings
 
 -- Write DMNode coordinates & colors to a file
@@ -585,5 +584,6 @@ opts = O.info (O.helper <*> versionOpt <*> input)
    \Options: write publication level warnings to a file, write node coordinates\
    \ and color to a file, write a supplementary publication of the dmms file to\
    \ PDF, update a dmms file from a gml file, compare one dmms file with \
-   \another, write out tt files."
+   \another, write out tt files, find attractors and run simulations on the \
+   \models of the dmms."
    <> O.header "dynmod - processing dmms files")

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Publish (mkPublish, prettyPublish) where
+module Publish (mkPublish, prettyPublish, isUnescaped) where
 
 import Types.DMModel
 import Utilities
@@ -223,7 +223,7 @@ mkDescPublish md lInfo =  case desc lInfo of
 hasDescUEUnderscores :: Description -> Validation [PubInvalid] Description
 hasDescUEUnderscores d = case T.breakOnAll "_" d of
     [] -> Success d
-    us -> case and $ isSuccess <$> checks of
+    us -> case all isSuccess checks of
         True  -> Success d
         False -> (mconcat . filter isFailure)  checks
         where
@@ -240,6 +240,10 @@ hasDescUEUnderscores d = case T.breakOnAll "_" d of
                         snippet = (T.reverse . T.take 9 . T.reverse) xs <>
                                      T.singleton x <>
                                      T.take 10 a
+
+isUnescaped :: PubInvalid -> Bool
+isUnescaped (DescUnescapedUnderScores _) = True
+isUnescaped _                            = False
 
 mkMGPublish :: ModelGraph -> Validation [PubInvalid] ModelGraph
 mkMGPublish mG = Gr.mkGraph <$> checkedNodes <*> checkedEdges
