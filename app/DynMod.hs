@@ -31,14 +31,12 @@ import qualified Data.Text as T
 import qualified Text.Pretty.Simple as PS
 import qualified Data.Graph.Inductive as Gr
 import qualified Text.Megaparsec as M
-import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import Control.Monad.State.Strict
 import Data.Void
 import Control.Applicative ((<|>))
-import Control.Monad (zipWithM_, when)
 import Control.Monad.Reader (runReader)
 import GHC.Conc (par, pseq)
 import qualified Data.List as L
@@ -92,61 +90,61 @@ main = do
 experimentDMMS :: Path Abs File
                -> Experiments
                -> Either
-                (M.ParseErrorBundle T.Text Void)
-                (FileFormatVersion, (DMModel, CitationDictionary))
+                    (M.ParseErrorBundle T.Text Void)
+                    (FileFormatVersion, (DMModel, CitationDictionary))
                -> IO ()
 experimentDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
-experimentDMMS f options (Right parsed) = do
+experimentDMMS f experiment (Right parsed) = do
     let dmModel = (fst . snd) parsed
         fLayer = fineLayer dmModel
     putStrLn "Good parse"
     case modelMappings dmModel of
         [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
-        mms -> do
-            gen <- initStdGen
-            let EParams rN nN mult nProb = sample options
-            let attGrid = evalState (attractorGrid rN nN mult nProb fLayer) gen
-                doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
-                hMapSVGText = attractorHMSVGText doublesGrid mult
-                allAtts = mconcat $ mconcat <$> attGrid
-            (fName, _) <- splitExtension $ filename f
-            let fNameString = fromRelFile fName
-                hMapSVGFileName = fNameString ++
-                                  "_att_HM_" ++
-                                  (show rN) ++ "_" ++
-                                  (show nN) ++ "_" ++
-                                  (show mult) ++ "_" ++
-                                  (show $ (round . (100 *)) nProb)
-            hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
-            hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
-            RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
---                 let rN = 300
---                     rP = 0.02
---                     nN = 30
---                     aN = 5
---                     mEnv = ModelEnv fLayer rN rP nN aN []
-            let LayerSpecs lniMap _ _ _ = layerPrep fLayer
---                     fG = modelGraph fLayer
---                     ins = inputs fG
---                   inComsSizeS = (show . length) $ inputCombos ins [] lniMap 
---                 putStrLn "Starting run. Input nodes:"
---                 PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
---                 putStrLn $ "In " ++ inComsSizeS ++ " combinations"
---                 putStr "With settings: "
---                 PS.pPrint (rN, rP, nN, aN)
-            let mMap = last mms
---                     atts = evalState (attractors mEnv) gen
---                     attSet = evalState (attractors' mEnv) gen
---                     atts = (HM.keysSet . fst) attSet
---                     lC = evalState (characteristics mEnv) gen
---                     (aS, lStats) = unLayerChars lC
---                     statSize = HM.size lStats
---                     atts = HM.keysSet aS
---              Note that mMap is just the last ModelMapping in the DMMS file. 
---              All this assumes that we're working with at 2-layer dmms file,
---              which will need to be revisited in the general case
-            writeAttractorSet f lniMap mMap allAtts
---                 putStrLn $ (show statSize) ++ " states found. "
+        [mMap] -> do
+            case experiment of
+                AttractorFind (EParams rN nN nProb) -> attFindDMMS f mMap mEnv
+                    where mEnv = ModelEnv fLayer rN nProb nN 0 []
+                GridSearch ((EParams rN nN nProb), mult) ->
+                    gridDMMS f mMap mult mEnv
+                    where mEnv = ModelEnv fLayer rN nProb nN 0 []
+        _:_:_ -> fail "Too many layers! I don\'t know how to handle this yet!"
+
+attFindDMMS :: Path Abs File -> ModelMapping -> ModelEnv -> IO ()
+attFindDMMS f mMap mEnv = do
+    gen <- initStdGen
+    let fLayer = mLayer mEnv
+        LayerSpecs lniMap _ _ _ = layerPrep fLayer
+        ins = (inputs . modelGraph) fLayer
+        inComsSizeS = (show . length) $ inputCombos ins [] lniMap
+    putStrLn "Starting run. Input nodes:"
+    PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
+    putStrLn $ "In " ++ inComsSizeS ++ " combinations"
+    putStr "With settings: "
+    PS.pPrint (randomN mEnv, noisyP mEnv, noisyN mEnv)
+    let atts = evalState (attractors mEnv) gen
+    writeAttractorSet f lniMap mMap atts
+
+gridDMMS :: Path Abs File -> ModelMapping -> Int -> ModelEnv -> IO ()
+gridDMMS f mMap mult mEnv = do
+    gen <- initStdGen
+    let fLayer = mLayer mEnv
+        LayerSpecs lniMap _ _ _ = layerPrep fLayer
+        attGrid = evalState (attractorGrid mEnv mult) gen
+        doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
+        hMapSVGText = attractorHMSVGText doublesGrid mult
+        allAtts = mconcat $ mconcat <$> attGrid
+    (fName, _) <- splitExtension $ filename f
+    let fNameString = fromRelFile fName
+        hMapSVGFileName = fNameString ++
+                            "_att_HM_" ++
+                            (show (randomN mEnv)) ++ "_" ++
+                            (show (noisyN mEnv)) ++ "_" ++
+                            (show mult) ++ "_" ++
+                            (show $ ((round . (1000 *)) (noisyP mEnv) :: Int))
+    hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
+    hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
+    RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
+    writeAttractorSet f lniMap mMap allAtts
 
 writeAttractorSet :: Path Abs File
                   -> LayerNameIndexMap
@@ -426,7 +424,7 @@ data Input = Input {
       fileN    :: T.Text
     , activity :: Activity
     } deriving (Eq, Show)
-    
+
 data Activity = Update Updates
               | Compare CompareDMMS
               | Procedure Procedures
@@ -450,16 +448,26 @@ data Procedures = Procedures {
     , parseTest   :: Bool
     } deriving (Eq, Show)
 
-data Experiments = Experiments {
-      sample :: EParams
-    } deriving (Eq, Show)
+data Experiments = GridSearch (EParams, GParam)
+                 | AttractorFind EParams
+                 deriving (Eq, Show)
 
+-- The number of random states per input combination, noisy steps per random
+-- state, and the probability that any particular gate will slip on a step. 
+-- Eventually these will be folded into the grid option, as the --attractor
+-- option will automatically search for attractors depending on how exhaustive
+-- you tell it to be, but for now its manual. In the context of the --grid
+-- option, the first two are the number of random state and noisy steps per
+-- random state slots in the grid, and the multiplier in GParam will determine
+-- what the actual numbers of random states and noisy steps are. 
 data EParams = EParams {
       randomState :: Int
     , noisySteps :: Int
-    , multiplier :: Int
     , noiseProb :: Double
     } deriving (Eq, Show)
+
+-- The grid multiplier for the --grid option. U
+type GParam = Int
 
 input :: O.Parser Input
 input = Input <$> O.strArgument
@@ -545,32 +553,53 @@ procedureParser = Procedure <$> (Procedures
        )
 
 experimentParser :: O.Parser Activity
-experimentParser = Experiment <$> (Experiments
-    <$> paramParser
-    )
+experimentParser = Experiment <$> (attFindParser <|> gridParser)
+    
 
--- O.switch
---         ( O.long "run_sample"
---        <> O.short 'r'
---        <> O.help "Whether to sample the state space of the fine layer of the\
---             \ dmms file in order to find attractors and build statistics. "
---         )
-
-paramReader :: O.ReadM EParams
-paramReader = do
+gParamReader :: O.ReadM Experiments
+gParamReader = do
     o <- O.str
     let [a, b, c, d] = map read $ Split.splitOn "," o
-    return $ EParams a b c d
+    return $ GridSearch (EParams a b c, d)
 
-paramParser :: O.Parser EParams
-paramParser = O.option paramReader
-                       ( O.long "run_sample"
-                      <> O.short 'r'
-                      <> O.help "Whether to sample the state space of the fine\
-                            \ layer of the dmms file in order to find \
-                            \attractors and build statistics. "
+eParamReader :: O.ReadM Experiments
+eParamReader = do
+    o <- O.str
+    let [a, b, c] = map read $ Split.splitOn "," o
+    return $ (AttractorFind $ EParams a b c)
+
+attFindParser :: O.Parser Experiments
+attFindParser = O.option (eParamReader >>= probCheck)
+                       ( O.long "attractors"
+                      <> O.short 'a'
+                      <> O.metavar "Int,Int,Double" 
+                      <> O.help "Sample the state space of the fine\
+                            \ layer of the dmms file in order to find its \
+                            \attractors. "
                        )
 
+gridParser :: O.Parser Experiments
+gridParser = O.option (gParamReader >>= probCheck)
+                       ( O.long "grid"
+                      <> O.metavar "Int,Int,Double,Int"
+                      <> O.help "Sample the state space of the fine layer of \
+                            \the dmms file repeatedly in a grid, and output \
+                            \the results as a grid in order to determine how \
+                            \quickly its attractors can be found. "
+                       )
+
+probCheck :: Experiments -> O.ReadM Experiments
+probCheck r@(GridSearch ((EParams _ _ prob), _))
+    | isProb prob = return r
+    | otherwise = fail $ show prob ++ " is not between 0 and 1, and so cannot \
+        \be a probability"
+probCheck r@(AttractorFind (EParams _ _ prob))
+    | isProb prob = return r
+    | otherwise = fail $ show prob ++ " is not between 0 and 1, and so cannot \
+        \be a probability"
+
+isProb :: Double -> Bool
+isProb p = (p >= 0.0) && (p <= 1.0)
 
 versionOpt :: O.Parser (a -> a)
 versionOpt = O.infoOption

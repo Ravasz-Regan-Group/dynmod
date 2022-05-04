@@ -63,7 +63,7 @@ module Types.DMModel
     , DMMSNode
     , InAdj
     , inAdjs
-    , findInAdj
+    , findInAdjs
     , defaultColor
     , gateEval
     , prettyGateEval
@@ -183,6 +183,7 @@ data NodeMeta = NodeMeta { nodeName :: NodeName
                          , nodeColor :: LocalColor
                          , nodeCoordinate :: U.Vector Double
                          , nodeInfo :: LitInfo
+                         , inlinkOrder :: [NodeName]
                          }
                            deriving (Show, Eq)
 instance Ord NodeMeta where
@@ -584,8 +585,8 @@ inAdjs mG = inLinkPrep <$> contexts
 
 -- Given a list of InAdj and a NodeName, extract the corresponding
 -- entry, if it exists
-findInAdj :: NodeName -> [InAdj] -> Maybe InAdj
-findInAdj n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
+findInAdjs :: NodeName -> [InAdj] -> Maybe InAdj
+findInAdjs n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
 
 
 -- Error handling types

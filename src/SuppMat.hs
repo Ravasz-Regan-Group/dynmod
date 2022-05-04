@@ -378,30 +378,45 @@ inLinkConcat = fold . L.intersperse spacer
 -- the layer below (and their Inlinks) which are the first node's switch.
 -- mappingGrouper preps this arrangement for the entire DMModel. In the case
 -- that the whole DMModel is a single (Fine ModelLayer), that modelName is used 
-mappingGrouper :: Reader DMModel [(T.Text, [(InAdj, [InAdj])])]
+mappingGrouper :: Reader DMModel [(T.Text, [(InAdj, [InAdj])] ) ]
 mappingGrouper = let f x = (x, []) in do
-    dmM <- ask
-    return $ case dmM of
-        (Fine mL) ->
-            [((modelName . modelMeta) mL, f <$> (inAdjs (modelGraph mL)))]
-        (LayerBinding x y z) -> go x y (coarseLayer z) : go' z
-            where
-                go' (Fine _) = []
-                go' ((LayerBinding a b c)) =  go a b (coarseLayer c) : go' c
-                go mM cML fML = (mName, zip coarseAdjs fineAdjs)
-                    where
-                        fineAdjs = fromJust <<$>> 
-                          (sequenceA
-                            (sequenceA <$> (findInAdj <<$>> fineNNames))
-                            finePairs)
-                        finePairs = inAdjs fineGr
-                        coarseAdjs = fromJust <$> 
-                          (sequenceA (findInAdj <$> coarseNNames) coarsePairs)
-                        coarsePairs = inAdjs coarseGr
-                        mName = (modelName . modelMeta) fML
-                        (coarseGr, fineGr) = (modelGraph cML, modelGraph fML)
-                        coarseNNames = fst <$> mM
-                        fineNNames   = snd <$> mM
+  dmM <- ask
+  return $ case dmM of
+    (Fine mL) -> [((modelName . modelMeta) mL, f <$> (inAdjs (modelGraph mL)))]
+    (LayerBinding x y z) -> go x y (coarseLayer z) : go' z
+      where
+        go' (Fine _) = []
+        go' ((LayerBinding a b c)) =  go a b (coarseLayer c) : go' c
+        go mM cML fML = (mName, zip coarseAdjs orderedFineAdjs)
+          where
+            orderedFineAdjs = (fromJust . reOrderInAdj fineILOrderMap) <<$>>
+                                                        fineAdjs
+            fineAdjs :: [[InAdj]]
+            fineAdjs = fromJust <<$>> (sequenceA
+              (sequenceA <$> (findInAdjs <<$>> fineNNames)) finePairs)
+            finePairs = inAdjs fineGr
+            coarseAdjs :: [InAdj]
+            coarseAdjs = fromJust <$> 
+              (sequenceA (findInAdjs <$> coarseNNames) coarsePairs)
+            coarsePairs = inAdjs coarseGr
+            mName = (modelName . modelMeta) fML
+            (coarseGr, fineGr) = (modelGraph cML, modelGraph fML)
+            fineILOrderMap = layerInLinkOrders fML
+            coarseNNames = fst <$> mM
+            fineNNames   = snd <$> mM
+
+layerInLinkOrders :: ModelLayer -> Map.HashMap NodeName [NodeName]
+layerInLinkOrders mL = Map.fromList $ zip nNames inLOrders
+    where
+        inLOrders = inlinkOrder <$> dmNodeMetas
+        nNames = nodeName <$> dmNodeMetas
+        dmNodeMetas = (nodeMeta . snd) <$> ((Gr.labNodes . modelGraph) mL)
+
+reOrderInAdj :: Map.HashMap NodeName [NodeName] -> InAdj -> Maybe InAdj
+reOrderInAdj oMap (dmN, ls) = sequenceA (dmN, newLs)
+    where
+        newLs = sortWithOrderOn snd <$> order <*> (pure ls)
+        order = Map.lookup ((nodeName . nodeMeta) dmN) oMap
 
 mkBibFile :: CitationDictionary -> T.Text
 mkBibFile = T.concat . L.intersperse "\n\n" . ((mkBibText . snd) <$>)

@@ -390,13 +390,14 @@ coordDimensionCheck nodesWLinks = case L.nub nodeDims of
 -- Extend the dimension of the coordinate a DMNode to the given Int, adding on
 -- zeroes as necessary. 
 padNodeDim :: Int -> DMNode -> DMNode
-padNodeDim dim oldN@(DMNode (NodeMeta nN nG nT nCol oldCoord nI) nGate)
+padNodeDim dim oldN@(DMNode nMeta nGate)
     | oldDim >= dim = oldN
-    | otherwise = (DMNode (NodeMeta nN nG nT nCol newCoord nI) nGate)
+    | otherwise = (DMNode (nMeta {nodeCoordinate = newCoord}) nGate)
     where
-        newCoord = oldCoord U.++ padVec
+        newCoord = (oldCoord) U.++ padVec
         padVec = U.replicate (dim - oldDim) (0 :: Double)
         oldDim = U.length oldCoord
+        oldCoord = nodeCoordinate nMeta
 
 -- Assemble the DMNodes & DMLinks into an fgl graph. The fromJust is justified
 -- because we have already ensured that every NodeName associated with a DMLink
@@ -498,6 +499,7 @@ nodeParse = (between (symbol "Node{") (symbol "Node}") (runPermutation $
               >>= linkDupeCheck
               >>= gateLinkCheck 
               >>= nodeNameCheck
+              >>= inLinkOrderPrep
 
 -- Make sure that no two InLinks in a Node have the same InputNode
 linkDupeCheck :: (DMNode, [(NodeName, DMLink)])
@@ -530,6 +532,11 @@ nodeNameCheck parsed@(pDMNode, _) =
     case gName == mName of
         True  -> return parsed
         False -> fail $ show $ NodeMetaNameMismatch (gName, mName)
+
+inLinkOrderPrep :: (DMNode, [(NodeName, DMLink)])
+                -> Parser (DMNode, [(NodeName, DMLink)])
+inLinkOrderPrep (dmN, ils) = return $
+    (dmN {nodeMeta = (nodeMeta dmN) {inlinkOrder = fst <$> ils}}, ils)
 
 -- Parse a Note or Description, along with any embedded BibTeX citations. 
 extractCitations :: T.Text -> Parser (T.Text, [[T.Text]])
@@ -564,7 +571,7 @@ citationParse = (between (hsymbol "\\cite{") (hsymbol "}")
 -- Parse Node metadata
 nodeConfigParse :: Parser NodeMeta
 nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}") 
-     (runPermutation $ 
+    (runPermutation $ 
         NodeMeta <$> toPermutation (identifier "NodeName")
                  <*> toPermutation nodeGenesParse
                  <*> toPermutation nodeTypeParse
@@ -572,7 +579,13 @@ nodeConfigParse = between (symbol "NodeMetaData{") (symbol "NodeMetaData}")
                  <*> toPermutation coordinateParse
                  <*> (doubleUncurry LitInfo
                       <$> toPermutation (extractCitations "NodeDescription")
-                      <*> toPermutation (extractCitations "NodeNotes")))
+                      <*> toPermutation (extractCitations "NodeNotes")
+                      )
+-- We dont know what the inLink order is at this point in the parse, so we start
+-- with an empty list and insert the Inlink NodesNames after we validate the
+-- rest of the DMNode. 
+                 <*> pure []
+    )
 
 
 -- Parse the (possibly empty) list of EntrezID genes associated with a node

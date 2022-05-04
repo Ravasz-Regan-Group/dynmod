@@ -15,6 +15,8 @@ module Types.Simulation
     , topStates
     , mkAttractor
     , layerVecReorder
+    , inputs
+    , inputCombos
     ) where
 
 -- import Debug.Trace

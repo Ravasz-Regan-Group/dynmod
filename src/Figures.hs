@@ -17,19 +17,15 @@ import Plots
 import Types.DMModel
 import Types.Simulation
 import Properties.Attractors
-import Utilities
 
 -- (fromIntegral . HS.size) <<<$>>> atts
 
-attractorGrid :: Int -- Number of random state slots
-              -> Int -- Number of noisy step slots
-              -> Int -- Multiplier to turn state & steps slots into numbers
-                     -- of random states and noisy steps per input combination
-              -> Double -- Noisy step slip probability
-              -> ModelLayer
-              -> Simulation [[HS.HashSet Attractor]]
-attractorGrid rN nN multiplier nProb mEnv = (traverse . traverse) attractors
-                            (mEnvGrid rN nN multiplier nProb mEnv)
+-- Here we actively misinterpret a ModelEnv as specifying random state slots and
+-- noisy step slots instead of a single run with those numbers, but the data is
+-- there and this a ModelEnvs is a convenient package. 
+attractorGrid :: ModelEnv -> Int -> Simulation [[HS.HashSet Attractor]]
+attractorGrid (ModelEnv mL rN nProb nN _ _) multiplier =
+    (traverse . traverse) attractors (mEnvGrid rN nN multiplier nProb mL)
 
 mEnvGrid :: Int -> Int -> Int -> Double -> ModelLayer -> [[ModelEnv]]
 mEnvGrid rN nN multiplier nProb mL = mkRow <$> [1..rN]
@@ -43,6 +39,8 @@ heatMapAxis atts mult = r2Axis &~ do
   display colourBar
   axisExtend .= noExtend
   axisColourMap .= Plots.viridis
+  xLabel .= "Noisy Steps"
+  yLabel .= "r_States"
   heatMap atts $ heatMapSize .= V2 (fromIntegral mult) (fromIntegral mult)
 
 heatMapDia :: [[Double]] -> Int -> QDiagram B V2 Double Any

@@ -251,12 +251,12 @@ unsafeUpDDMM tMap (LayerBinding mm (ModelLayer mg mMeta) dmM) =
 -- time. This presumes that the passed GML has already been validated by
 -- gmlValidate.
 updateDMNode :: GmlDMNodeTransMap -> DMNode -> DMNode
-updateDMNode tMap (DMNode (NodeMeta nN nGs nT _ _ nI) dmNG) =
-    (DMNode (NodeMeta nN nGs nT newColor newCoords nI) dmNG)
+updateDMNode tMap (DMNode nMeta dmNG) =
+    (DMNode (nMeta {nodeColor = newColor, nodeCoordinate = newCoords}) dmNG)
     where
         newColor = tColor transfer
         newCoords = tCoords transfer
-        transfer = tMap Map.! nN
+        transfer = tMap Map.! (nodeName nMeta)
 
 -- Pull from a GML node the data we need to update a DMNode.This may change over
 -- time. This presumes that the passed GML has already been validated by

@@ -264,6 +264,7 @@ mkPublishNodeMeta nMD = let nName = nodeName nMD in
              <*> (mkNodeColorPublish nName (nodeColor nMD))
              <*> (mkNodeCoordPublish nName (nodeCoordinate nMD))
              <*> (mkDescPublish (NodeD nName) (nodeInfo nMD))
+             <*> (pure $ inlinkOrder nMD)
 
 -- Use Data.Data to display the current valid NodeTypes. 
 mkNodeTypePublish :: NodeName -> NodeType -> Validation [PubInvalid] NodeType
