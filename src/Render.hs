@@ -3,8 +3,8 @@
 module Render 
     ( renderGML
     , renderDMMS
-    , renderSwitch
     , renderDMMSDiff
+    , renderDMMSSwitch
     , purgeTableRenderDMMS
     )
     where
@@ -76,12 +76,37 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             pairShow (n, i) = "(" <> n <> ", " <> (T.pack . show) i <> ")" 
 
 renderMMaping :: ModelMapping -> T.Text
-renderMMaping mm = dmmsWrap "ModelMapping" entries 
+renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries) <> "\n\n" <>
+                   (dmmsWrap "SwitchProfiles" spEntries)
     where
-        entries = T.intercalate "\n" $ renderSwitch <$> mm
+        (dmmsMMaping, switchProfiles) = modelMappingSplit mm
+        dmmsMMEntries = T.intercalate "\n" $ renderDMMSSwitch <$> dmmsMMaping
+        spEntries = T.intercalate "\n" $ renderSwitchProfile <$> switchProfiles
 
-renderSwitch :: (NodeName, [NodeName]) -> T.Text
-renderSwitch (s, ns) = "Switch: " <> s <> " (" <> (T.intercalate ", " ns) <> ")"
+renderDMMSSwitch :: (NodeName, [NodeName]) -> T.Text
+renderDMMSSwitch (s, ns) =
+    "Switch: " <> s <> " (" <> (T.intercalate ", " ns) <> ")"
+
+renderSwitchProfile :: SwitchProfile -> T.Text
+renderSwitchProfile (nN, phs) = dmmsWrap "SwitchPhenotypes" entry
+    where
+        entry = "SwitchName: " <> nN <> "\n" <> entries
+        entries = T.intercalate "\n" $ renderPhenotype <$> phs
+
+renderPhenotype :: Phenotype -> T.Text
+renderPhenotype ph =
+    "            " <>
+    phenotypeName ph <>
+    ":" <>
+    ((T.pack . show . switchNodeState) ph) <>
+    " *= " <>
+    (T.intercalate " -> " $ renderSubSpace <$> (fingerprint ph))
+
+renderSubSpace :: SubSpace -> T.Text
+renderSubSpace sSp = "(" <> entries <> ")"
+    where
+        entries = T.intercalate ", " $ renderSSElem <$> sSp
+        renderSSElem (nN, nS) = nN <> ":" <> ((T.pack . show) nS)
 
 renderMGraph :: ModelGraph -> T.Text
 renderMGraph mg = dmmsWrap "ModelGraph" entries
@@ -257,27 +282,32 @@ renderDMMSDiff dmms1 dmms2 dmMDiff =
     dmms1 <> " vs " <> dmms2 <> "\n\n" <> renderDMModelDiff dmMDiff
 
 renderDMModelDiff :: DMModelDiff -> T.Text
-renderDMModelDiff (CoarseDiff mmD ((lN1, lN2), lD) dmD) =
+renderDMModelDiff (CoarseDiff (mmD, spD) ((lN1, lN2), lD) dmD) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
-    mmDRenderWrapped <>
+    dmmsMMDRenderWrapped <>
+    spDRenderWrapped <>
     mlDRenderWrapped <>
     "\n****************************************\n" <>
     renderDMModelDiff dmD
     where
-        mmDRenderWrapped
-            | T.null mmDRender = ""
-            | otherwise = "ModelMapping diff:\n" <> mmDRender <> "\n"
-        mmDRender = renderMappingDiff mmD
+        dmmsMMDRenderWrapped
+            | T.null dmmsMMDRender = ""
+            | otherwise = "ModelMapping diff:\n" <> dmmsMMDRender <> "\n"
+        dmmsMMDRender = renderDMMSMappingDiff mmD
+        spDRenderWrapped
+            | T.null spDRender = ""
+            | otherwise = "SwitchProfiles diff:\n" <> spDRender <> "\n"
+        spDRender = renderSPDiff spD
         mlDRenderWrapped
-            | T.null mmDRender = ""
+            | T.null mlDRender = ""
             | otherwise = "ModelLayer diff:\n" <> mlDRender <> "\n"
         mlDRender = renderLayerDiff lD
 renderDMModelDiff (FineDiff ((lN1, lN2), lD)) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
     "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n"
 
-renderMappingDiff :: MappingDiff -> T.Text
-renderMappingDiff (SD (LD ldSwitchNames)
+renderDMMSMappingDiff :: DMMSMappingDiff -> T.Text
+renderDMMSMappingDiff (SD (LD ldSwitchNames)
                       (RD rdSwitchNames)
                       (FC (SD (LD ldSwitchContent)
                               (RD rdSwitchContent)
@@ -288,19 +318,75 @@ renderMappingDiff (SD (LD ldSwitchNames)
     where
         ldSN | null ldSwitchNames = ""
              | otherwise = "Left unique Switch names:\n" <>
-                T.intercalate "\n" (renderSwitch <$> ldSwitchNames) <> "\n"
+                T.intercalate "\n" (renderDMMSSwitch <$> ldSwitchNames) <> "\n"
         rdSN | null rdSwitchNames = ""
              | otherwise = "Right unique Switch names:\n" <>
-                T.intercalate "\n" (renderSwitch <$> rdSwitchNames) <> "\n"
+                T.intercalate "\n" (renderDMMSSwitch <$> rdSwitchNames) <> "\n"
         ldSC | null ldSwitchContent = ""
              | otherwise = "Left shared Switch names but unique content:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> ldSwitchContent) <> "\n"
+                 T.intercalate "\n" (renderDMMSSwitch <$> ldSwitchContent) <>
+                    "\n"
         rdSC | null ldSwitchContent = ""
              | otherwise = "Right shared Switch names but unique content:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> rdSwitchContent) <> "\n"
+                 T.intercalate "\n" (renderDMMSSwitch <$> rdSwitchContent) <>
+                    "\n"
         fcSC | null fcNameContent = ""
              | otherwise = "Identical Switches:\n" <>
-                 T.intercalate "\n" (renderSwitch <$> fcNameContent) <> "\n"
+                 T.intercalate "\n" (renderDMMSSwitch <$> fcNameContent) <>
+                    "\n"
+
+renderSPDiff :: SwitchProfilesDiff -> T.Text
+renderSPDiff (SD (LD lSProfiles) (RD rSProfiles) (FC switchDiffs)) =
+    lSProfilesRender <> rSProfilesRender <> switchDiffsRender
+    where
+        lSProfilesRender
+            | null lSProfiles = ""
+            | otherwise = "Left unique SwitchNames:\n" <>
+                T.intercalate "\n" (fst <$> lSProfiles) <> "\n"
+        rSProfilesRender
+            | null rSProfiles = ""
+            | otherwise = "Right unique SwitchNames:\n" <>
+                T.intercalate "\n" (fst <$> rSProfiles) <> "\n"
+        switchDiffsRender
+            | null switchDiffs = ""
+            | T.null phenotypesRender = ""
+            | otherwise = "Shared SwitchNames but differing Phenotypes:\n" <>
+                phenotypesRender
+                where
+                    phenotypesRender = foldr renderSwitchDiff "" switchDiffs
+
+renderSwitchDiff :: SwitchDiff -> T.Text -> T.Text
+renderSwitchDiff (nN, (SD (LD phsL) (RD phsR) (FC pDiffs))) acc =
+    phsLRender <> phsRRender <> pDiffsRender <> acc
+    where
+        phsLRender
+            | null phsL = ""
+            | otherwise = "Left unique Phenotype names for Switch " <>
+                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsL)
+        phsRRender
+            | null phsR = ""
+            | otherwise = "Right unique Phenotype names for Switch " <>
+                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsR)
+        pDiffsRender
+            | null pDiffs = ""
+            | T.null pDsRender = ""
+            | otherwise = "Shared SwitchName(" <> nN <>
+                "), and PhenotypeNames, but differing SwitchNodeStates or \
+                \Fingerprint:\n" <> pDsRender
+                where
+                    pDsRender = foldr renderPDiff "" pDiffs
+
+renderPDiff :: PDiff -> T.Text -> T.Text
+renderPDiff (PDiff _ Nothing Nothing) acc = acc
+renderPDiff (PDiff pDN (Just lSwitchSDiff) Nothing) acc =
+    "Shared PhenotypeName(" <> pDN <> "), but differing SwitchNodeStates:" <>
+        ((T.pack . show) lSwitchSDiff) <> "\n" <> acc
+renderPDiff (PDiff pDN Nothing (Just _)) acc =
+    "Shared PhenotypeName(" <> pDN <> "), but differing FingerPrints\n" <> acc
+renderPDiff (PDiff pDN (Just lSwitchSDiff) (Just _)) acc =
+    "Shared PhenotypeName(" <> pDN <>
+        "), but differing SwitchNodeStates(" <> ((T.pack . show) lSwitchSDiff)<>
+         ") and differing Fingerprints\n" <> acc
 
 renderLayerDiff :: SplitDiff [NodeName] [NodeDiff] -> T.Text
 renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =

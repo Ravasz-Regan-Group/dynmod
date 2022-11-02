@@ -403,7 +403,7 @@ mappingGrouper = let f x = (x, []) in do
             (coarseGr, fineGr) = (modelGraph cML, modelGraph fML)
             fineILOrderMap = layerInLinkOrders fML
             coarseNNames = fst <$> mM
-            fineNNames   = snd <$> mM
+            fineNNames   = (fst . snd) <$> mM
 
 layerInLinkOrders :: ModelLayer -> Map.HashMap NodeName [NodeName]
 layerInLinkOrders mL = Map.fromList $ zip nNames inLOrders

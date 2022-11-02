@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.6.1.3
+version:             0.6.2.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -78,6 +78,7 @@ library:
   - diagrams-svg
   - plots
   - svg-builder
+  - bimap
 
 executables:
   dynmod:
@@ -90,7 +91,6 @@ executables:
     - -O2
     - -j # Parallel compilation at the module level
     - -Wall
-    - -j # Parallel compilation at the module level
     dependencies:
     - dynmod
     - megaparsec

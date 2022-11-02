@@ -54,7 +54,9 @@ toGML (LayerBinding mm ml dm) = fileHeader <> bulk
                 where
                     gEdges = mkGMLEdge <$> es
                     gNodes = (mkGMLNode groupIDs True) <$> ns
-                    newGroupIDs = mkGroupIDs mapping ns fineNS
+                    newGroupIDs = mkGroupIDs ((fst . modelMappingSplit) mapping)
+                                             ns
+                                             fineNS
                     fineNS = (Gr.labNodes . modelGraph) ml'
                     ns = Gr.labNodes graph
                     es = Gr.labEdges graph
@@ -64,7 +66,9 @@ toGML (LayerBinding mm ml dm) = fileHeader <> bulk
             where
                 fineGMLEdges = mkGMLEdge <$> fineES
                 fineGMLNodes = (mkGMLNode fineGroupIDs False) <$> fineNS
-                fineGroupIDs = mkGroupIDs mapping ns fineNS
+                fineGroupIDs = mkGroupIDs ((fst . modelMappingSplit) mapping)
+                                          ns
+                                          fineNS
                 fineNS = (Gr.labNodes . modelGraph) ml'
                 fineES = (Gr.labEdges . modelGraph) ml'
                 gEdges = mkGMLEdge <$> es
@@ -183,7 +187,7 @@ gmlArrowType Inapt =
 -- That it, match the fgl Node of a given DMNode to the fgl Node of the module
 -- it belongs to. This assumes that the fgl Nodes all come from a single parsed
 -- DMMS file, and so have unique Ints. 
-mkGroupIDs :: ModelMapping
+mkGroupIDs :: DMMSModelMapping
            -> [Gr.LNode DMNode] -- | The coarse layer
            -> [Gr.LNode DMNode] -- | The fine layer
            -> Map.HashMap Gr.Node Gr.Node
@@ -195,7 +199,7 @@ mkGroupIDs mapping cns fns = Map.fromList combos
         nameIDs = (nodeName . nodeMeta) <<$>> (cns <> fns)
         nameCombos = invertModelMapping mapping
 
-invertModelMapping :: ModelMapping -> [(NodeName, NodeName)]
+invertModelMapping :: DMMSModelMapping -> [(NodeName, NodeName)]
 invertModelMapping ns = concatMap flipper ns
     where
         flipper :: (a, [b]) -> [(b, a)]
@@ -224,7 +228,7 @@ mkDMMGroupNS (LayerBinding mm ml dmm) = gNodeMap `Map.union` (mkDMMGroupNS dmm)
         nodesGet fg cg (i, j) =
             ((nodeName . nodeMeta . fromJust . Gr.lab fg) i
                 , (j, (fromJust . Gr.lab cg) j))
-        gIDList = Map.toList $ mkGroupIDs mm cns fns
+        gIDList = Map.toList $ mkGroupIDs ((fst . modelMappingSplit) mm) cns fns
         fns = Gr.labNodes fGraph
         fGraph = (modelGraph . coarseLayer) dmm
         cns = Gr.labNodes cGraph

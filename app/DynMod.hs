@@ -7,7 +7,6 @@ import Types.DMModel
 import Types.GML
 import Types.Simulation
 import Properties.Attractors
--- import Properties.LayerCharacteristics
 import Figures
 import Parse.DMMS
 import Parse.GML
@@ -101,34 +100,36 @@ experimentDMMS f experiment (Right parsed) = do
     case modelMappings dmModel of
         [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
         [mMap] -> do
+            let (dmmsMMap, _) = modelMappingSplit mMap
             case experiment of
-                AttractorFind (EParams rN nN nProb) -> attFindDMMS f mMap mEnv
+                AttractorFind (EParams rN nN nProb) ->
+                    attFindDMMS f dmmsMMap mEnv
                     where mEnv = ModelEnv fLayer rN nProb nN 0 []
                 GridSearch ((EParams rN nN nProb), mult) ->
-                    gridDMMS f mMap mult mEnv
+                    gridDMMS f dmmsMMap mult mEnv
                     where mEnv = ModelEnv fLayer rN nProb nN 0 []
         _:_:_ -> fail "Too many layers! I don\'t know how to handle this yet!"
 
-attFindDMMS :: Path Abs File -> ModelMapping -> ModelEnv -> IO ()
+attFindDMMS :: Path Abs File -> DMMSModelMapping -> ModelEnv -> IO ()
 attFindDMMS f mMap mEnv = do
     gen <- initStdGen
     let fLayer = mLayer mEnv
-        LayerSpecs lniMap _ _ _ = layerPrep fLayer
+        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         ins = (inputs . modelGraph) fLayer
-        inComsSizeS = (show . length) $ inputCombos ins [] lniMap
+        inComsSizeS = (show . length) $ inputCombos ins [] lniBMap
     putStrLn "Starting run. Input nodes:"
     PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
     putStrLn $ "In " ++ inComsSizeS ++ " combinations"
     putStr "With settings: "
     PS.pPrint (randomN mEnv, noisyP mEnv, noisyN mEnv)
     let atts = evalState (attractors mEnv) gen
-    writeAttractorSet f lniMap mMap atts
+    writeAttractorSet f lniBMap mMap atts
 
-gridDMMS :: Path Abs File -> ModelMapping -> Int -> ModelEnv -> IO ()
+gridDMMS :: Path Abs File -> DMMSModelMapping -> Int -> ModelEnv -> IO ()
 gridDMMS f mMap mult mEnv = do
     gen <- initStdGen
     let fLayer = mLayer mEnv
-        LayerSpecs lniMap _ _ _ = layerPrep fLayer
+        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         attGrid = evalState (attractorGrid mEnv mult) gen
         doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
         hMapSVGText = attractorHMSVGText doublesGrid mult
@@ -144,22 +145,22 @@ gridDMMS f mMap mult mEnv = do
     hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
     hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
     RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-    writeAttractorSet f lniMap mMap allAtts
+    writeAttractorSet f lniBMap mMap allAtts
 
 writeAttractorSet :: Path Abs File
-                  -> LayerNameIndexMap
-                  -> ModelMapping
+                  -> LayerNameIndexBimap
+                  -> DMMSModelMapping
                   -> (HS.HashSet Attractor)
                   -> IO ()
-writeAttractorSet f lniMap mapping attSet = do
+writeAttractorSet f lniBMap mapping attSet = do
     (fName, _) <- splitExtension $ filename f
     let attVecList = HS.toList attSet
         attNumber = length attVecList
         switchNodeOrder = concatMap snd mapping
         reordattVecList = case sequence (sequence <$>
-            (layerVecReorder lniMap switchNodeOrder <<$>> attVecList)) of
+            (layerVecReorder lniBMap switchNodeOrder <<$>> attVecList)) of
                 (Left err) -> fail $ "Attractor reorder failed: " <>
-                                     (T.unpack err)
+                                     (show err)
                 (Right r)  -> r
         attLLists = U.toList <<$>> (B.toList <$> reordattVecList)
         attSizes = L.length <$> attLLists
@@ -177,7 +178,7 @@ writeAttractorSet f lniMap mapping attSet = do
 -- It is already a parser error if a switch has a switch name but no member
 -- nodes, so the list in the tuple with each switch name is guaranteed to be
 -- non-empty. 
-mappingFormat :: ModelMapping -> [T.Text]
+mappingFormat :: DMMSModelMapping -> [T.Text]
 mappingFormat ms = concatMap switchFormat ms
     where
         switchFormat (_, []) = error "EmptySwitch"
@@ -276,8 +277,10 @@ procedureDMMS f options (Right parsed) = do
         (ttFWrite f
                   (layerTTs <$> (modelLayers dmModel))
                   (mkBooleanNet dmModel)
-                  (let mMs = T.intercalate "\n" <$> (renderSwitch <<$>>
-                                (modelMappings dmModel))
+                  (let dmmsMMaps = ((fst . modelMappingSplit) <$>
+                            (modelMappings dmModel))
+                       mMs = T.intercalate "\n" <$> (renderDMMSSwitch <<$>>
+                            dmmsMMaps)
                        mNs = (modelName . modelMeta) <$> modelLayers dmModel
                    in zip mNs mMs)
         )
@@ -334,7 +337,7 @@ pubWWrite file x = do
         Success _ -> "No Warnings"
         Failure ws
             | all isUnescaped ws -> "Some unescaped _, no other warnings"
-            | otherwise                -> "See Metadata Warnings"
+            | otherwise          -> "See Metadata Warnings"
     RW.writeFile warningFileNameWExt prettyWarnings
 
 -- Write DMNode coordinates & colors to a file
@@ -468,6 +471,8 @@ data EParams = EParams {
 
 -- The grid multiplier for the --grid option. U
 type GParam = Int
+
+
 
 input :: O.Parser Input
 input = Input <$> O.strArgument

@@ -57,6 +57,11 @@ isSubset [] _     = True
 isSubset (_:_) [] = False
 isSubset (x:xs) ys = elem x ys && isSubset xs (L.delete x ys)
 
+-- Are 2 Lists cyclical permutations of each other?
+areCyclicPermutes :: (Eq a) => [a] -> [a] -> Bool
+areCyclicPermutes xs ys = (length xs == length ys) && (cPerm xs ys)
+    where cPerm bs cs = L.isInfixOf bs  $ L.cycle cs
+
 -- Are 2 Lists the same up to permutations?
 arePermutes :: (Eq a) => [a] ->[a] -> Bool
 arePermutes xs ys = (isSubset xs ys) && (isSubset ys xs)
@@ -170,6 +175,9 @@ mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))
 --      `──---'  `─────'      
 (\|\) :: Ord a => [a] -> [a] -> [a]
 (\|\) xs ys = (xs L.\\ ys) `L.union` (ys L.\\ xs)
+
+lrUniques :: Ord a => [a] -> [a] -> ([a], [a])
+lrUniques xs ys = (xs L.\\ ys, ys L.\\ xs)
 
 pairSame :: Eq a => (a, a) -> Bool
 pairSame (x, y) = x == y

@@ -111,7 +111,7 @@ lEffectPrep errs
                   \are undefined\n"
       numErrs = length lEffectErrs
       typesList = sPShowNoColor optionList
-      optionList = drop 2 [minBound :: LinkEffect ..]
+      optionList = tail [minBound :: LinkEffect ..]
       lEffectErrs = filter isUndefinedEffectType errs
 
 isUndefinedEffectType :: PubInvalid -> Bool
@@ -213,7 +213,7 @@ mkDescPublish :: MissingDescription -- The kind and name of the associated
               -- associated with the InLink, or the name of the DMModel. 
               -> LitInfo 
               -> Validation [PubInvalid] LitInfo
-mkDescPublish md lInfo =  case desc lInfo of
+mkDescPublish md lInfo = case desc lInfo of
     "" -> Failure [PubMissingDesc md]
     _  -> LitInfo <$> (hasDescUEUnderscores $ desc lInfo)
                   <*> (pure $ descCiteLists lInfo)

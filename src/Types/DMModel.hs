@@ -5,6 +5,11 @@ module Types.DMModel
     , ModelLayer(..)
     , ModelGraph
     , ModelMapping
+    , Phenotype(..)
+    , PhenotypeName
+    , SubSpace
+    , DMMSModelMapping
+    , SwitchProfile
     , ModelMeta(..)
     , ModelName
     , LocalColor
@@ -65,6 +70,7 @@ module Types.DMModel
     , inAdjs
     , findInAdjs
     , defaultColor
+    , modelMappingSplit
     , gateEval
     , prettyGateEval
     , layerTTs
@@ -73,6 +79,7 @@ module Types.DMModel
     , refdNodesStatesTM
     , exprNodes
     , modelLayers
+    , modelNodes
     , modelMappings
     , coarseLayer
     , fineLayer
@@ -127,6 +134,7 @@ import qualified Data.List as L
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
 import Data.String (IsString(..))
+import qualified Data.Bifunctor as BF
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
@@ -160,8 +168,31 @@ data ModelMeta = ModelMeta { modelName      :: ModelName
                              deriving (Show, Eq)
 type ModelName = T.Text
 
+-- A bijective map from the nodes of a coarse layer to the elements of a
+-- non-trivial partition of the nodes of its corresponding fine layer, and a
+-- loose map from a subset of the states of the coarse node to subsets of
+-- states of its fine nodes. 
+type ModelMapping = [Switch]
+type Switch = (NodeName, ([NodeName],[Phenotype]))
 
-type ModelMapping = [(NodeName, [NodeName])]
+-- A Phenotype maps a state of a switch node to a (possibly degenerate)
+-- loop of SubSpaces of its constituent nodes, where SubSpaces are subsets
+-- of the switch at particular states, thus constraining the whole ModelLayer
+-- network to that particular subspace of possible states. 
+data Phenotype = Phenotype { phenotypeName :: PhenotypeName
+                           , switchNodeState :: NodeState
+                           , fingerprint :: [SubSpace]
+                           } deriving (Show, Eq, Ord)
+
+type PhenotypeName = T.Text
+type SubSpace = [(NodeName, NodeState)]
+
+-- These are some intermediary types we need to go from parsing ModelMapping{}
+-- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
+-- kept separate in the DMMS file to keep it easy see the whole structure of
+-- each all at once. They are defined here to avoid an import cycle. 
+type DMMSModelMapping = [(NodeName, [NodeName])]
+type SwitchProfile = (NodeName, [Phenotype])
 
 type ModelGraph = Gr.Gr DMNode DMLink
 
@@ -591,14 +622,23 @@ findInAdjs n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
 
 -- Error handling types
 
-data ModelInvalid = DuplicateCoarseMapNodes DuplicateCoarseMapNodes
-                  | ExcessFineMapNodes ExcessFineMapNodes
-                  | MissingFineMapNodes MissingFineMapNodes
-                  | ExcessCoarseMapNodes ExcessCoarseMapNodes
-                  | MissingCoarseMapNodes MissingCoarseMapNodes
-                  | FineInMultipleCoarse FineInMultipleCoarse
-                  | DuplicatedNodeNames DuplicatedNodeNames
-                  | MissingCitations MissingCitations
+data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
+                  | ExcessFineMapNodes [NodeName]
+                  | MissingFineMapNodes [NodeName]
+                  | ExcessCoarseMapNodes [NodeName]
+                  | MissingCoarseMapNodes [NodeName]
+                  | FineInMultipleCoarse [NodeName]
+                  | DuplicatedNodeNames [NodeName]
+                  | DuplicateProfileSwitches [NodeName]
+                  | ExcessProfileSwitches [NodeName]
+                  | ProfileSwitchNotInModelGraph NodeName
+                  | MissingPhenotypes (NodeName, [NodeState])
+                  | ExcessPhenotypes (NodeName, [NodeState])
+                  | RepeatedSubSpaceNode
+                        (NodeName, NodeName, NodeState, [NodeName])
+                  | SubSpaceIsASubSet (SubSpace, [SubSpace])
+                  | DuplicatedPhenotypeNames [NodeName]
+--                   | MissingCitations MissingCitations
     deriving (Show, Eq)
 type DuplicateCoarseMapNodes = [NodeName]
 type ExcessFineMapNodes      = [NodeName]
@@ -607,7 +647,7 @@ type ExcessCoarseMapNodes    = [NodeName]
 type MissingCoarseMapNodes   = [NodeName]
 type FineInMultipleCoarse    = [NodeName]
 type DuplicatedNodeNames     = [NodeName]
-type MissingCitations = [BibTeXKey]
+-- type MissingCitations = [BibTeXKey]
 
 data GateInvalid = InconsistentNames
                  | DuplicateAssigns
@@ -703,71 +743,180 @@ type GateFromTable = NodeName
 
 
 -- It would be very easy to assemble DMModels with nonsensical maps between
--- model layers, so we never create a LayerBinding directly, only through his
+-- model layers, so we never create a LayerBinding directly, only through this
 -- smart constructor. This ensures that the coarse nodes and fine nodes
 -- from the map are bijective to the the nodes in the coarse and fine
 -- ModelLayers, respectively, and also that the mapping itself from
 -- fine -> coarse is surjective. 
-mkLayerBinding :: ModelMapping -> ModelLayer -> DMModel
+mkLayerBinding :: DMMSModelMapping -> [SwitchProfile] -> ModelLayer -> DMModel
                -> Validation [ModelInvalid] DMModel
-mkLayerBinding mMap mLayer mModel
-  | errs == [] = Success $ LayerBinding mMap mLayer mModel
-  | otherwise  = Failure errs
-    where
-      errs        = errorRollup testResults
-      testResults = [ noCoarseDupes $ fst <$> mMap
-                    , fineNodesmatch mapFineNodes mNodes
-                    , coarseNodesMatch  mapCoarseNodes graphNodes
-                    , isMapSurjective mMap
-                    ]
-      mapFineNodes = Set.toList $ Set.unions mapFineSets
-      mapCoarseNodes = Set.toList $ Set.fromList $ fst <$> mMap
-      graphNodes = (nodeName . nodeMeta . snd) <$> graphGrNodes
-      mNodes = (nodeName . nodeMeta . snd) <$> modelGrNodes
-      mapFineSets = (Set.fromList . snd) <$> mMap
-      graphGrNodes = (Gr.labNodes . modelGraph) mLayer
-      modelGrNodes = (Gr.labNodes . modelGraph . coarseLayer) mModel
+mkLayerBinding dmmsMMap sProfiles mLayer mModel =
+    ((dmmsMMap, sProfiles, mLayer, mModel)          <$
+    (noCoarseDupes $ fst <$> dmmsMMap)              <*
+    fineNodesmatch mapFineNodes mNodes              <*
+    coarseNodesMatch  mapCoarseNodes graphNodes     <*
+    isMapSurjective dmmsMMap) `bindValidation` mkModelMapping
+        where
+            mapFineNodes = Set.toList $ Set.unions mapFineSets
+            mapCoarseNodes = Set.toList $ Set.fromList $ fst <$> dmmsMMap
+            graphNodes = (nodeName . nodeMeta . snd) <$> graphGrNodes
+            mNodes = (nodeName . nodeMeta . snd) <$> modelGrNodes
+            mapFineSets = (Set.fromList . snd) <$> dmmsMMap
+            graphGrNodes = (Gr.labNodes . modelGraph) mLayer
+            modelGrNodes = (Gr.labNodes . modelGraph . coarseLayer) mModel
 
 -- Check that there are no duplicates in the coarse nodes
-noCoarseDupes :: [NodeName] -> Validation ModelInvalid [NodeName]
+noCoarseDupes :: [NodeName] -> Validation [ModelInvalid] [NodeName]
 noCoarseDupes cs = case Uniq.repeated cs of
     []   -> Success cs
-    errs -> Failure $ DuplicateCoarseMapNodes errs
+    errs -> Failure $ [DuplicateCoarseMapNodes errs]
 
 -- Check that the fine-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the DMModel. 
-fineNodesmatch :: [NodeName] -> [NodeName] -> Validation ModelInvalid [NodeName]
+fineNodesmatch :: [NodeName] -> [NodeName]
+               -> Validation [ModelInvalid] [NodeName]
 fineNodesmatch mapFineNodes moNodes
     | arePermutes mapFineNodes moNodes = Success mapFineNodes
-    | isSubset mapFineNodes moNodes    = Failure $ MissingFineMapNodes $
-                                            moNodes L.\\ mapFineNodes
-    | otherwise                           = Failure $ ExcessFineMapNodes $
-                                            mapFineNodes L.\\ moNodes
+    | isSubset mapFineNodes moNodes    = Failure [MissingFineMapNodes $
+                                            moNodes L.\\ mapFineNodes]
+    | otherwise                           = Failure [ExcessFineMapNodes $
+                                            mapFineNodes L.\\ moNodes]
 
 -- Check that the coarse-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the ModelGraph. This assumes that there are no
 -- duplicate coarse-grained nodes, as that is checked elsewhere. 
 coarseNodesMatch :: [NodeName] -> [NodeName]
-                 -> Validation ModelInvalid [NodeName]
+                 -> Validation [ModelInvalid] [NodeName]
 coarseNodesMatch mapCoarseNodes graphNodes
     | arePermutes mapCoarseNodes graphNodes = Success mapCoarseNodes
-    | isSubset mapCoarseNodes graphNodes    = Failure $ MissingCoarseMapNodes $
-                                            graphNodes L.\\ mapCoarseNodes
-    | otherwise                             = Failure $ ExcessCoarseMapNodes $
-                                            mapCoarseNodes L.\\ graphNodes
+    | isSubset mapCoarseNodes graphNodes    = Failure [MissingCoarseMapNodes $
+                                            graphNodes L.\\ mapCoarseNodes]
+    | otherwise                             = Failure [ExcessCoarseMapNodes $
+                                            mapCoarseNodes L.\\ graphNodes]
 
 -- Check that the ModelMapping itself is surjective. This assumes that the fine
 -- and coarse nodes from the ModelMapping do in fact correspond exactly to the
 -- nodes in the DMModel and ModelGraph, respectively, as this is tested
 -- elsewhere. 
-isMapSurjective :: ModelMapping -> Validation ModelInvalid [NodeName]
+isMapSurjective :: DMMSModelMapping -> Validation [ModelInvalid] [NodeName]
 isMapSurjective ms
     | dupes == Set.empty = Success $ fst <$> ms
-    | otherwise          = Failure $ FineInMultipleCoarse $ Set.toList dupes
+    | otherwise          = Failure [FineInMultipleCoarse $ Set.toList dupes]
     where
         dupes = nIntersection sets
         sets = (Set.fromList . snd) <$> ms
 
+-- The Phenotypes and NodeNames in a ModelMapping are parsed separately in a
+-- DMMS file. Here we combine them and check that the SwitchProfiles do not
+-- conflict with the ModelMapping. This presumes that the DMMSModelMapping has
+-- already been validated in mkLayerBinding. 
+mkModelMapping :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
+               -> Validation [ModelInvalid] DMModel
+mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) =
+    noDupeSwitches sProfiles                *>
+    noExtraSwitches dmmsMMap sProfiles      *>
+    allSwitchStatesCovered sProfiles mLayer *>
+    noSubSpaceRepeatedNodes sProfiles       *>
+    noSubSpaceSubSets sProfiles             *>
+    pure (LayerBinding mm mLayer mModel)
+    
+    where
+        mm = foldr (f sProfiles) [] dmmsMMap
+        f :: [SwitchProfile] -> (NodeName, [NodeName]) -> [Switch] -> [Switch]
+        f sProfs (nN, nNs) switches = case L.find ((== nN) . fst) sProfs of
+            Nothing -> (nN, (nNs, [])):switches
+            Just (_, phenotypes) -> (nN, (nNs, phenotypes)):switches
+
+noDupeSwitches :: [SwitchProfile] -> Validation [ModelInvalid] [SwitchProfile]
+noDupeSwitches sProfiles = case Uniq.repeated (fst <$> sProfiles) of
+    []   -> Success sProfiles
+    dSws -> Failure $ [DuplicateProfileSwitches dSws]
+
+noExtraSwitches :: DMMSModelMapping -> [SwitchProfile]
+                -> Validation [ModelInvalid] [SwitchProfile]
+noExtraSwitches dmmsMMap sProfiles = case excessSWs of
+    []  -> Success sProfiles
+    _ -> Failure $ [ExcessProfileSwitches excessSWs]
+    where
+        uqs = Uniq.sortUniq (fst <$> sProfiles)
+        excessSWs = uqs L.\\ (fst <$> dmmsMMap)
+
+allSwitchStatesCovered :: [SwitchProfile] -> ModelLayer
+                       -> Validation [ModelInvalid] [SwitchProfile]
+allSwitchStatesCovered sProfiles mLayer =
+    sequenceA $ sStatesCovered mLayer <$> sProfiles
+
+sStatesCovered :: ModelLayer -> SwitchProfile
+               -> Validation [ModelInvalid] SwitchProfile
+sStatesCovered mLayer sProfile@(sName, phs) = case L.find isSName nsPairs of
+    Nothing -> Failure [ProfileSwitchNotInModelGraph sName]
+    Just (_, nStates)
+        | L.sort sStates == L.sort nStates -> Success sProfile
+        | sStates L.\\ nStates == []
+                -> Failure [MissingPhenotypes (sName, nStates L.\\ sStates)]
+        | otherwise
+                -> Failure [ExcessPhenotypes (sName, sStates L.\\ nStates)]
+    where
+        isSName = (== sName) . fst
+        sStates = switchNodeState <$> phs
+        nsPairs = nsPair <$> (layerNodes mLayer)
+        nsPair n = ( (gNodeName . nodeGate) n
+                   , (states . gateAssigns . nodeGate) n)
+
+-- Internally to a SubSpace, no node should be repeated
+noSubSpaceRepeatedNodes :: [SwitchProfile]
+                        -> Validation [ModelInvalid] [SwitchProfile]
+noSubSpaceRepeatedNodes sProfiles = sequenceA $ go <$> sProfiles
+    where
+        go :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
+        go (sName, phenotypes) = case sequenceA $ go' sName <$> phenotypes of
+            Failure modInvss1 -> Failure modInvss1
+            Success phTss -> Success $ (,) sName (concat phTss)
+            where
+                go' :: NodeName -> Phenotype
+                    -> Validation [ModelInvalid] [Phenotype]
+                go' sN (Phenotype phN snNS sbSps) =
+                    (:[]) <$> (Phenotype phN snNS) <$> g2Results
+                    where
+                        g2Results :: Validation [ModelInvalid] [SubSpace]
+                        g2Results = sequenceA $ go'' sN phN snNS <$> sbSps
+                        go'' :: NodeName -> NodeName -> NodeState -> SubSpace
+                             -> Validation [ModelInvalid] SubSpace
+                        go'' sN1 phN1 snNS1 sbSps1
+                            | repeatedNNames == [] = Success sbSps1
+                            | otherwise = Failure [RepeatedSubSpaceNode err]
+                            where
+                                repeatedNNames = Uniq.repeated (fst <$> sbSps1)
+                                err = (sN1, phN1, snNS1, repeatedNNames)
+
+-- In the whole of a ModelMapping, no SubSpace should be a subset of any other.
+noSubSpaceSubSets :: [SwitchProfile]
+                  -> Validation [ModelInvalid] [SwitchProfile]
+noSubSpaceSubSets sProfiles =
+    case fst $ foldr f ([], subSpaceSets) subSpaceSets of
+    []   -> Success sProfiles
+    errs -> sequenceA errs
+    where
+        f _ (acc, []) = (acc, [])
+        f sSSet (acc, _:remainingHS) = (newAcc, remainingHS)
+            where
+                newAcc = case supersets of
+                    []  -> acc
+                    _ -> (Failure [SubSpaceIsASubSet 
+                            (Set.toList sSSet, supersets)]) : acc
+                    where
+                        supersets = Set.toList <$>
+                                (filter (Set.isSubsetOf sSSet) remainingHS)
+        subSpaceSets = Set.fromList <$> subSpaces
+        subSpaces = concatMap fingerprint (concatMap snd sProfiles)
+
+-- Split a ModelMapping into a DMMSModelMapping and a [SwitchProfile]. 
+modelMappingSplit :: ModelMapping -> (DMMSModelMapping, [SwitchProfile])
+modelMappingSplit = foldr f ([], [])
+    where
+        f (nN, (nns, phs)) acc
+            | phs == [] = BF.first ((nN, nns):) acc
+            | otherwise = BF.bimap ((nN, nns):) ((nN, phs):) acc
 
 -- It would be very easy to blindly create nonsensical gates, so we never create
 -- [NodeStateAssign] directly, only through these smart constructors.
@@ -1092,10 +1241,10 @@ nodeRange n = (name, range)
         range = maximum $ ((fst <$>) . gateAssigns . nodeGate) n
 
 
--- Extract all the DMNodes from a DMModel SUPPRESSED
--- modelNodes :: DMModel -> [[DMNode]]
--- modelNodes (Fine ml) = [layerNodes ml]
--- modelNodes (LayerBinding _ mL dmM) = (layerNodes mL) : (modelNodes dmM)
+-- Extract all the DMNodes from a DMModel
+modelNodes :: DMModel -> [[DMNode]]
+modelNodes (Fine ml) = [layerNodes ml]
+modelNodes (LayerBinding _ mL dmM) = (layerNodes mL) : (modelNodes dmM)
 
 -- Extract all the Gr.LNode DMNodes from a DMModel
 modelNodes' :: DMModel -> [[Gr.LNode DMNode]]

@@ -8,6 +8,11 @@ module Compare
     , FurtherCompute(..)
     , DMModelDiff(..)
     , MappingDiff
+    , DMMSMappingDiff
+    , SwitchProfilesDiff
+    , SwitchDiff
+    , PhenotypeDiff
+    , PDiff(..)
     , LayerDiff
     , NodeDiff(..)
     , LinkDiff
@@ -40,7 +45,19 @@ data DMModelDiff
     | FineDiff LayerDiff
     deriving (Show, Eq)
 
-type MappingDiff = SplitDiff ModelMapping (SplitDiff ModelMapping ModelMapping)
+type MappingDiff = (DMMSMappingDiff, SwitchProfilesDiff)
+type DMMSMappingDiff = SplitDiff DMMSModelMapping
+                      (SplitDiff DMMSModelMapping DMMSModelMapping)
+type SwitchProfilesDiff = SplitDiff [SwitchProfile] [SwitchDiff]
+type SwitchDiff = (NodeName, PhenotypeDiff)
+type PhenotypeDiff = SplitDiff [Phenotype] [PDiff]
+data PDiff = PDiff { pDiffName :: PhenotypeName
+                   , switchNSDiff :: Maybe (NodeState, NodeState)
+-- We call fingerprints different if they are not cyclic permutations of each
+-- other. 
+                   , fPrintDiff :: Maybe ([SubSpace], [SubSpace])
+                   } deriving (Show, Eq)
+
 type LayerDiff = ((ModelName, ModelName), SplitDiff [NodeName] [NodeDiff])
 data NodeDiff = NodeDiff { nDiffName :: NodeName
                          , nTypeDiff :: Maybe (NodeType, NodeType)
@@ -68,17 +85,68 @@ dmMCompare mL mR = case mrDepth == mlDepth of
         dmMCompare' (Fine mL1) (Fine mL2) = FineDiff $ layerCompare mL1 mL2
 
 mapCompare :: ModelMapping -> ModelMapping -> MappingDiff
-mapCompare mL mR = let 
-    lSwitchName = [x | x <- mL, notElem (fst x) (fst <$> mR)]
-    rSwitchName = [x | x <- mR, notElem (fst x) (fst <$> mL)]
-    fcSwitchNameL = [x | x <- mL, elem (fst x) (fst <$> mR)]
-    fcSwitchNameR = [x | x <- mR, elem (fst x) (fst <$> mL)]
-    lSwitchContent = fcSwitchNameL L.\\ fcSwitchNameR
-    rSwitchContent = fcSwitchNameR L.\\ fcSwitchNameL
+mapCompare mL mR = ( dmmsMapCompare lDMMSMMaping rDMMSMMaping
+                   , switchesCompare lSwitchProfiles rSwitchProfiles
+                   )
+    where 
+        (lDMMSMMaping, lSwitchProfiles) = modelMappingSplit mL
+        (rDMMSMMaping, rSwitchProfiles) = modelMappingSplit mR
+
+dmmsMapCompare :: DMMSModelMapping -> DMMSModelMapping -> DMMSMappingDiff
+dmmsMapCompare dmmsML dmmsMR = let 
+    lSwitchNames = [x | x <- dmmsML, notElem (fst x) (fst <$> dmmsMR)]
+    rSwitchNames = [x | x <- dmmsMR, notElem (fst x) (fst <$> dmmsML)]
+    fcSwitchNamesL = [x | x <- dmmsML, elem (fst x) (fst <$> dmmsMR)]
+    fcSwitchNamesR = [x | x <- dmmsMR, elem (fst x) (fst <$> dmmsML)]
+    lSwitchContent = fcSwitchNamesL L.\\ fcSwitchNamesR
+    rSwitchContent = fcSwitchNamesR L.\\ fcSwitchNamesL
     fcSwitchContent = lSwitchContent `L.intersect` rSwitchContent
-  in SD (LD lSwitchName) (RD rSwitchName) (FC (SD (LD lSwitchContent)
-                                                  (RD rSwitchContent)
-                                                  (FC fcSwitchContent)))
+  in SD (LD lSwitchNames) (RD rSwitchNames) (FC (SD (LD lSwitchContent)
+                                                    (RD rSwitchContent)
+                                                    (FC fcSwitchContent)))
+
+switchesCompare :: [SwitchProfile] -> [SwitchProfile] -> SwitchProfilesDiff
+switchesCompare spsL spsR = let
+    lSwitchNames = [x | x <- spsL, notElem (fst x) (fst <$> spsR)]
+    rSwitchNames = [x | x <- spsR, notElem (fst x) (fst <$> spsL)]
+    fcSwitchNamesL = [x | x <- spsL, elem (fst x) (fst <$> spsR)]
+    fcSwitchNamesR = [x | x <- spsR, elem (fst x) (fst <$> spsL)]
+    fcSNs = zipWith (\(x, xs) (_, ys) -> (x, (xs, ys)))
+                    (L.sortOn fst fcSwitchNamesL)
+                    (L.sortOn fst fcSwitchNamesR)
+  in SD (LD lSwitchNames) (RD rSwitchNames) (FC (spCompare <<$>> fcSNs))
+
+spCompare :: ([Phenotype], [Phenotype]) -> PhenotypeDiff
+spCompare (phsL, phsR) = let
+    lPhenotypes = [x | x <- phsL, notElem (phenotypeName x)
+                                          (phenotypeName <$> phsR)]
+    rPhenotypes = [x | x <- phsR, notElem (phenotypeName x)
+                                          (phenotypeName <$> phsL)]
+    fcPhenotypesL = [x | x <- phsL, elem (phenotypeName x)
+                                         (phenotypeName <$> phsR)]
+    fcPhenotypesR = [x | x <- phsR, elem (phenotypeName x)
+                                         (phenotypeName <$> phsL)]
+    fcPhs = zipWith f (L.sortOn phenotypeName fcPhenotypesL)
+                      (L.sortOn phenotypeName fcPhenotypesR)
+    f p1 p2 = ( phenotypeName p1
+              , (switchNodeState p1, switchNodeState p2)
+              , (fingerprint p1, fingerprint p2)
+              )
+  in SD (LD lPhenotypes) (RD rPhenotypes) (FC (phenotypeCompare <$> fcPhs))
+        
+phenotypeCompare :: ( PhenotypeName
+                    , (NodeState, NodeState)
+                    , ([SubSpace], [SubSpace])
+                    )
+                 -> PDiff
+phenotypeCompare (pN, (nSL, nSR), (sbspL, sbspR)) = PDiff pN sNSD fPD
+    where
+        sNSD
+            | nSL == nSR = Nothing
+            | otherwise  = Just (nSL, nSR)
+        fPD
+            | areCyclicPermutes sbspL sbspR = Nothing
+            | otherwise                     = Just (sbspL, sbspR)
 
 layerCompare :: ModelLayer -> ModelLayer -> LayerDiff
 layerCompare mlL mlR = let

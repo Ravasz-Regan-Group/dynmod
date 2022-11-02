@@ -1,13 +1,13 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e9e15aaeb6fa32d3342fb62242f9676e6d22ddadc4abb7dadb9a955eeb2c29e4
+-- hash: 6c9ea66c46b21bcf9871b1ea58e348150c71191570fa9a9b959da3cbb770c527
 
 name:           dynmod
-version:        0.6.1.3
+version:        0.6.2.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -46,6 +46,7 @@ library
       Properties.Attractors
       Figures
   other-modules:
+      Parse.Attractor
       Text.LaTeX.DynMod.Extra
       Paths_dynmod
   hs-source-dirs:
@@ -55,6 +56,7 @@ library
       HaTeX
     , Unique
     , base >=4.7 && <5
+    , bimap
     , bytestring
     , colour
     , containers
@@ -90,7 +92,7 @@ executable dynmod
       Paths_dynmod
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -j -Wall -j
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2 -j -Wall
   build-depends:
       HaTeX
     , base >=4.7 && <5

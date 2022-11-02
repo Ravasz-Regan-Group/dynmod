@@ -4,37 +4,45 @@
 module Types.Simulation
     ( Simulation
     , ModelEnv (..)
+    , Thread
     , Attractor
     , AttractorSet
     , Folder (..)
     , LayerVec
+    , FixedVec
     , LayerSpecs (..)
     , layerPrep
-    , LayerNameIndexMap
+    , LayerNameIndexBimap
     , PSStepper
+    , InvalidLVReorder (..)
+    , synchStep
     , topStates
     , mkAttractor
     , layerVecReorder
     , inputs
     , inputCombos
+    , isAtt
+    , lNISwitchThread
     ) where
 
 -- import Debug.Trace
-import qualified Data.List as L
-import Data.Maybe (fromJust)
-import qualified Data.Sequence as S
+import Types.DMModel
+import Utilities
+import Data.Validation
 import Control.Monad.State.Strict
 import System.Random.Stateful
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
-import qualified Data.Text as T
+import qualified Data.Bimap as BM
 import qualified Data.Graph.Inductive as Gr
 import qualified Control.Parallel.Strategies as P
 import qualified Data.List.Unique as Uniq
-import Types.DMModel
-import Utilities
+import Data.Maybe (fromJust)
+import qualified Data.Sequence as S
+import qualified Data.List as L
+
 
 type Simulation = State StdGen
 
@@ -76,8 +84,9 @@ data Folder a = Folder {
 -- Vector representation of the state of the ModelLayer whose environment you
 -- are in.
 type LayerVec = U.Vector NodeState
--- Lookup order to identify NodeNames with LayerVec positions. 
-type LayerNameIndexMap = M.HashMap NodeName NodeIndex
+-- Bijective map between NodeNames and LayerVec positions. Possible because
+-- NodeNames are validated unique in any given DMMS file. 
+type LayerNameIndexBimap = BM.Bimap NodeName NodeIndex
 -- For a given gate, the indices for its inputs in a LayerVec, in its GateOrder.
 type IndexVec = U.Vector Int
 -- All of the IndexVecs for the ModelLayer, in LayerVec order. 
@@ -87,7 +96,7 @@ type TruthTableList = [TruthTable]
 -- The ranges for all of the DMNodes for the ModelLayer, in LayerVec order. 
 type LayerRangeVec = U.Vector (Int, RangeTop)
 data LayerSpecs = LayerSpecs { 
-                  lNameIndexM :: LayerNameIndexMap
+                  lNameIndexM :: LayerNameIndexBimap
                 , lRangeVec   :: LayerRangeVec
                 , tTableList  :: TruthTableList
                 , iVecList    :: IndexVecList
@@ -111,6 +120,10 @@ type AttractorSet = M.HashMap Attractor (HS.HashSet LayerVec)
 type PSStepper = LayerVec -> LayerVec
 -- Noisy, synchronous
 type PAStepper = LayerVec -> Simulation LayerVec
+
+data InvalidLVReorder = NewOldOrderingMismatch
+                      | OldOrderingLVMismatch
+                      deriving (Show, Eq)
 
 -- Top level accumulation of some property of the ModeLayer that we are
 -- collecting data on, when we follow the algorithm diagrammed below. 
@@ -240,30 +253,30 @@ chainSR (buildSeq, g) nRange = (buildSeq S.|> nState, newG)
 -- a separate LayerVec for each other state the node could be in, which is why
 -- neighbors returns a [[LayerVec]] instead of a [LayerVec]. 
 neighbors :: LayerRange
-          -> LayerNameIndexMap
+          -> LayerNameIndexBimap
           -> LayerVec
           -> [[LayerVec]]
 neighbors r o s = [s]:neighborhood
     where
         neighborhood = ((uncurry (otherStates s o)) . inZip) <$> nodeNames
-        inZip x = (x, ((s U.! ) . (o M.!)) x)
+        inZip x = (x, ((s U.! ) . (o BM.!)) x)
         nodeNames = M.keys r
 
 -- Compute LayerVecs resulting from a change in the state of the given node to
 -- any of the other states it could be in. 
 otherStates :: LayerVec
-            -> LayerNameIndexMap
+            -> LayerNameIndexBimap
             -> NodeName
             -> NodeState
             -> [LayerVec]
-otherStates lVec orderMap nName rangeTop = vecs
+otherStates lVec lniBMap nName rangeTop = vecs
     
     where
         vecs = sequenceA ((flip (U.//)) <$> updateList) lVec
         currentState = lVec U.! nodeIndex
         updateList = (:[]) <$> (zip (repeat nodeIndex) others)
         others = filter (/= currentState) $ fillDown rangeTop
-        nodeIndex = orderMap M.! nName
+        nodeIndex = lniBMap BM.! nName
 
 
 tableGateEval :: LayerVec -> IndexVec -> TruthTable -> NodeState
@@ -316,15 +329,16 @@ asyncStep vecLength ttMap ivMap lVec = do
         newVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
     return newVec
 
--- Construct (LayerNameIndexMap, LayerRangeVec, TruthTableList, IndexVecList)
+-- Construct (LayerNameIndexBimap, LayerRangeVec, TruthTableList, IndexVecList)
 -- from a ModelLayer. Ordering is alphabetical by node name in each. 
 layerPrep :: ModelLayer -> LayerSpecs
-layerPrep mL = LayerSpecs lniMap lrVec ttList ivList
+layerPrep mL = LayerSpecs lniBMap lrVec ttList ivList
     where
-        lniMap = M.fromList $ zip (gNodeName <$> orderedNGates) [0..]
+        lniBMap = BM.fromList $ zip (gNodeName <$> orderedNGates) [0..]
         lrVec = U.fromList $ ((\(_, n) -> (0, n)) . nodeRange) <$> orderedNodes
         ttList = gateTable <$> orderedNGates
-        ivList = U.fromList <$> ((lniMap M.!) <<$>> gateOrder <$> orderedNGates)
+        ivList = U.fromList <$>
+            ((lniBMap BM.!) <<$>> gateOrder <$> orderedNGates)
         orderedNGates = nodeGate <$> orderedNodes
         orderedNodes = L.sortOn (nodeName . nodeMeta) nodes
         nodes = layerNodes mL
@@ -355,34 +369,34 @@ inputs mG = (fromJust . Gr.lab mG) <<$>> ((fstOf3 . Uniq.complex) <$> reps)
 -- networks with software that can't do integer-valued nodes. 
 inputCombos :: [[DMNode]]
             -> [NodeName]
-            -> LayerNameIndexMap
+            -> LayerNameIndexBimap
             -> [FixedVec]
-inputCombos nodeLists nos lniMap = U.concat <$> (sequenceA iLevels)
+inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
     where
         iLevels :: [[FixedVec]]
-        iLevels = inputLevels lniMap <$> strippedNLs
+        iLevels = inputLevels lniBMap <$> strippedNLs
         strippedNLs = filter stripper nodeLists
         stripper = not . (flip elem nos) . nodeName . nodeMeta . head
 
 -- We check that all the nodes are binary, else why bother with a multi-node
 -- input. We assume they are wired such that, from first to last in the list,
--- , for eg a 2-node input, 000, 001, 011, and 111 will be the attractors of the
+-- , for eg a 3-node input, 000, 001, 011, and 111 will be the attractors of the
 -- input that represent the zeroth through third levels. In this way, an n-level
 -- input will be represented by n-1 nodes. 
-inputLevels :: LayerNameIndexMap
+inputLevels :: LayerNameIndexBimap
             -> [DMNode]
             -> [FixedVec]
 inputLevels _ [] = []
-inputLevels lniMap [n] = vecs
+inputLevels lniBMap [n] = vecs
     where
         levels = fst <$> ((gateAssigns . nodeGate) n)
         nName = (nodeName . nodeMeta) n
-        vecs = U.singleton <$> (zip (repeat $ lniMap M.! nName) levels)
-inputLevels lniMap ns
+        vecs = U.singleton <$> (zip (repeat $ lniBMap BM.! nName) levels)
+inputLevels lniBMap ns
     | enbyList /= [] = error $ "Non-binary nodes in multi-node input: " ++
             (show enbyList)
     | otherwise = let pairsLists = (zip indices) <$> levelLists
-                      indices = ((lniMap M.!) . nodeName . nodeMeta) <$> ns
+                      indices = ((lniBMap BM.!) . nodeName . nodeMeta) <$> ns
                       levelLists = mkLevels levels
                       levels = (length ns) + 1
                   in U.fromList <$> pairsLists
@@ -409,18 +423,71 @@ soleSelfLoops mG = onlys
 
 -- Re-order a LayerVec according to a new List of NodeNames. Basic error
 -- checking, but use at your own risk. 
-layerVecReorder :: LayerNameIndexMap
+layerVecReorder :: LayerNameIndexBimap
                 -> [NodeName]
                 -> LayerVec
-                -> Either T.Text LayerVec
-layerVecReorder lniMap newOrder lVec
-    | (L.sort . M.keys) lniMap /= L.sort newOrder =
-        Left "NewOldOrderingMismatch"
-    | M.size lniMap /= U.length lVec = Left "OldOrderingLayerVecMismatch"
-    | otherwise = Right reorderedVec
+                -> Either InvalidLVReorder LayerVec
+layerVecReorder lniBMap newOrder lVec
+    | (L.sort . BM.keys) lniBMap /= L.sort newOrder =
+        Left NewOldOrderingMismatch
+    | BM.size lniBMap /= U.length lVec = Left OldOrderingLVMismatch
+    | otherwise = Right $  U.backpermute lVec permuteVec
         where
-             permuteVec = U.fromList $ (lniMap M.!) <$> newOrder
-             reorderedVec = U.backpermute lVec permuteVec
+             permuteVec = U.fromList $ (lniBMap BM.!) <$> newOrder
+
+-- Re-order a LayerVec according to a new LayerNameIndexBimap. Basic error
+-- checking, but use at your own risk. 
+lNISwitchVec :: LayerNameIndexBimap
+             -> LayerNameIndexBimap
+             -> LayerVec
+             -> Either InvalidLVReorder LayerVec
+lNISwitchVec oldLNIBM newLNIBM lVec
+    | (L.sort . BM.keys) oldLNIBM /= (L.sort . BM.keys) newLNIBM =
+        Left NewOldOrderingMismatch
+    | BM.size oldLNIBM /= U.length lVec = Left OldOrderingLVMismatch
+    | otherwise = Right $ U.backpermute lVec permuteVec
+        where
+            permuteVec = U.fromList $ (oldLNIBM BM.!) <$> newOrder
+            newOrder = ((fst <$>) . L.sortOn snd . BM.toList) newLNIBM
+
+-- Reorder the individual LayerVecs in the thread according to the
+-- new LayerNameIndexBimap, and then cycle the thread so that it is a proper
+-- (possible) Attractor for that LayerNameIndexBimap. Basic error checking, but
+-- use at your own risk. 
+lNISwitchThread :: LayerNameIndexBimap
+                -> LayerNameIndexBimap
+                -> Thread
+                -> Validation [InvalidLVReorder] Attractor
+lNISwitchThread oldLNIBM newLNIBM thread =
+                    mkAttractor <$> preppedValid
+    where
+        preppedValid :: Validation [InvalidLVReorder] Attractor
+        preppedValid = sequenceA $ (liftError (:[])) <$> switchedVecs
+        switchedVecs = lNISwitchVec oldLNIBM newLNIBM <$> thread
+
+-- Check if a Thread (with its LayerNameIndexBimap), is an attractor of a 
+-- PSStepper (with its LayerNameIndexBimap). 
+isAtt :: LayerNameIndexBimap
+      -> PSStepper
+      -> LayerNameIndexBimap
+      -> Thread
+      -> Bool
+isAtt dmmsLNIBMap dmmsPSStepper csvLNIBMap thread = case testThread of
+    Failure _ -> False
+    Success testAtt -> (go . B.toList) testAtt
+    where
+        testThread = lNISwitchThread csvLNIBMap dmmsLNIBMap thread
+        go :: [LayerVec] -> Bool
+        go [] = True
+        go [v] = dmmsPSStepper v == v
+        go (v1:v2:vs) = go' $ (v1:v2:vs) <> [v1]
+            where
+                go' :: [LayerVec] -> Bool
+                go' [] = True
+                go' [_] = True
+                go' (vA:vB:vss) = (dmmsPSStepper vA == vB) && (go' (vB:vss))
+
+
 
 -- Basic network property algorithm step (Klemm algorithm):
 --    ┌────────────┐                 ┌───────────┐                              
@@ -461,13 +528,14 @@ layerVecReorder lniMap newOrder lVec
 -- │ Attractor │                                                                
 -- └───────────┘                                                                
 
+-- 4-node input, 0000, 0001, 0011, 0111, and 1111 (ABCD ordering)
 -- Input graphs:
 -- 
 --  ┌───┐                                           
 --  │   │                                           
 --  ▼   │                                           
 --  .   │                                           
--- ( )──┘                                           
+-- (A)──┘                                           
 --  '                                               
 --  │                                               
 --  │                                               
@@ -476,7 +544,7 @@ layerVecReorder lniMap newOrder lVec
 --  │            │   │                              
 --  │            │   │                              
 --  │            .   │                              
---  ├──────────▶( )◀─┘                              
+--  ├──────────▶(B)◀─┘                              
 --  │            '                                  
 --  │            │                                  
 --  │            │                                  
@@ -485,7 +553,7 @@ layerVecReorder lniMap newOrder lVec
 --  │            │                │   │             
 --  │            │                │   │             
 --  │            │                .   │             
---  ├────────────┼──────────────▶( )◀─┘             
+--  ├────────────┼──────────────▶(C)◀─┘             
 --  │            │                '                 
 --  │            │                │                 
 --  │            │                │                 
@@ -494,7 +562,7 @@ layerVecReorder lniMap newOrder lVec
 --  │            │                │            │   │
 --  │            │                │            │   │
 --  │            │                │            .   │
---  └────────────┴────────────────┴──────────▶( )◀─┘
+--  └────────────┴────────────────┴──────────▶(D)◀─┘
 --                                             '    
 
 

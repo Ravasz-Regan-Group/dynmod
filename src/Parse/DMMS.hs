@@ -34,6 +34,7 @@ import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
 
+
 type Parser = Parsec Void T.Text
 
 sc :: Parser ()
@@ -157,8 +158,10 @@ modelParse = between (symbol "Model{") (symbol "Model}")
     (
         (try 
             ((runPermutation $
-                (,,)
+                (,,,)
                     <$> toPermutation modelMappingParse
+--            There might not be SwitchProfiles{}, so provide an empty default.
+                    <*> toPermutationWithDefault [] switchProfilesParse
                     <*> (ModelLayer <$> toPermutation modelGraphParse
                                     <*> toPermutation modelConfigParse)
                     <*> toPermutation modelParse
@@ -167,9 +170,9 @@ modelParse = between (symbol "Model{") (symbol "Model}")
             )
         )
         <|> (Fine <$> modelLayerParse)
-    ) >>= nodeDupeCheck >>= nodeDifferentiate
+    ) >>= nodeDupeCheck >>= nodeDifferentiate >>= phenotypeDupeCheck
 
--- Return a DMModel whose Nodes are unique in all layers. This is useful when
+-- Return a DMModel whose Gr.Nodes are unique in all layers. This is useful when
 -- doing anything related to the ModelMappings, since by definition they work
 -- with Gr.LNodes from different Gr.Gr DMNode DMLink graphs. 
 nodeDifferentiate :: DMModel -> Parser DMModel
@@ -216,17 +219,65 @@ nodeDupeCheck dM
         ns = (nodeName . nodeMeta) <$> (concatMap layerNodes layers)
         layers = modelLayers dM  
 
-modelMappingCheck :: (ModelMapping, ModelLayer, DMModel) -> Parser DMModel
-modelMappingCheck (mMap, mLayer, mModel) =
-    case mkLayerBinding mMap mLayer mModel of
+-- Make sure that Phenotype PhenotypeNames are globally unique. 
+phenotypeDupeCheck :: DMModel -> Parser DMModel
+phenotypeDupeCheck dM
+    | repeats == [] = return dM
+    | otherwise = fail $ show $ DuplicatedPhenotypeNames repeats
+    where
+        repeats = repeated pNs
+        pNs = phenotypeName <$> (concatMap (snd . snd) switches)
+        switches = (concat . modelMappings) dM
+
+-- Assemble the pieces of the LayerBinding, with various consistency checks. 
+modelMappingCheck :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
+                  -> Parser DMModel
+modelMappingCheck (dmmsMap, sProfiles, mLayer, mModel) =
+    case mkLayerBinding dmmsMap sProfiles mLayer mModel of
         Success dmModel -> return dmModel
         Failure errs    -> fail $ show errs
 
 -- Parse the mapping from one layer of a model to the next. 
-modelMappingParse :: Parser ModelMapping
+modelMappingParse :: Parser DMMSModelMapping
 modelMappingParse = between (symbol "ModelMapping{") (symbol "ModelMapping}") $
     some ((,) <$> identifier "Switch" <*> parens 
            ((fmap T.pack) <$> sepBy1 (some $ alphaNumChar <|> char '_') comma))
+
+-- Parse the phenotypes of the switches, so that we may usefully label the
+-- attractors of the corresponding fine ModelLayer. 
+switchProfilesParse :: Parser [SwitchProfile]
+switchProfilesParse = between (symbol "SwitchProfiles{") 
+                              (symbol "SwitchProfiles}") $
+                                some switchPhenotypesParse
+
+switchPhenotypesParse :: Parser SwitchProfile
+switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
+                                (symbol "SwitchPhenotypes}") $
+    runPermutation $
+        (,) <$> toPermutation (identifier "SwitchName")
+            <*> toPermutation (some phenotypeParse)
+
+phenotypeParse :: Parser Phenotype
+phenotypeParse = do
+    phName <- variable
+    void colon
+    switchState <- integer
+    void stateAssign
+    phFingerprint <- fingerPrintParse
+    return $ Phenotype phName switchState phFingerprint
+
+-- Note that you may not write to an element of a SubSpace without a state, even
+-- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 
+fingerPrintParse :: Parser [SubSpace]
+fingerPrintParse = sepBy1 (hparens (fingerNodeParse `sepBy1` comma))
+                          (symbol "->")
+
+fingerNodeParse :: Parser (NodeName, NodeState)
+fingerNodeParse = do
+    fingerNode <- variable
+    void colon
+    fingerNodeState <- integer
+    return (fingerNode, fingerNodeState)
 
 modelLayerParse :: Parser ModelLayer
 modelLayerParse = runPermutation $
@@ -812,7 +863,8 @@ parseDiscreteLogic :: Parser LogicalGate
 parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
     ((try pInt <|> pBin) >>= gateConsistencyCheck)
         where pInt = some parseNodeStateAssign
-              pBin = some parseBoolNodeStateAssign
+            -- A boolean gate will by definition have 1 assignment. 
+              pBin = (:[]) <$> parseBoolNodeStateAssign
 
 -- Sanity check on gate definitions. Return a NodeGate on success. 
 -- Return a useful error message on failure. Use mkLogicalGate. 
