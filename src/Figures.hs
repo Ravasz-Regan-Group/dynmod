@@ -4,7 +4,7 @@
 module Figures
     ( attractorGrid
     , rnGrid
-    , attractorHMSVGText
+    , attractorHMSVG
     , attractorCheck
     , mkBarcode
     ) where
@@ -27,6 +27,7 @@ import qualified Data.List as L
 import Data.Bifunctor
 import Control.Monad.Reader (Reader, runReader, ask)
 
+type SVGText = T.Text
 
 data AttractorsInvalid =
       SwitcheNamesDifferent ([NodeName], [NodeName])
@@ -37,7 +38,8 @@ data AttractorsInvalid =
 
 type ColorMap = M.HashMap NodeName LocalColor
 
-type EnvironMentSpaceMapFigure = []
+-- Types to construct 5D diagrams with BarCodeClusters.
+-- type EnvironMentSpaceMapFigure = []
 type BarcodeCluster = [Barcode]
 type Barcode = [Bar]
 type Bar = (LocalColor, [Slice])
@@ -88,8 +90,8 @@ attractorHMElement ass mult = renderDia SVG
                                    )
                                    (heatMapDia ass mult)
 
-attractorHMSVGText :: [[Double]] -> Int -> T.Text
-attractorHMSVGText ass mult = LT.toStrict $ renderText $
+attractorHMSVG :: [[Double]] -> Int -> SVGText
+attractorHMSVG ass mult = LT.toStrict $ renderText $
     attractorHMElement ass mult
 
 
@@ -101,24 +103,44 @@ rnGrid r n mult = mkRow <$> [1..rD]
         nD = fromIntegral n
         multD = fromIntegral mult
 
+
+
+attractorESpaceFigure :: Reader (DMModel, AttractorBundle)
+                                (Validation [AttractorsInvalid] SVGText)
+attractorESpaceFigure = undefined -- do
+--     aCheck <- attractorCheck
+--     return case aCheck of
+--         Failure xs -> Failure xs
+--         Success aHashSet -> do
+--             (dmModel, _) <- ask
+--             let cMap = mkColorMap dmModel
+    
+
 -- Are the Attractors from the parsed attractor.csv actually Attractors of the
--- given ModelLayer form the parsed DMMS file?
-attractorCheck :: (DMMSModelMapping, LayerNameIndexBimap, HS.HashSet Attractor)
-               -> (DMMSModelMapping, ModelLayer)
-               -> Validation [AttractorsInvalid] (HS.HashSet Attractor)
-attractorCheck (csvMMap, csvLNIBMap, atts) (dmmsMMap, mL) = case mapResults of
-    err:errs -> Failure (err:errs)
-    [] -> (validationed valF orderedAtts) <* checkedAtts
-    where
-        checkedAtts :: Validation [AttractorsInvalid] (HS.HashSet Attractor)
-        checkedAtts = HS.fromList <$> (sequenceA $
-            attCheck dmmsLNIBMap dmmsPSStepper csvLNIBMap <$> (HS.toList atts))
-        orderedAtts :: Validation [InvalidLVReorder] (HS.HashSet Attractor)
-        orderedAtts = HS.fromList <$> (sequenceA $
-            lNISwitchThread csvLNIBMap dmmsLNIBMap <$> (HS.toList atts))
-        dmmsPSStepper = synchStep dmmsIVList dmmsTTList
-        LayerSpecs dmmsLNIBMap _ dmmsTTList dmmsIVList = layerPrep mL
-        mapResults = mmCheck csvMMap dmmsMMap
+-- given ModelLayer form the parsed DMMS file? Assumes that the given DMModel
+-- has at least 2 layers. 
+attractorCheck :: Reader (DMModel, AttractorBundle)
+                         (Validation [AttractorsInvalid] (HS.HashSet Attractor))
+attractorCheck = do
+    (dmModel, (csvMMap, csvLNIBMap, atts)) <- ask
+    let dmmsMMap = (fst . modelMappingSplit . last . modelMappings) dmModel
+        mL = fineLayer dmModel
+    return $ case mmCheck csvMMap dmmsMMap of
+        err:errs -> Failure (err:errs)
+        [] -> (validationed valF orderedAtts) <* checkedAtts
+            where
+                checkedAtts :: Validation [AttractorsInvalid]
+                                          (HS.HashSet Attractor)
+                checkedAtts = HS.fromList <$> (sequenceA $ attCheck
+                    dmmsLNIBMap dmmsPSStepper csvLNIBMap <$>
+                    (HS.toList atts))
+                orderedAtts :: Validation [InvalidLVReorder]
+                                          (HS.HashSet Attractor)
+                orderedAtts = HS.fromList <$> (sequenceA $
+                    lNISwitchThread csvLNIBMap dmmsLNIBMap <$>
+                    (HS.toList atts))
+                dmmsPSStepper = synchStep dmmsIVList dmmsTTList
+                LayerSpecs dmmsLNIBMap _ dmmsTTList dmmsIVList = layerPrep mL
 
 valF :: Validation [InvalidLVReorder] (HS.HashSet Attractor)
      -> Validation [AttractorsInvalid] (HS.HashSet Attractor)
@@ -195,7 +217,7 @@ mkSlice att sColor ph = case matchCheck att fPrint of
     [] -> EmptySlice
     ms -> MSlice $ MatchSlice pLoopBool attSize ms
     where
-        pLoopBool = length fPrint > 1
+        pLoopBool = (length fPrint) > 1
         fPrint = fingerprint ph
         attSize = B.length att
 

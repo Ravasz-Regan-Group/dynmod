@@ -2,8 +2,9 @@
 {-# LANGUAGE TypeFamilies      #-}
 
 module Parse.Attractor
-    ( attractorFileParse ) 
-      where
+    ( attractorFileParse
+    , AttractorBundle
+    ) where
 
 import Utilities
 import Types.DMModel
@@ -17,11 +18,10 @@ import qualified Data.Sequence as S
 import qualified Data.Foldable as F
 import qualified Data.List as L
 
--- Parse out the HS.HashSet Attractor, LayerNameIndexMap, and ModelMapping from
--- from an attractor CSV file. 
-attractorFileParse :: T.Text -> ( DMMSModelMapping
-                                , LayerNameIndexBimap
-                                , HS.HashSet Attractor)
+
+-- Parse out the DMMSModelMapping, LayerNameIndexBimap, and HS.HashSet Attractor
+-- (an AttractorBundle) from an attractor CSV file. 
+attractorFileParse :: T.Text -> AttractorBundle
 attractorFileParse csv = (mm, lniBMap, atts)
     where
         mm = ((F.toList <<$>>) . F.toList) $ L.foldl' mmFolder S.Empty mmPairs

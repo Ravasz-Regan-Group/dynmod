@@ -123,7 +123,7 @@ attFindDMMS f mMap mEnv = do
     putStr "With settings: "
     PS.pPrint (randomN mEnv, noisyP mEnv, noisyN mEnv)
     let atts = evalState (attractors mEnv) gen
-    writeAttractorSet f lniBMap mMap atts
+    writeAttractorBundle f lniBMap mMap atts
 
 gridDMMS :: Path Abs File -> DMMSModelMapping -> Int -> ModelEnv -> IO ()
 gridDMMS f mMap mult mEnv = do
@@ -132,7 +132,7 @@ gridDMMS f mMap mult mEnv = do
         LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         attGrid = evalState (attractorGrid mEnv mult) gen
         doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
-        hMapSVGText = attractorHMSVGText doublesGrid mult
+        hMapSVGText = attractorHMSVG doublesGrid mult
         allAtts = mconcat $ mconcat <$> attGrid
     (fName, _) <- splitExtension $ filename f
     let fNameString = fromRelFile fName
@@ -145,14 +145,14 @@ gridDMMS f mMap mult mEnv = do
     hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
     hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
     RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-    writeAttractorSet f lniBMap mMap allAtts
+    writeAttractorBundle f lniBMap mMap allAtts
 
-writeAttractorSet :: Path Abs File
-                  -> LayerNameIndexBimap
-                  -> DMMSModelMapping
-                  -> (HS.HashSet Attractor)
-                  -> IO ()
-writeAttractorSet f lniBMap mapping attSet = do
+writeAttractorBundle :: Path Abs File
+                     -> LayerNameIndexBimap
+                     -> DMMSModelMapping
+                     -> (HS.HashSet Attractor)
+                     -> IO ()
+writeAttractorBundle f lniBMap mapping attSet = do
     (fName, _) <- splitExtension $ filename f
     let attVecList = HS.toList attSet
         attNumber = length attVecList

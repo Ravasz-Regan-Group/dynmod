@@ -7,6 +7,7 @@ module Types.Simulation
     , Thread
     , Attractor
     , AttractorSet
+    , AttractorBundle
     , Folder (..)
     , LayerVec
     , FixedVec
@@ -114,7 +115,12 @@ type Thread = B.Vector LayerVec
 type Attractor = Thread
 -- Collection of Attractors, mapped to the HashSet of their attractor basin.
 type AttractorSet = M.HashMap Attractor (HS.HashSet LayerVec)
-
+-- This is the what's written when we write attractors out to storage. It
+-- contains the attractors from the Fine layer of the DMModel and the switch
+-- mappings from the next layer up. 
+type AttractorBundle = ( DMMSModelMapping
+                       , LayerNameIndexBimap
+                       , HS.HashSet Attractor)
 -- Steppers primed with everything they need except a LayerVec
 -- Synchronous, deterministic
 type PSStepper = LayerVec -> LayerVec
