@@ -255,7 +255,7 @@ switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
                                 (symbol "SwitchPhenotypes}") $
     runPermutation $
         (,) <$> toPermutation (identifier "SwitchName")
-            <*> toPermutation (some phenotypeParse)
+            <*> toPermutation (some (try phenotypeParse))
 
 phenotypeParse :: Parser Phenotype
 phenotypeParse = do
@@ -269,7 +269,7 @@ phenotypeParse = do
 -- Note that you may not write to an element of a SubSpace without a state, even
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 
 fingerPrintParse :: Parser [SubSpace]
-fingerPrintParse = sepBy1 (hparens (fingerNodeParse `sepBy1` comma))
+fingerPrintParse = sepBy1 (parens (fingerNodeParse `sepBy1` comma))
                           (symbol "->")
 
 fingerNodeParse :: Parser (NodeName, NodeState)

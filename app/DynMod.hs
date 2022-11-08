@@ -96,19 +96,28 @@ experimentDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
 experimentDMMS f experiment (Right parsed) = do
     let dmModel = (fst . snd) parsed
         fLayer = fineLayer dmModel
+        (dmmsMMap, _) = (modelMappingSplit . last . modelMappings) dmModel
     putStrLn "Good parse"
-    case modelMappings dmModel of
-        [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
-        [mMap] -> do
-            let (dmmsMMap, _) = modelMappingSplit mMap
-            case experiment of
-                AttractorFind (EParams rN nN nProb) ->
-                    attFindDMMS f dmmsMMap mEnv
-                    where mEnv = ModelEnv fLayer rN nProb nN 0 []
-                GridSearch ((EParams rN nN nProb), mult) ->
-                    gridDMMS f dmmsMMap mult mEnv
-                    where mEnv = ModelEnv fLayer rN nProb nN 0 []
-        _:_:_ -> fail "Too many layers! I don\'t know how to handle this yet!"
+    case experiment of
+        AttractorFind (EParams rN nN nProb) ->
+            attFindDMMS f dmmsMMap mEnv
+            where mEnv = ModelEnv fLayer rN nProb nN 0 []
+        GridSearch ((EParams rN nN nProb), mult) ->
+            gridDMMS f dmmsMMap mult mEnv
+            where mEnv = ModelEnv fLayer rN nProb nN 0 []
+--     case modelMappings dmModel of
+--         [] -> fail "Single layer dmms! No ModelMappings to fingerprint on!"
+--         [mMap] -> do
+--             let (dmmsMMap, _) = modelMappingSplit mMap
+--             case experiment of
+--                 AttractorFind (EParams rN nN nProb) ->
+--                     attFindDMMS f dmmsMMap mEnv
+--                     where mEnv = ModelEnv fLayer rN nProb nN 0 []
+--                 GridSearch ((EParams rN nN nProb), mult) ->
+--                     gridDMMS f dmmsMMap mult mEnv
+--                     where mEnv = ModelEnv fLayer rN nProb nN 0 []
+--         _:_:_ -> fail
+--                 "Too many layers! I don\'t know how to handle this yet!"
 
 attFindDMMS :: Path Abs File -> DMMSModelMapping -> ModelEnv -> IO ()
 attFindDMMS f mMap mEnv = do
