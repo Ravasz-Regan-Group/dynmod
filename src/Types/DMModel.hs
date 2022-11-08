@@ -893,12 +893,12 @@ noSubSpaceRepeatedNodes sProfiles = sequenceA $ go <$> sProfiles
 noSubSpaceSubSets :: [SwitchProfile]
                   -> Validation [ModelInvalid] [SwitchProfile]
 noSubSpaceSubSets sProfiles =
-    case fst $ foldr f ([], subSpaceSets) subSpaceSets of
+    case fst $ L.foldl' f ([], subSpaceSets) subSpaceSets of
     []   -> Success sProfiles
     errs -> sequenceA errs
     where
-        f _ (acc, []) = (acc, [])
-        f sSSet (acc, _:remainingHS) = (newAcc, remainingHS)
+        f (acc, []) _ = (acc, [])
+        f (acc, _:remainingHS) sSSet = (newAcc, remainingHS)
             where
                 newAcc = case supersets of
                     []  -> acc
