@@ -39,19 +39,31 @@ data AttractorsInvalid =
 type ColorMap = M.HashMap NodeName LocalColor
 
 -- Types to construct 5D diagrams with BarCodeClusters.
--- type EnvironMentSpaceMapFigure = []
+-- The 2-5 Environments that will form the axes of environmental diagrams.
+data DimensionBundle = [NodeName]
 type BarcodeCluster = [Barcode]
 type Barcode = [Bar]
-type Bar = (LocalColor, [Slice])
-data Slice = EmptySlice
-           | MSlice MatchSlice
-           deriving (Eq, Show)
+type Bar = RedLineBar -- One Phenotype in the Switch is clearly the least bad
+-- match to the resident global Attractor(an n-way tie prevents RedLineBars)
+         | [(LocalColor, Slice)]
+data RedLineBar = RSB { barSize :: Int -- The number of Phenotype in the Switch
+                       , redLineINdex :: Int -- The 0-index of the best match
+                       } deriving (Eq, Show)
+-- For a given Phenotype, where (if anywhere) do the SubSpaces of the Phenotype
+-- match to state(s) of the resident global Attractor.  Both Phenotypes and
+-- Attractors can be points or loops, so the matching deserves some comment.
+-- A Phenotype which maps, in its entirety, onto a subset of the Attractor is a
+-- match, for those states of the attractor where the SubSpaces line up with the
+-- it. A Phenotype whose length is longer than the resident Attractor, or
+-- whose SubSpaces match out of order automatically matches nowhere. If some,
+-- but not all, of a Phenotype's Subspaces match IN ORDER, then that Phenotype
+-- is in the running to be a the titular red line in a RedLineBar. 
+data Slice = Slice { totalAttractorStates :: Int
+                   , attractorStateMatches :: [Int]
+                   } deriving (Eq, Show)
 
-data MatchSlice = MatchSlice { isPhenotypeLoop :: Bool
-                             , totalAttractorStates :: Int
-                             -- Matched Attractor states
-                             , attractorStateMatches :: [Int]
-                             } deriving (Eq, Show)
+type
+data MatchSlice = MatchSlice 
 
 
 -- Here we actively misinterpret a ModelEnv as specifying random state slots and
@@ -105,15 +117,15 @@ rnGrid r n mult = mkRow <$> [1..rD]
 
 
 
-attractorESpaceFigure :: Reader (DMModel, AttractorBundle)
+attractorESpaceFigure :: Reader (DMModel, AttractorBundle, DimensionBundle)
                                 (Validation [AttractorsInvalid] SVGText)
-attractorESpaceFigure = undefined -- do
---     aCheck <- attractorCheck
---     return case aCheck of
---         Failure xs -> Failure xs
---         Success aHashSet -> do
---             (dmModel, _) <- ask
---             let cMap = mkColorMap dmModel
+attractorESpaceFigure = do
+    aCheck <- attractorCheck
+    return case aCheck of
+        Failure xs -> Failure xs
+        Success aHashSet -> do
+            bcCluster <- barcodes
+            let cMap = mkColorMap dmModel
     
 
 -- Are the Attractors from the parsed attractor.csv actually Attractors of the
