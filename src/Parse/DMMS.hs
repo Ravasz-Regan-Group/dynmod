@@ -986,7 +986,7 @@ citeDictParse = between
     (symbol "CitationDictionary{")
     (symbol "CitationDictionary}")
     (Map.fromList <$> ( (\es -> zip (entryKey <$> es) es) <$>
-                        ((some citeEntryParse) >>= citeUniqueCheck)
+                        ((many citeEntryParse) >>= citeUniqueCheck)
                        )
     )
 

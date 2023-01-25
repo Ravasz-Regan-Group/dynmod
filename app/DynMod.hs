@@ -22,6 +22,7 @@ import Text.LaTeX.Base.Render (render)
 import qualified Options.Applicative as O
 import Path
 import Path.IO
+import System.Random (initStdGen)
 import Data.Validation (Validation(..))
 import Data.Version (showVersion)
 import qualified Data.Text.Lazy as LT
