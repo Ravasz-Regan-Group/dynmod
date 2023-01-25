@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.0.
+-- This file has been generated from package.yaml by hpack version 0.35.1.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c5302fc9af49c446a5e5959a165862182da55416cd6e1bb32cbe38e30c018f71
+-- hash: 9b71fd4d1f384d66393931d87e3220992e2ebb577013fae1537e784676282a48
 
 name:           dynmod
 version:        0.6.3.0
@@ -27,7 +27,10 @@ source-repository head
 
 library
   exposed-modules:
+      DynmodIO
+      Input
       Parse.DMMS
+      Parse.UI
       Types.DMModel
       Types.Simulation
       Parse.GML
@@ -67,9 +70,11 @@ library
     , hashable
     , megaparsec
     , mtl
+    , optparse-applicative
     , parallel
     , parser-combinators
     , path
+    , path-io
     , plots
     , pretty-simple
     , random

@@ -7,7 +7,6 @@ module Parse.Attractor
     ) where
 
 import Utilities
-import Types.DMModel
 import Types.Simulation
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B

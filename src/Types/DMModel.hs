@@ -8,6 +8,7 @@ module Types.DMModel
     , Phenotype(..)
     , PhenotypeName
     , SubSpace
+    , IntSubSpace
     , DMMSModelMapping
     , SwitchProfile
     , ModelMeta(..)
@@ -32,6 +33,7 @@ module Types.DMModel
     , EntrezGeneID
     , NodeName
     , NodeState
+    , NodeIndex
     , NodeExpr(..)
     , BinOp(..)
     , ExprInput
@@ -186,6 +188,7 @@ data Phenotype = Phenotype { phenotypeName :: PhenotypeName
 
 type PhenotypeName = T.Text
 type SubSpace = [(NodeName, NodeState)]
+type IntSubSpace = [(NodeIndex, NodeState)]
 
 -- These are some intermediary types we need to go from parsing ModelMapping{}
 -- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
@@ -429,6 +432,7 @@ instance Texy LinkType where
 type EntrezGeneID = Int
 type NodeName = T.Text
 type NodeState = Int
+type NodeIndex = Int
 type ExprInput = Map.HashMap NodeName NodeState
 data NodeCondition = NodeCondition { currentState :: NodeState 
                                    , destinationState :: NodeState

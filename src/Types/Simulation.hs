@@ -22,6 +22,7 @@ module Types.Simulation
     , layerVecReorder
     , inputs
     , inputCombos
+    , inputLevels
     , isAtt
     , lNISwitchThread
     ) where
@@ -102,7 +103,6 @@ data LayerSpecs = LayerSpecs {
                 , tTableList  :: TruthTableList
                 , iVecList    :: IndexVecList
                 } deriving (Show, Eq)
-type NodeIndex = Int
 -- Specify an input combination, with each input NodeIndex and the state each is
 -- fixed to. 
 type FixedVec = U.Vector (NodeIndex, NodeState)
@@ -131,7 +131,7 @@ data InvalidLVReorder = NewOldOrderingMismatch
                       | OldOrderingLVMismatch
                       deriving (Show, Eq)
 
--- Top level accumulation of some property of the ModeLayer that we are
+-- Top level accumulation of some property of the ModelLayer that we are
 -- collecting data on, when we follow the algorithm diagrammed below. 
 topStates :: (Monoid a, P.NFData a) => Folder a -> ModelEnv -> Simulation a
 topStates folders mEnv = do
@@ -384,9 +384,9 @@ inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
         strippedNLs = filter stripper nodeLists
         stripper = not . (flip elem nos) . nodeName . nodeMeta . head
 
--- We check that all the nodes are binary, else why bother with a multi-node
--- input. We assume they are wired such that, from first to last in the list,
--- , for eg a 3-node input, 000, 001, 011, and 111 will be the attractors of the
+-- We know that all the nodes are binary from nonBinaryMultiInputNodesCheck at
+-- parse. We assume they are wired such that, from first to last in the list,
+-- for eg a 3-node input, 000, 001, 011, and 111 will be the attractors of the
 -- input that represent the zeroth through third levels. In this way, an n-level
 -- input will be represented by n-1 nodes. 
 inputLevels :: LayerNameIndexBimap
@@ -398,19 +398,12 @@ inputLevels lniBMap [n] = vecs
         levels = fst <$> ((gateAssigns . nodeGate) n)
         nName = (nodeName . nodeMeta) n
         vecs = U.singleton <$> (zip (repeat $ lniBMap BM.! nName) levels)
-inputLevels lniBMap ns
-    | enbyList /= [] = error $ "Non-binary nodes in multi-node input: " ++
-            (show enbyList)
-    | otherwise = let pairsLists = (zip indices) <$> levelLists
-                      indices = ((lniBMap BM.!) . nodeName . nodeMeta) <$> ns
-                      levelLists = mkLevels levels
-                      levels = (length ns) + 1
-                  in U.fromList <$> pairsLists
-    where
-        enbyList = filter enbys nameAssigns
-        enbys xs = ((length . snd) xs) > 2
-        nameAssigns = (\n -> (gNodeName n, gateAssigns n)) <$> gates
-        gates = nodeGate <$> ns
+inputLevels lniBMap ns = 
+    let pairsLists = (zip indices) <$> levelLists
+        indices = ((lniBMap BM.!) . nodeName . nodeMeta) <$> ns
+        levelLists = mkLevels levels
+        levels = (length ns) + 1
+    in  U.fromList <$> pairsLists
 
 mkLevels :: Int -> [[Int]]
 mkLevels n
@@ -534,6 +527,7 @@ isAtt dmmsLNIBMap dmmsPSStepper csvLNIBMap thread = case testThread of
 -- │ Attractor │                                                                
 -- └───────────┘                                                                
 
+-- 00 01 11 (GF_High, GF)
 -- 4-node input, 0000, 0001, 0011, 0111, and 1111 (ABCD ordering)
 -- Input graphs:
 -- 

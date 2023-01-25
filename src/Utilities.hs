@@ -3,10 +3,10 @@
 module Utilities where
 
 -- All of the following is just to make initStdGen, and will go away when we
--- move to GHC 9.2.1. 
-import System.Random
-import System.Random.Internal
-import qualified System.Random.SplitMix as SM
+-- move to GHC 9.2.1. Done: 1/17/23
+-- import System.Random
+-- import System.Random.Internal
+-- import qualified System.Random.SplitMix as SM
 
 import qualified Data.Sequence as Seq
 import qualified Data.List as L
@@ -191,12 +191,16 @@ fillDown n = [0..n]
 seqToVec :: UVec.Unbox a => Seq.Seq a -> UVec.Vector a
 seqToVec = UVec.fromList . toList
 
--- The following should go away when we move to GHC 9.2.1. 
-initStdGen :: IO StdGen
-initStdGen = StdGen <$> SM.initSMGen
+-- The following should go away when we move to GHC 9.2.1. Done: 1/17/23
+-- initStdGen :: IO StdGen
+-- initStdGen = StdGen <$> SM.initSMGen
 
 quadUncurry :: (a -> b -> c -> d -> e) -> ((a, b), (c, d)) -> e
 quadUncurry f ((a, b), (c, d)) = f a b c d
 
 doubleUncurry :: (a -> b -> c -> d -> e) -> (a, b) -> (c, d) -> e
 doubleUncurry f (a, b) (c, d) = f a b c d
+
+-- Is a real a probability?
+isProb :: RealFloat a => a -> Bool
+isProb p = (p >= 0.0) && (p <= 1.0)
