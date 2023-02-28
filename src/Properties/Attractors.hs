@@ -131,11 +131,11 @@ attractorCheck dmModel (csvMMap, csvLNIBMap, atts) =
     [] -> (validationed valF orderedAtts) <* checkedAtts
         where
             checkedAtts :: Validation [AttractorsInvalid] (HS.HashSet Attractor)
-            checkedAtts = HS.fromList <$> (sequenceA $ attCheck
-                dmmsLNIBMap dmmsPSStepper csvLNIBMap <$> (HS.toList atts)) 
+            checkedAtts = HS.fromList <$> (traverse (attCheck
+                dmmsLNIBMap dmmsPSStepper csvLNIBMap) (HS.toList atts)) 
             orderedAtts :: Validation [InvalidLVReorder] (HS.HashSet Attractor)
-            orderedAtts = HS.fromList <$> (sequenceA $
-                lNISwitchThread csvLNIBMap dmmsLNIBMap <$> (HS.toList atts))
+            orderedAtts = HS.fromList <$> (traverse
+                (lNISwitchThread csvLNIBMap dmmsLNIBMap) (HS.toList atts))
             dmmsPSStepper = synchStep dmmsIVList dmmsTTList
             LayerSpecs dmmsLNIBMap _ dmmsTTList dmmsIVList = layerPrep mL
     where

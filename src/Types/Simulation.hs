@@ -384,11 +384,12 @@ inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
         strippedNLs = filter stripper nodeLists
         stripper = not . (flip elem nos) . nodeName . nodeMeta . head
 
--- We know that all the nodes are binary from nonBinaryMultiInputNodesCheck at
--- parse. We assume they are wired such that, from first to last in the list,
+-- We know that all the multi-node are binary from nonBinaryMultiInputNodesCheck
+-- at parse. We assume they are wired such that, from first to last in the list,
 -- for eg a 3-node input, 000, 001, 011, and 111 will be the attractors of the
 -- input that represent the zeroth through third levels. In this way, an n-level
--- input will be represented by n-1 nodes. 
+-- input will be represented by n-1 nodes. Single-node inputs MAY be integer-
+-- valued, so take that into account. 
 inputLevels :: LayerNameIndexBimap
             -> [DMNode]
             -> [FixedVec]

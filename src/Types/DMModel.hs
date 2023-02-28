@@ -1237,7 +1237,7 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         nNames = fst <$> (refdNodesStatesNG nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
 
--- Extract the names and ranges from a node. 
+-- Extract the names and ranges from a node. Zero-valued. 
 nodeRange :: DMNode -> NodeRange
 nodeRange n = (name, range)
     where

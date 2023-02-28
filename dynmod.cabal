@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9b71fd4d1f384d66393931d87e3220992e2ebb577013fae1537e784676282a48
+-- hash: d91da6ac85ce5ed6652c2a47272e7b6017869aaa22be8f9f121b3baeac497140
 
 name:           dynmod
 version:        0.6.3.0
@@ -57,6 +57,7 @@ library
   ghc-options: -Wall -O2 -j
   build-depends:
       HaTeX
+    , SVGFonts
     , Unique
     , base >=4.7 && <5
     , bimap

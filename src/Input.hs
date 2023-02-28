@@ -7,7 +7,6 @@ import Paths_dynmod (version)
 import Utilities
 import qualified Data.Text as T
 import qualified Options.Applicative as O
-import qualified Data.List.Split as Split
 import Data.Version (showVersion)
 import Control.Applicative ((<|>))
 
@@ -45,7 +44,7 @@ data Experiments = GridSearch (EParams, GParam)
                  | AttractorFind EParams
                  deriving (Eq, Show)
 
-type Figures = Maybe T.Text
+type Figures = T.Text
 
 -- The number of random states per input combination, noisy steps per random
 -- state, and the probability that any particular gate will slip on a step. 
@@ -157,14 +156,14 @@ experimentParser = Experiment <$> (attFindParser <|> gridParser)
 gParamReader :: O.ReadM Experiments
 gParamReader = do
     o <- O.str
-    let [a, b, c, d] = map read $ Split.splitOn "," o
-    return $ GridSearch (EParams a b (fromIntegral c), d)
+    let [a, b, c, d] = words o
+    return $ GridSearch (EParams (read a) (read b) (read c), (read d))
 
 eParamReader :: O.ReadM Experiments
 eParamReader = do
     o <- O.str
-    let [a, b, c] = map read $ Split.splitOn "," o
-    return $ (AttractorFind $ EParams a b (fromIntegral c))
+    let [a, b, c] = words o
+    return $ (AttractorFind $ EParams (read a) (read b) (read c))
 
 attFindParser :: O.Parser Experiments
 attFindParser = O.option (eParamReader >>= probCheck)
@@ -200,22 +199,14 @@ figureParser :: O.Parser Activity
 figureParser = Figure <$> (fiveDFigParser)
 
 fiveDFigParser :: O.Parser Figures
-fiveDFigParser = noFileCheck  <$> 
-                 (O.strOption
+fiveDFigParser = O.strOption
                     ( O.long "figure"
                    <> O.short 'f'
-                   <> O.metavar "OptFILE"
-                   <> O.value "NOFILE"
+                   <> O.metavar "FILE"
                    <> O.help "Create a 5-D figure illustrating which attractors\
                         \ exist at which environmental input values, and which \
                         \ phenotypes map best onto those attractors. "
-                    )) -- >>= noFileCheck
-
-noFileCheck :: T.Text -> Maybe T.Text
-noFileCheck o
-    | o == "NOFILE" = Nothing
-    | otherwise = Just o
-
+                    )
 
 versionOpt :: O.Parser (a -> a)
 versionOpt = O.infoOption

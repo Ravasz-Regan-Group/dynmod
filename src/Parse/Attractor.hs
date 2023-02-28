@@ -25,17 +25,19 @@ attractorFileParse csv = (mm, lniBMap, atts)
     where
         mm = ((F.toList <<$>>) . F.toList) $ L.foldl' mmFolder S.Empty mmPairs
         lniBMap = BM.fromList $ zip (snd <$> mmPairs) [0..]
-        mmPairs = ((\[x, y] -> (x, y)) . take 2) <$> rows
+        mmPairs = (fstlst . T.splitOn ", ") <$> nameRows
         atts = HS.fromList $ (mkAttractor . B.fromList) <$> attVecs
         attVecs :: [[U.Vector Int]]
         attVecs = U.fromList <<$>> (((L.transpose <$>) . L.transpose) attInts)
         attInts :: [[[Int]]]
         attInts = (((read . T.unpack) <$>) . T.split (== ',')) <<$>> attTexts
         attTexts :: [[T.Text]]
-        attTexts = (T.splitOn ",," . mconcat . drop 3) <$> rows
-        rows = T.split (== ',') <$> attLines
+        attTexts = (T.splitOn ",,") <$> attRows
+        (nameRows, attRows)= unzip $ fstlst <$> rows
+        rows = T.splitOn ", ," <$> attLines
         attLines = take ((length ls) - 2) ls
         ls = T.lines csv
+        fstlst xs = (head xs, last xs)
 
 -- Fold up a list of the form:
 -- [(Clock_Env, Light)

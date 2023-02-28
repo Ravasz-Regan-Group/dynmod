@@ -163,7 +163,8 @@ modelParse = between (symbol "Model{") (symbol "Model}")
                     <$> toPermutation modelMappingParse
 --            There might not be SwitchProfiles{}, so provide an empty default.
                     <*> toPermutationWithDefault [] switchProfilesParse
-                    <*> toPermutation modelLayerParse
+                    <*> (ModelLayer <$> toPermutation modelGraphParse
+                                    <*> toPermutation modelConfigParse)
                     <*> toPermutation modelParse
              )
                 >>= modelMappingCheck
@@ -475,12 +476,13 @@ modelGraphAssembler ns = return $ Gr.mkGraph grNodes grEdges
 nonBinaryMultiInputNodesCheck :: ModelGraph -> Parser ModelGraph
 nonBinaryMultiInputNodesCheck mG = do
     let multiNodeInputs = filter (\x -> length x >= 2) $ S.inputs mG
-        enbyLists = mkEnbyList <$> multiNodeInputs
+        enbyLists = filter (not . L.null) $ mkEnbyList <$> multiNodeInputs
     case enbyLists of
         [] -> return mG
         enbyLs -> do
             let enbyLsStr = L.intercalate "\n" (show <$> enbyLs)
-            fail $ "Non-binary nodes in multi-node input: " ++ enbyLsStr
+            fail $ "Non-binary nodes in multi-node input: " ++ enbyLsStr ++
+                (show enbyLs)
 
 mkEnbyList :: [DMNode] -> [(NodeName, [NodeStateAssign])]
 mkEnbyList ns = filter enbys nameAssigns
@@ -1010,7 +1012,7 @@ citeDictParse = between
     (symbol "CitationDictionary{")
     (symbol "CitationDictionary}")
     (Map.fromList <$> ( (\es -> zip (entryKey <$> es) es) <$>
-                        ((some citeEntryParse) >>= citeUniqueCheck)
+                        ((many citeEntryParse) >>= citeUniqueCheck)
                        )
     )
 

@@ -83,6 +83,7 @@ library:
   - diagrams-svg
   - plots
   - svg-builder
+  - SVGFonts
   - bimap
 
 executables:

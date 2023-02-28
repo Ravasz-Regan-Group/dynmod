@@ -76,9 +76,11 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             pairShow (n, i) = "(" <> n <> ", " <> (T.pack . show) i <> ")" 
 
 renderMMaping :: ModelMapping -> T.Text
-renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries) <> "\n\n" <>
-                   (dmmsWrap "SwitchProfiles" spEntries)
+renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries) <> switchProfilesText
     where
+        switchProfilesText
+            | L.null switchProfiles = ""
+            | otherwise = "\n\n" <> (dmmsWrap "SwitchProfiles" spEntries)
         (dmmsMMaping, switchProfiles) = modelMappingSplit mm
         dmmsMMEntries = T.intercalate "\n" $ renderDMMSSwitch <$> dmmsMMaping
         spEntries = T.intercalate "\n" $ renderSwitchProfile <$> switchProfiles

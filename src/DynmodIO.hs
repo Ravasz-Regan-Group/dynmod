@@ -394,43 +394,24 @@ figureDMMS :: Path Abs File
                 (FileFormatVersion, (DMModel, CitationDictionary))
            -> IO ()
 figureDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
-figureDMMS f figure (Right parsed) = do
+figureDMMS f attFileName (Right parsed) = do
     putStrLn "Good parse"
-    (dmmsFileName, _) <- splitExtension f
     let dmModel = (fst . snd) parsed
         fLayer = fineLayer dmModel
         LayerSpecs lniBMap _ _ _ = layerPrep fLayer
-        dmmsFileStr = toFilePath dmmsFileName
-    case figure of 
-        Nothing -> do
-            putStrLn $ "There are is no attractor csv file for "
-                <> dmmsFileStr <> ". Please enter parameters \
-                \ for an attractor search."
-            params <- getLine
-            let pars = M.runParser attParamParse "" (T.pack params)
-            case pars of 
-                (Left err) -> PS.pPrint (M.errorBundlePretty err)
-                (Right (EParams rN nN nProb)) -> do
-                    let mEnv = ModelEnv fLayer rN nProb nN 0 []
-                    mMap <- twoLayerModelMapping $ modelMappings dmModel
-                    let (dmmsMMap, _) = modelMappingSplit mMap
-                    putStrLn "Finding attractors"
-                    atts <- attFindDMMS f dmmsMMap mEnv
-                    let attBundle = (dmmsMMap, lniBMap, atts)
-                    fiveDFig <- mkFiveDFigure dmModel attBundle
-                    writeFiveDFig f fiveDFig
-        Just attFileName -> do
-            attFilePath <- resolveFile' $ T.unpack attFileName
-            attFileInput <- RW.readFile attFilePath
-            let parsedAttBundle  = attractorFileParse attFileInput
-            case attractorCheck dmModel parsedAttBundle of
-                Failure errs -> fail $ show errs
-                Success atts -> do
-                    mMap <- twoLayerModelMapping $ modelMappings dmModel
-                    let dmMMap = (fst . modelMappingSplit) mMap
-                        attBundle = (dmMMap, lniBMap, atts)
-                    fiveDFig <- mkFiveDFigure dmModel attBundle
-                    writeFiveDFig f fiveDFig
+    attFilePath <- resolveFile' $ T.unpack attFileName
+    attFileInput <- RW.readFile attFilePath
+    let parsedAttBundle = attractorFileParse attFileInput
+    case attractorCheck dmModel parsedAttBundle of
+        Failure errs -> fail $ show errs
+        Success atts -> do
+            mMap <- twoLayerModelMapping $ modelMappings dmModel
+            let dmMMap = (fst . modelMappingSplit) mMap
+                attBundle = (dmMMap, lniBMap, atts)
+            putStrLn "Generating Figure"
+            fiveDFig <- mkFiveDFigure dmModel attBundle
+            putStrLn "Writing SVG File"
+            writeFiveDFig f fiveDFig
 
 -- Interact with the user to determine which, if any, inputs are pinned in the
 -- 5-D figure, then generate the SVG. 
@@ -439,9 +420,10 @@ mkFiveDFigure dmModel attBundle = do
     let fLayer = fineLayer dmModel
         LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         ipPtNodes = (inputs . modelGraph) fLayer
-        inPts = (nodeName . nodeMeta) <<$>> ipPtNodes
-        numEnv = L.length inPts
-        (strInptOpts, inptOpts) = inputOptions inPts
+        numEnv = L.length ipPtNodes
+        inptOpts = inputOptions ipPtNodes
+        txtInptOpts = textInputOptions ipPtNodes
+    putStrLn $ show numEnv <> " environmental inputs to plot. "
     case numEnv <= 5 of
         True -> case numEnv == 0 of
             True -> fail "Fine layer has no environmental inputs!"
@@ -452,7 +434,7 @@ mkFiveDFigure dmModel attBundle = do
         False -> do
             putStrLn $ "There are more than 5 environments. Please choose at \
                 \least" <> (show $ numEnv - 5) <> " to pin:"
-            putStrLn $ (T.unpack strInptOpts) <> "\n"
+            putStrLn $ (T.unpack txtInptOpts) <> "\n"
             pins <- getLine
             let pinsPOut = M.runParser (pinsParse inptOpts) "" (T.pack pins)
             case pinsPOut of
@@ -464,31 +446,48 @@ mkFiveDFigure dmModel attBundle = do
                     return $ attractorESpaceFigure dmModel attBundle iBundle
 
 
-inputOptions :: [[NodeName]] -> (T.Text, [[(NodeName, Int)]])
-inputOptions inPts = (strInputOpts, inputOpts)
+inputOptions :: [[DMNode]] -> [[(NodeName, Int)]]
+inputOptions inPtNDs = inputOpt <$> inPtNDs
     where
-        strInputOpts = T.intercalate "\n" $ strInputOpt <$> inPts
-        strInputOpt :: [NodeName] -> T.Text
-        strInputOpt [] = T.empty
-        strInputOpt (nName:[]) = T.intercalate "\n" $ nName:
-            ("    " <> nName <> ":0"):["    " <> nName <> ":1"]
-        strInputOpt ns = T.intercalate "\n" $ nName:
-            (fst $ foldr otherOpts (["    " <> nName <> ":0"], 1) rNS)
-            where
-                nName = head rNS
-                rNS = L.reverse ns
-                otherOpts :: NodeName -> ([T.Text], Int) -> ([T.Text], Int)
-                otherOpts nN (optss, i) = (opt:optss, i + 1)
-                    where opt = "    " <> nN <> ":" <> (T.pack . show) i
-        inputOpts = inputOpt <$> inPts
-        inputOpt :: [NodeName] -> [(NodeName, Int)]
+        inputOpt :: [DMNode] -> [(NodeName, Int)]
         inputOpt [] = []
-        inputOpt (nName:[]) = [(nName, 0), (nName, 1)]
+        inputOpt [n] = L.unfoldr nOpts 0
+            where
+                nOpts i
+                    | i <= nRange = Just (iEntry, i + 1)
+                    | otherwise = Nothing
+                        where
+                            iEntry = (nName, i)
+                (nName, nRange) = nodeRange n
         inputOpt ns = (nName, 0):(fst $ foldr otherOpts ([], 1) rNS)
             where
                 nName = head rNS
-                rNS = L.reverse ns
+                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
                 otherOpts nN (optss, i) = ((nN, i):optss, i + 1)
+
+
+textInputOptions :: [[DMNode]] -> T.Text
+textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
+    where
+        txtInputOpt :: [DMNode] -> T.Text
+        txtInputOpt [] = T.empty
+        txtInputOpt [n] = T.intercalate "\n" $ nName:(L.unfoldr nOpts 0)
+            where
+                nOpts i
+                    | i <= nRange = Just (iLine, i + 1)
+                    | otherwise = Nothing
+                        where
+                            iLine = "    " <> nName <> ":" <>
+                                ((T.pack . show) i)
+                (nName, nRange) = nodeRange n
+        txtInputOpt ns = T.intercalate "\n" $ nName:
+            (fst $ foldr otherOpts (["    " <> nName <> ":0"], 1) rNS)
+            where
+                nName = head rNS
+                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
+                otherOpts :: NodeName -> ([T.Text], Int) -> ([T.Text], Int)
+                otherOpts nN (optss, i) = (opt:optss, i + 1)
+                    where opt = "    " <> nN <> ":" <> (T.pack . show) i
 
 -- Consume the [[DMNode]] which is the list of environmental inputs, the map
 -- between the LayerVec index position and DMNode NodeNames, and the nodes
@@ -518,7 +517,10 @@ pickStates inputChoices nodeStack = pickState keyChoice nodeStack
         findChoice nNames (nName, _) = nName `elem` nNames
         stackNames = (nodeName . nodeMeta) <$> nodeStack
 
+-- Remember that single-node inputs might be integer-valued, and so must dealt
+-- with separately. 
 pickState :: (NodeName, Int) -> [DMNode] -> [(NodeName, NodeState)]
+pickState iChoice [_] = [iChoice]
 pickState (_, i) ns = (setState 0 <$> zeroNs) <> (setState 0 <$> oneNs)
     where zeroNs = drop ((i - 1) - inputSize) ns
           oneNs = take ((i - 1) - inputSize) ns
@@ -533,9 +535,10 @@ twoLayerModelMapping :: [ModelMapping] -> IO ModelMapping
 twoLayerModelMapping [] =
     fail "Single layer dmms! No ModelMappings to fingerprint on! "
 twoLayerModelMapping [mMap] = return mMap
-twoLayerModelMapping mMaps@(_:_:_) = do
+twoLayerModelMapping mMaps = do
     putStrLn "More than two layers. Using Fine and first LayerBinding. "
-    return $ last mMaps
+    let mm = last mMaps
+    return mm
 
 writeFiveDFig :: Path Abs File -> SVGText -> IO ()
 writeFiveDFig f fiveDFigSVG = do
