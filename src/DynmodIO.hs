@@ -433,7 +433,7 @@ mkFiveDFigure dmModel attBundle = do
                                                (ipPtNodes, U.empty)
         False -> do
             putStrLn $ "There are more than 5 environments. Please choose at \
-                \least" <> (show $ numEnv - 5) <> " to pin:"
+                \least " <> (show $ numEnv - 5) <> " to pin:"
             putStrLn $ (T.unpack txtInptOpts) <> "\n"
             pins <- getLine
             let pinsPOut = M.runParser (pinsParse inptOpts) "" (T.pack pins)
