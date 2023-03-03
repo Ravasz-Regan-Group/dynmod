@@ -5,6 +5,7 @@ module Types.DMModel
     , ModelLayer(..)
     , ModelGraph
     , ModelMapping
+    , Switch
     , Phenotype(..)
     , PhenotypeName
     , SubSpace

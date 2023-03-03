@@ -145,7 +145,7 @@ rnGrid r n mult = mkRow <$> [1..rD]
 
 attractorESpaceFigure :: DMModel -> AttractorBundle -> InputBundle -> SVGText
 attractorESpaceFigure dmModel aBundle (freeINodes, fixedINodeFixVec) =
-    eSpaceRenderText $ frame 3.0 $ figureDia
+    eSpaceRenderText $ frame 3.0 $ figureDia === legendDia
     where
         figureDia
             | L.length dimList <= 3 = allLines5DFigure dimList 
@@ -168,6 +168,9 @@ attractorESpaceFigure dmModel aBundle (freeINodes, fixedINodeFixVec) =
         dimList = ((+(-1)) . L.length) <$> naiveLevels
         naiveLevels = inputLevels lniBMap <$> freeINodes
         (_, lniBMap, atts) = aBundle
+        legendDia = attESpaceFigLegend cMap mMap
+        cMap = mkColorMap dmModel
+        mMap = (last . modelMappings) dmModel
 
 allLines5DFigure :: [Int] -> [Diagram B] -> [[NodeName]] -> Diagram B
 allLines5DFigure dimList clusters iNames = dFigure <> axisLabels
@@ -282,7 +285,8 @@ mkBarcode cM mM lniBMap att = (uncurry (mkBar lniBMap att)) <$>
     colorSwitchPairs
     where
         colorSwitchPairs = ((cM M.!) `BF.first`) <$> nameSwitchPairs
-        nameSwitchPairs = (\(nName, (_, phs)) -> (nName, phs)) <$> mM
+        nameSwitchPairs = (\(nName, (_, phs)) -> (nName, phs)) <$> nonEmptyPhs
+        nonEmptyPhs = filter ((/= []) . snd . snd) mM
 
 
 -- Make a single Bar in a Barcode. 
@@ -321,7 +325,7 @@ redLinePrune (MatchCandidate _ _) (mRLB, highestRS, phIndex) =
 redLinePrune (RedLineCandidate phSize i) (mRLB, highestRS, phIndex)
     | i < highestRS = (mRLB, highestRS, phIndex + 1)
     | i == highestRS = (Nothing, highestRS, phIndex + 1)
-    | i > highestRS = (Just (RedLineBar phSize phIndex), i, phIndex + 1)
+    | otherwise = (Just (RedLineBar phSize phIndex), i, phIndex + 1)
 
 -- Make a single SliceCandidate. 
 mkSliceCandidate :: LayerNameIndexBimap
@@ -352,35 +356,28 @@ mkSliceCandidate lniBMap att ph
         attSize = B.length att
 
 -- Do any of the Int-converted SubSpaces in the Phenotype match to any
--- state in theAttractor? If so, reorder both Phenotype and Attractor at that
--- match. Return them along with the index offset for the Attractor, so as to be
--- able to construct a properly indexed Match. 
+-- state in theAttractor? If so, reorder both Phenotype and Attractor at the
+-- first Phenotype SubSpace that matches any Attractor state. Return them along
+-- with the index offset for the Attractor, so as to be able to construct a
+-- properly indexed Match. 
 anyMatchReorder :: [IntSubSpace]
                 -> Attractor
                 -> Maybe ([IntSubSpace], Attractor, Int)
-anyMatchReorder intPh att = go (head intPh) (tail intPh) ([],intPh)
+anyMatchReorder intPh att
+    | B.null frontThread = Nothing
+    | otherwise = Just (newSS, newThread, attOffset)
     where
-        go sS (nsS:sSs) (backSS, frontSS)
-            | B.null frontThread = go nsS sSs (backSS <> [sS], nsS:sSs)
-            | otherwise = Just (newSS, newThread, attOffset)
-                where
-                    (backThread, frontThread) = B.break (isSSMatch sS) att
-                    newSS     = frontSS <> backSS
-                    newThread = frontThread <> backThread
-                    attOffset = B.length backThread
-        go sS [] (backSS, frontSS)
-            | B.null frontThread = Nothing
-            | otherwise = Just (newSS, newThread, attOffset)
-                where
-                    (backThread, frontThread) = B.break (isSSMatch sS) att
-                    newSS     = frontSS <> backSS
-                    newThread = frontThread <> backThread
-                    attOffset = B.length backThread
+        (backThread, frontThread) = B.break (isAttMatch intPh) att
+        isAttMatch iph attLVec = any (isSSMatch attLVec) iph
+        newSS = frontSS <> backSS
+        newThread = frontThread <> backThread
+        attOffset = B.length backThread
+        (backSS, frontSS) = L.break (isSSMatch (B.head frontThread)) intPh
 
 -- Do the states in the Int-converted Subspace match the equivalent states in
 -- the LayerVec
-isSSMatch :: IntSubSpace -> LayerVec -> Bool
-isSSMatch sS lV = all (isStateMatch lV) sS
+isSSMatch :: LayerVec -> IntSubSpace -> Bool
+isSSMatch lV sS = all (isStateMatch lV) sS
     where
         isStateMatch lVec (nodeNameInt, nState) = nState == lVec U.! nodeNameInt
 
@@ -388,7 +385,7 @@ isSSMatch sS lV = all (isStateMatch lV) sS
 -- Find the location of the first place in the Attractor, if any, that the Int-
 -- converted SubSpace matches.
 matchLocation :: Attractor -> IntSubSpace -> Maybe AttractorIndex
-matchLocation att sS = B.findIndex (isSSMatch sS) att
+matchLocation att sS = B.findIndex (flip isSSMatch sS) att
 
 -- Given an [IntSubSpace] that we know matches completely onto the given
 -- Attractor, does that [IntSubSpace] completely match an integer number of
@@ -415,7 +412,7 @@ loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
 
 -- The scaling factor for widening bars in 5D figures. 
 alpha :: Double
-alpha = 0.8
+alpha = 0.4
 
 eSpacePointDia :: [Barcode] -> ESpacePointDia
 eSpacePointDia bCodes = eSpacePointDia' $ barcodeDia <$> bCodes
@@ -429,31 +426,35 @@ eSpacePointDia bCodes = eSpacePointDia' $ barcodeDia <$> bCodes
                 totalLength = bWidth * ((fromIntegral . length) bCodeDias)
                 squareSideL = sqrt totalLength
                 rowSize = ceiling (squareSideL / bWidth)
-                bRows = Split.chunksOf rowSize bCodeDias
-                bSquare = (vsep 1.0 (fmap (hsep 1.0) bRows)) # center
+                bRows = hsep 1.0 <$> Split.chunksOf rowSize bCodeDias
+                bSquare = vsep 1.0 bRows # center
                 bRect = (rect (width bSquare) (height bSquare) # lw 0.1)
 
 barcodeDia :: Barcode -> BarcodeDia
-barcodeDia bCode = hcat evenedBars # center
+barcodeDia bCode = (hcat $ L.intersperse separator wrappedBars) # center
     where
+        separator = vrule maxBarHeight # lineWidth 0.4 # alignT
+        wrappedBars = zipWith (<>) evenedBars barRects
+        barRects = (alignT . wrapRect) <$> evenedBars
+        wrapRect d = (rect (width d) (height d)) # lw 0.3
         evenedBars = (alignT . scaleToY maxBarHeight) <$> roughBars
         maxBarHeight = maximum $ height <$> roughBars
         roughBars = barDia <$> bCode
 
 barDia :: Bar -> Diagram B
 barDia bar = case barKind bar of
-    FullMiss bHeight -> bDia
+    FullMiss bHeight -> bDia -- <> barRect
         where
-            barRect :: Diagram B
-            barRect = (rect (width bDia) (height bDia)) # lw 0.3
+--             barRect :: Diagram B
+--             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat slices # center
             slices = L.replicate bHeight missSlice
             missSlice = rect barwidth slHeight # fillColor white
                                                # lineWidth 0.1
-    RedLineBar bHeight phIndex -> bDia <> barRect
+    RedLineBar bHeight phIndex -> bDia -- <> barRect
         where
-            barRect :: Diagram B
-            barRect = (rect (width bDia) (height bDia)) # lw 0.3
+--             barRect :: Diagram B
+--             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat slices # center
             slices :: [Diagram B]
             slices = B.toList $ missVec B.// [rlPair]
@@ -470,10 +471,10 @@ barDia bar = case barKind bar of
                                                # lineWidth none
             halfHeight :: Double
             halfHeight = slHeight / 2.0
-    MatchBar slices lColor -> bDia <> barRect
+    MatchBar slices lColor -> bDia -- <> barRect
         where
-            barRect :: Diagram B
-            barRect = (rect (width bDia) (height bDia)) # lw 0.3
+--             barRect :: Diagram B
+--             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat diaSlices # center
             diaSlices = sliceDia lColor <$> slices
     where
@@ -482,12 +483,15 @@ barDia bar = case barKind bar of
         attSize = attractorSize bar
 
 sliceDia :: LocalColor -> Slice -> Diagram B
-sliceDia _ (Miss attSize) =
-    rect slicewidth sliceHeight # fillColor white # lineWidth 0.1
+sliceDia _ (Miss attSize) = (hcat slivers) # center
     where
+        slivers = L.replicate attSize missSliver
+        missSliver = rect sliverWidth sliceHeight # fillColor white
+                                                  # lineWidth 0.1
+        sliverWidth = slicewidth / (fromIntegral attSize)
         slicewidth = (2.0 :: Double) * (fromIntegral attSize)**alpha
         sliceHeight = 1.0 :: Double
-sliceDia c (Match attSize matchLoops) = (hcat slivers)
+sliceDia c (Match attSize matchLoops) = (hcat slivers) # center
     where
         slivers = B.toList $ missVec B.// matchPairs
         missVec = B.replicate attSize missSliver
@@ -646,7 +650,7 @@ squareLabels xNames yNames unitScale = xLabels <> (mconcat yLabels)
     where
         yLabels = zipWith place yTexts shiftedYPts
         shiftedYPts = (flip (.+^) yLabelDisp) <$> yPts
-        yLabelDisp = (unitScale / (-8)) ^& 0
+        yLabelDisp = (unitScale / (-5)) ^& 0
         yPts = dimSpread (gridEdges yNames) displacement $ p2 (0,0)
         displacement = 0 ^& unitScale
         yTexts = tText'' <$> yNames
@@ -658,8 +662,15 @@ lineLabels xNames unitScale = mconcat $ zipWith place texts shiftedPts
     where
         shiftedPts = (flip (.+^) labelDisp) <$> pts
         pts = linePoints (gridEdges xNames) unitScale
-        labelDisp = 0 ^& (unitScale / (-8))
+        labelDisp = 0 ^& (unitScale / (-5))
         texts = tText' <$> xNames
+
+gridEdges :: [a] -> Int
+gridEdges xs = length xs - 1
+
+cubeVector :: V2 Double
+cubeVector = 0.32 ^& 0.44
+
 
 tText' :: T.Text -> Diagram B
 tText' t = F.svgText def (T.unpack t) # F.fit_height 4
@@ -668,15 +679,36 @@ tText' t = F.svgText def (T.unpack t) # F.fit_height 4
                                       # lineWidth none
                                       # center
 
--- sText :: String -> Diagram B
--- sText s = F.svgText def s # F.fit_height 2
---                                       # F.set_envelope
---                                       # fillColor black
---                                       # lineWidth none
---                                       # center
+attESpaceFigLegend :: ColorMap -> ModelMapping -> Diagram B
+attESpaceFigLegend cMap mMap = hsep 1.0 evenedBlocks
+    where
+        evenedBlocks = zipWith (switchLegend cMap) phHeights nonEmptyPhs
+        phHeights = ((maxBlockHeight * lScale) / ) <$> phSizes
+        maxBlockHeight = maximum phSizes
+        phSizes :: [Double]
+        phSizes = (fromIntegral . length . snd . snd) <$> nonEmptyPhs
+        nonEmptyPhs = filter ((/= []) . snd . snd) mMap
+        lScale = 2.0 :: Double
 
-gridEdges :: [a] -> Int
-gridEdges xs = length xs - 1
+switchLegend :: ColorMap -> Double -> Switch -> Diagram B
+switchLegend cMap slHeight (swName, (_, phs)) = vcat $ (tText'' swName):slices
+    where
+        slices = (sliceRect <>) <$> coloredLabels
+        coloredLabels = (center . (colorRect |||)) <$> paddedPhLabels
+        sliceRect = (rect (slwidth + lScale) slHeight) # lw 0.1
+        paddedPhLabels = lLabelPad slwidth <$> phLabels
+        slwidth = maximum $ width <$> phLabels
+        phLabels = (tText'' . phenotypeName) <$> orderedPHs
+        orderedPHs = (L.reverse . L.sortOn switchNodeState) phs
+        colorRect = rect lScale slHeight # fillColor (cMap M.! swName) # lw none
+        tText'' t = F.svgText def (T.unpack t) # F.fit_height (0.75 * lScale)
+                                               # F.set_envelope
+                                               # fillColor black
+                                               # lineWidth none
+                                               # center
+        lScale = 2.0 :: Double
 
-cubeVector :: V2 Double
-cubeVector = 0.32 ^& 0.44
+lLabelPad :: Double -> Diagram B -> Diagram B
+lLabelPad widest lLabel = padX tweak lLabel
+    where
+        tweak = widest / (width lLabel)
