@@ -200,3 +200,6 @@ quadUncurry f ((a, b), (c, d)) = f a b c d
 
 doubleUncurry :: (a -> b -> c -> d -> e) -> (a, b) -> (c, d) -> e
 doubleUncurry f (a, b) (c, d) = f a b c d
+
+isProb :: (Ord a, Num a) => a -> Bool
+isProb p = (0 <= p) && (p <= 1)
