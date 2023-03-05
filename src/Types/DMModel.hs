@@ -5,9 +5,11 @@ module Types.DMModel
     , ModelLayer(..)
     , ModelGraph
     , ModelMapping
+    , Switch
     , Phenotype(..)
     , PhenotypeName
     , SubSpace
+    , IntSubSpace
     , DMMSModelMapping
     , SwitchProfile
     , ModelMeta(..)
@@ -32,6 +34,7 @@ module Types.DMModel
     , EntrezGeneID
     , NodeName
     , NodeState
+    , NodeIndex
     , NodeExpr(..)
     , BinOp(..)
     , ExprInput
@@ -186,6 +189,7 @@ data Phenotype = Phenotype { phenotypeName :: PhenotypeName
 
 type PhenotypeName = T.Text
 type SubSpace = [(NodeName, NodeState)]
+type IntSubSpace = [(NodeIndex, NodeState)]
 
 -- These are some intermediary types we need to go from parsing ModelMapping{}
 -- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
@@ -429,6 +433,7 @@ instance Texy LinkType where
 type EntrezGeneID = Int
 type NodeName = T.Text
 type NodeState = Int
+type NodeIndex = Int
 type ExprInput = Map.HashMap NodeName NodeState
 data NodeCondition = NodeCondition { currentState :: NodeState 
                                    , destinationState :: NodeState
@@ -638,6 +643,10 @@ data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
                         (NodeName, NodeName, NodeState, [NodeName])
                   | SubSpaceIsASubSet (SubSpace, [SubSpace])
                   | DuplicatedPhenotypeNames [NodeName]
+                  | PhNegStates (NodeName, [NodeState])
+                  | PhOutOfOrder (NodeName, [NodeState])
+                  | PhMissingOrTooHigh (NodeName, [NodeState])
+                  | PhDuplicateAssigns (NodeName, [NodeState])
 --                   | MissingCitations MissingCitations
     deriving (Show, Eq)
 type DuplicateCoarseMapNodes = [NodeName]
@@ -813,11 +822,14 @@ isMapSurjective ms
 mkModelMapping :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
                -> Validation [ModelInvalid] DMModel
 mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) =
-    noDupeSwitches sProfiles                *>
-    noExtraSwitches dmmsMMap sProfiles      *>
-    allSwitchStatesCovered sProfiles mLayer *>
-    noSubSpaceRepeatedNodes sProfiles       *>
-    noSubSpaceSubSets sProfiles             *>
+    (traverse phIsMonotonic sProfiles)        *>
+    (traverse phNoMissingOrTooHigh sProfiles) *>
+    (traverse phNoDupes sProfiles)            *>
+    noDupeSwitches sProfiles                  *>
+    noExtraSwitches dmmsMMap sProfiles        *>
+    allSwitchStatesCovered sProfiles mLayer   *>
+    noSubSpaceRepeatedNodes sProfiles         *>
+    noSubSpaceSubSets sProfiles               *>
     pure (LayerBinding mm mLayer mModel)
     
     where
@@ -827,11 +839,45 @@ mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) =
             Nothing -> (nN, (nNs, [])):switches
             Just (_, phenotypes) -> (nN, (nNs, phenotypes)):switches
 
+-- Check that the Phenotype state assignments are listed in increasing monotonic
+-- order. Also check for negative
+phIsMonotonic :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
+phIsMonotonic sProfile
+    | (not . L.null . filter (< 0)) st =
+        Failure [PhNegStates (pName, st)]
+    | L.sort st /= st = Failure [PhOutOfOrder (fst sProfile, st)]
+    | otherwise = Success sProfile
+    where
+        pName = fst sProfile
+        st = (fmap switchNodeState . snd) sProfile
+
+-- Check that there are no missing (or, equivalently, too high) Phenotype state 
+-- assignments. 
+phNoMissingOrTooHigh :: SwitchProfile
+                     -> Validation [ModelInvalid] SwitchProfile
+phNoMissingOrTooHigh sProfile
+    | (maximum st + 1) == (length cleaned) = Success sProfile
+    | otherwise = Failure [PhMissingOrTooHigh (fst sProfile, st)]
+    where
+         cleaned = Uniq.sortUniq st
+         st = (fmap switchNodeState . snd) sProfile
+
+-- Check that there are no duplicate Phenotype state assignments. 
+phNoDupes :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
+phNoDupes sProfile
+    | (length st) == (length $ Uniq.sortUniq st) = Success sProfile
+    | otherwise = Failure [PhDuplicateAssigns (fst sProfile, st)]
+    where
+        st = (fmap switchNodeState . snd) sProfile
+
+-- Check that there are no two SwitchPhenotypes with the same SwitchName. 
 noDupeSwitches :: [SwitchProfile] -> Validation [ModelInvalid] [SwitchProfile]
 noDupeSwitches sProfiles = case Uniq.repeated (fst <$> sProfiles) of
     []   -> Success sProfiles
     dSws -> Failure $ [DuplicateProfileSwitches dSws]
 
+-- Check that there are no SwitchPhenotypes that do not have a corresponding
+-- ModelMapping{ Switch. 
 noExtraSwitches :: DMMSModelMapping -> [SwitchProfile]
                 -> Validation [ModelInvalid] [SwitchProfile]
 noExtraSwitches dmmsMMap sProfiles = case excessSWs of
@@ -841,10 +887,12 @@ noExtraSwitches dmmsMMap sProfiles = case excessSWs of
         uqs = Uniq.sortUniq (fst <$> sProfiles)
         excessSWs = uqs L.\\ (fst <$> dmmsMMap)
 
+-- Check that each SwitchPhenotype has a corresponding DMNode, and that these
+-- have the same number of states. 
 allSwitchStatesCovered :: [SwitchProfile] -> ModelLayer
                        -> Validation [ModelInvalid] [SwitchProfile]
 allSwitchStatesCovered sProfiles mLayer =
-    sequenceA $ sStatesCovered mLayer <$> sProfiles
+    traverse (sStatesCovered mLayer) sProfiles
 
 sStatesCovered :: ModelLayer -> SwitchProfile
                -> Validation [ModelInvalid] SwitchProfile
@@ -1233,7 +1281,7 @@ nodeCombinations r n = Map.fromList <<$>> combosList
         nNames = fst <$> (refdNodesStatesNG nExprs)
         nExprs = ((snd <$>) . gateAssigns . nodeGate) n
 
--- Extract the names and ranges from a node. 
+-- Extract the names and ranges from a node. Zero-valued. 
 nodeRange :: DMNode -> NodeRange
 nodeRange n = (name, range)
     where

@@ -26,7 +26,10 @@ library:
   source-dirs: 
   - src
   exposed-modules:
+  - DynmodIO
+  - Input
   - Parse.DMMS
+  - Parse.UI
   - Types.DMModel
   - Types.Simulation
   - Parse.GML
@@ -67,6 +70,8 @@ library:
   - safe-exceptions
   - bytestring
   - path
+  - path-io
+  - optparse-applicative
   - pretty-simple
   - mtl
   - parallel
@@ -78,6 +83,7 @@ library:
   - diagrams-svg
   - plots
   - svg-builder
+  - SVGFonts
   - bimap
 
 executables:

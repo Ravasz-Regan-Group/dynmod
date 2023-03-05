@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5921a4af6db37c757db646cdeaa72d5d5769eddc749600060b12a043736feaa7
+-- hash: d91da6ac85ce5ed6652c2a47272e7b6017869aaa22be8f9f121b3baeac497140
 
 name:           dynmod
-version:        0.6.4.0
+version:        0.6.3.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -27,7 +27,10 @@ source-repository head
 
 library
   exposed-modules:
+      DynmodIO
+      Input
       Parse.DMMS
+      Parse.UI
       Types.DMModel
       Types.Simulation
       Parse.GML
@@ -54,6 +57,7 @@ library
   ghc-options: -Wall -O2 -j
   build-depends:
       HaTeX
+    , SVGFonts
     , Unique
     , base >=4.7 && <5
     , bimap
@@ -67,9 +71,11 @@ library
     , hashable
     , megaparsec
     , mtl
+    , optparse-applicative
     , parallel
     , parser-combinators
     , path
+    , path-io
     , plots
     , pretty-simple
     , random

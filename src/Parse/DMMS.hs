@@ -6,6 +6,7 @@ module Parse.DMMS
       where
 
 import Types.DMModel
+import qualified Types.Simulation as S
 import Constants
 import Utilities
 import qualified Data.Text as T
@@ -138,7 +139,7 @@ variable = (lexeme . try) (p >>= check)
     p       = T.pack <$> ((:) <$> letterChar <*> 
         (many (alphaNumChar <|> char '_')))
     check x = if x `elem` rws
-                then fail $ "Keyword " ++ show x ++ " cannot be a nodeName. "
+                then fail $ "Keyword " ++ show x ++ " cannot be a variable. "
                 else return x
 
 -- Parse a dmms file. 
@@ -294,6 +295,7 @@ modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
     >>= nodeLinkCheck
     >>= coordDimensionCheck
     >>= modelGraphAssembler
+    >>= nonBinaryMultiInputNodesCheck
 
 nodeUniqueCheck :: [(DMNode, [(NodeName, DMLink)])]
                -> Parser [(DMNode, [(NodeName, DMLink)])] 
@@ -464,6 +466,30 @@ modelGraphAssembler ns = return $ Gr.mkGraph grNodes grEdges
       nSub (nName, l) = (fromJust $ Map.lookup nName nMap, l)
       nMap = Map.fromList $ zip ((nodeName . nodeMeta) <$> dmNodes) dmNodes
       dmNodes = fst <$> ns
+
+-- Make sure that, in the case that an environmental input is constructed of
+-- multiple nodes, that all of those nodes are binary. Otherwise, why would we
+-- bother with multi-node inputs. We assume they are wired such that, from first
+-- to last in the list, for eg a 3-node input, 000, 001, 011, and 111 will be
+-- the attractors of the input that represent the zeroth through third levels.
+-- In this way, an n-level input will be represented by n-1 nodes. 
+nonBinaryMultiInputNodesCheck :: ModelGraph -> Parser ModelGraph
+nonBinaryMultiInputNodesCheck mG = do
+    let multiNodeInputs = filter (\x -> length x >= 2) $ S.inputs mG
+        enbyLists = filter (not . L.null) $ mkEnbyList <$> multiNodeInputs
+    case enbyLists of
+        [] -> return mG
+        enbyLs -> do
+            let enbyLsStr = L.intercalate "\n" (show <$> enbyLs)
+            fail $ "Non-binary nodes in multi-node input: " ++ enbyLsStr ++
+                (show enbyLs)
+
+mkEnbyList :: [DMNode] -> [(NodeName, [NodeStateAssign])]
+mkEnbyList ns = filter enbys nameAssigns
+    where
+        enbys xs = ((length . snd) xs) > 2
+        nameAssigns = (\n -> (gNodeName n, gateAssigns n)) <$> gates
+        gates = nodeGate <$> ns
 
 -- Parse Model metadata
 modelConfigParse :: Parser ModelMeta

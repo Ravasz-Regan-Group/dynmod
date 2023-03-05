@@ -197,7 +197,7 @@ mkSMSections :: Reader DMModel LaTeX
 mkSMSections = do
   dmM   <- ask
   info  <- mappingGrouper
-  gmap <- modelLaTeXGate
+  gmap <- modelLaTeXGate 
   return $ case dmM of
     (Fine _) ->
       longtable (Just Center) theTSpec (
