@@ -3,20 +3,15 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE FlexibleContexts          #-}
 
-module Figures
-    ( attractorGrid
-    , rnGrid
-    , attractorHMSVG
-    , attractorESpaceFigure
+module Figures.InputSpaceFigure
+    ( attractorESpaceFigure
     , SVGText
     , InputBundle
-    ) where
+    ) where    
 
 import Types.DMModel
 import Types.Simulation
-import Properties.Attractors
 import Utilities
-import Plots
 import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Graphics.Svg.Core (renderText, Element)
@@ -32,6 +27,7 @@ import qualified Data.Bimap as BM
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (isNothing, catMaybes)
+
 
 type SVGText = T.Text
 type AttractorIndex = Int
@@ -84,57 +80,6 @@ type MatchCount = Int
 type ESpacePointDia = Diagram B
 type BarcodeDia = Diagram B
 
-
--- Here we actively misinterpret a ModelEnv as specifying random state slots and
--- noisy step slots instead of a single run with those numbers, but the data is
--- there and a ModelEnvs is a convenient package. 
-attractorGrid :: ModelEnv -> Int -> Simulation [[HS.HashSet Attractor]]
-attractorGrid (ModelEnv mL rN nProb nN _ _) multiplier =
-    (traverse . traverse) attractors (mEnvGrid rN nN multiplier nProb mL)
-
-mEnvGrid :: Int -> Int -> Int -> Double -> ModelLayer -> [[ModelEnv]]
-mEnvGrid rN nN multiplier nProb mL = mkRow <$> [1..rN]
-    where
-        mkRow m = ((mkMEnv (multiplier * m)) . (multiplier *)) <$> [1..nN]
-        mkMEnv i j = ModelEnv mL i nProb j 0 []
-
-
-heatMapAxis :: [[Double]] -> Int -> Axis B V2 Double
-heatMapAxis atts mult = r2Axis &~ do
-  display colourBar
-  axisExtend .= noExtend
-  axisColourMap .= Plots.viridis
-  xLabel .= "Noisy Steps"
-  yLabel .= "r_States"
-  heatMap atts $ heatMapSize .= V2 (fromIntegral mult) (fromIntegral mult)
-
-heatMapDia :: [[Double]] -> Int -> QDiagram B V2 Double Any
-heatMapDia ass mult = renderAxis $ heatMapAxis ass mult
-
-attractorHMElement :: [[Double]] -> Int -> Element
-attractorHMElement ass mult = renderDia SVG
-                                   (SVGOptions (mkWidth 1600)
-                                   Nothing
-                                   ""
-                                   []
-                                   True
-                                   )
-                                   (heatMapDia ass mult)
-
-attractorHMSVG :: [[Double]] -> Int -> SVGText
-attractorHMSVG ass mult = LT.toStrict $ renderText $
-    attractorHMElement ass mult
-
-
-rnGrid :: Int -> Int -> Int -> [[(Double, Double)]]
-rnGrid r n mult = mkRow <$> [1..rD]
-    where
-        mkRow m = (\p -> (multD * m, multD * p)) <$> [1..nD]
-        rD = fromIntegral r
-        nD = fromIntegral n
-        multD = fromIntegral mult
-
-------------------------------------------------------------------------------
 
 -- Create an up to 5-D figure to check how well attractors behave under changes
 -- in inputs, as well as how well Phenotypes match up to derived Attractors. 
@@ -544,8 +489,8 @@ mkPoints dimList unitScale = case dimList of
     [x] -> linePoints x unitScale
     [x, y] -> squarePoints x y unitScale
     [x, y, z] -> cubePoints x y z unitScale
-    [x, y, z, m] -> tesseractPoints x y z m unitScale
-    [x, y, z, m, n] -> penteractPoints x y z m n unitScale
+    [x, y, z, w] -> tesseractPoints x y z w unitScale
+    [x, y, z, w, v] -> penteractPoints x y z w v unitScale
     ds -> error $ ((show . L.length) ds) ++ " is too many dimensions!"
 
 -- Create sets of points at which to place barcode clusters. Note that each is a
@@ -599,38 +544,38 @@ mkLabels inputsList unitScale = case inputsList of
     [xs] -> lineLabels xs unitScale
     [xs, ys] -> squareLabels xs ys unitScale
     [xs, ys, zs] -> cubeLabels xs ys zs unitScale
-    [xs, ys, zs, ms] -> tesseractLabels xs ys zs ms unitScale
-    [xs, ys, zs, ms, ns] -> penteractLabels xs ys zs ms ns unitScale
+    [xs, ys, zs, ws] -> tesseractLabels xs ys zs ws unitScale
+    [xs, ys, zs, ws, vs] -> penteractLabels xs ys zs ws vs unitScale
     ils -> error $ ((show . L.length) ils) ++ " is too many inputs!"
 
 penteractLabels :: [NodeName] -> [NodeName] -> [NodeName] -> [NodeName]
                 -> [NodeName] -> Double -> Diagram B
-penteractLabels xNames yNames zNames mNames nNames unitScale = finalLs
+penteractLabels xNames yNames zNames wNames vNames unitScale = finalLs
     where
-        finalLs = xyzmLabels <> nLabels
-        nLabels = mconcat $ zipWith place nTexts shiftedNPts
-        shiftedNPts = (flip (.+^) nLabelDisp) <$> nPts
-        nLabelDisp = (unitScale / (-2)) ^& 0
-        nPts = dimSpread (gridEdges nNames) displacement $ p2 (0,0)
+        finalLs = xyzwLabels <> vLabels
+        vLabels = mconcat $ zipWith place vTexts shiftedNPts
+        shiftedNPts = (flip (.+^) vLabelDisp) <$> vPts
+        vLabelDisp = (unitScale / (-2)) ^& 0
+        vPts = dimSpread (gridEdges vNames) displacement $ p2 (0,0)
         displacement = 0 ^& (unitScale * 2 * largestLinedDim)
         largestLinedDim = (fromIntegral . maximum . (gridEdges <$>))
             [xNames, yNames, zNames]
-        nTexts = tText'' <$> nNames
-        xyzmLabels = tesseractLabels xNames yNames zNames mNames unitScale
+        vTexts = tText'' <$> vNames
+        xyzwLabels = tesseractLabels xNames yNames zNames wNames unitScale
         tText'' t = tText' t # alignR
 
 tesseractLabels :: [NodeName] -> [NodeName] -> [NodeName] -> [NodeName]
                 -> Double -> Diagram B
-tesseractLabels xNames yNames zNames mNames unitScale = xyzLabels <> mLabels
+tesseractLabels xNames yNames zNames wNames unitScale = xyzLabels <> wLabels
     where
-        mLabels = mconcat $ zipWith place mTexts shiftedMPts
-        shiftedMPts = (flip (.+^) mLabelDisp) <$> mPts
-        mLabelDisp = 0 ^& (unitScale / (-2))
-        mPts = dimSpread (gridEdges mNames) displacement $ p2 (0,0)
+        wLabels = mconcat $ zipWith place wTexts shiftedWPts
+        shiftedWPts = (flip (.+^) wLabelDisp) <$> wPts
+        wLabelDisp = 0 ^& (unitScale / (-2))
+        wPts = dimSpread (gridEdges wNames) displacement $ p2 (0,0)
         displacement = (unitScale * 2 * largestLinedDim) ^& 0
         largestLinedDim = (fromIntegral . maximum . (gridEdges <$>))
             [xNames, yNames, zNames]
-        mTexts = tText' <$> mNames
+        wTexts = tText' <$> wNames
         xyzLabels = cubeLabels xNames yNames zNames unitScale
 
 cubeLabels :: [NodeName] -> [NodeName] -> [NodeName] -> Double -> Diagram B
@@ -712,3 +657,4 @@ lLabelPad :: Double -> Diagram B -> Diagram B
 lLabelPad widest lLabel = padX tweak lLabel
     where
         tweak = widest / (width lLabel)
+

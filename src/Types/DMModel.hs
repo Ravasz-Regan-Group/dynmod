@@ -647,6 +647,7 @@ data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
                   | PhOutOfOrder (NodeName, [NodeState])
                   | PhMissingOrTooHigh (NodeName, [NodeState])
                   | PhDuplicateAssigns (NodeName, [NodeState])
+                  | DuplicatedModelNames [NodeName]
 --                   | MissingCitations MissingCitations
     deriving (Show, Eq)
 type DuplicateCoarseMapNodes = [NodeName]

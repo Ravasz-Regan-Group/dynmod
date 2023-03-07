@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: dca57fc0a6156197c0558480a0c99f7f8a87b324f58f8819fd0a8cc3b97e33a3
+-- hash: e6d266427426a38d111348b3855c6d7a369bbc504f8da7a195d25bcf3367f689
 
 name:           dynmod
 version:        0.7.0.0
@@ -47,7 +47,8 @@ library
       Text.LaTeX.Packages.ColorTbl
       Properties.LayerCharacteristics
       Properties.Attractors
-      Figures
+      Figures.AttHeatMap
+      Figures.InputSpaceFigure
   other-modules:
       Parse.Attractor
       Text.LaTeX.DynMod.Extra

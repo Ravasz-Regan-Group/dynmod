@@ -24,7 +24,8 @@ import Utilities
 import Properties.Attractors
 import Text.LaTeX.Base.Render (render)
 import Publish
-import Figures
+import Figures.AttHeatMap
+import Figures.InputSpaceFigure
 import Types.GML
 import qualified ReadWrite as RW
 import qualified Data.List.Split as Split

@@ -171,7 +171,10 @@ modelParse = between (symbol "Model{") (symbol "Model}")
             )
         )
         <|> (Fine <$> modelLayerParse)
-    ) >>= nodeDupeCheck >>= nodeDifferentiate >>= phenotypeDupeCheck
+    ) >>= modelDupeCheck
+      >>= nodeDupeCheck
+      >>= nodeDifferentiate 
+      >>= phenotypeDupeCheck
 
 -- Return a DMModel whose Gr.Nodes are unique in all layers. This is useful when
 -- doing anything related to the ModelMappings, since by definition they work
@@ -210,10 +213,10 @@ indexShift offSet g = Gr.mkGraph sNodes sEdges
         nodes = Gr.labNodes g
 
 
--- Check that ALL NodeNames in the entire parsed DMModel are unique
+-- Check that ALL NodeNames in the entire parsed DMModel are unique. 
 nodeDupeCheck :: DMModel -> Parser DMModel
 nodeDupeCheck dM
-    | repeats == [] = return dM
+    | L.null repeats = return dM
     | otherwise = fail $ show $ DuplicatedNodeNames repeats
     where
         repeats = repeated ns
@@ -223,12 +226,21 @@ nodeDupeCheck dM
 -- Make sure that Phenotype PhenotypeNames are globally unique. 
 phenotypeDupeCheck :: DMModel -> Parser DMModel
 phenotypeDupeCheck dM
-    | repeats == [] = return dM
+    | L.null repeats = return dM
     | otherwise = fail $ show $ DuplicatedPhenotypeNames repeats
     where
         repeats = repeated pNs
         pNs = phenotypeName <$> (concatMap (snd . snd) switches)
         switches = (concat . modelMappings) dM
+
+-- Check that ALL ModelNames in the entire parsed DMModel are unique. 
+modelDupeCheck :: DMModel -> Parser DMModel
+modelDupeCheck dM
+    | L.null repeats = return dM
+    | otherwise = fail $ show $ DuplicatedModelNames repeats
+    where
+        repeats = repeated ms
+        ms = (fmap (modelName . modelMeta) . modelLayers) dM
 
 -- Assemble the pieces of the LayerBinding, with various consistency checks. 
 modelMappingCheck :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)

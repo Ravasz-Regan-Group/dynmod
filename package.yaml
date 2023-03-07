@@ -46,7 +46,8 @@ library:
   - Text.LaTeX.Packages.ColorTbl
   - Properties.LayerCharacteristics
   - Properties.Attractors
-  - Figures
+  - Figures.AttHeatMap
+  - Figures.InputSpaceFigure
   ghc-options:
   - -Wall
   - -O2
