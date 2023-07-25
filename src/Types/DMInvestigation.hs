@@ -907,14 +907,14 @@ nodeAlter :: LayerVec
           -> ([(NodeIndex, NodeState)], StdGen)
           -> ([(NodeIndex, NodeState)], StdGen)
 nodeAlter _ (IntNodeLock nIndex nState lProb) (fixedPairs, gen)
-    | rand >= lProb = ((nIndex, nState):fixedPairs, newGen)
+    | lProb >= rand = ((nIndex, nState):fixedPairs, newGen)
     | otherwise = (fixedPairs, newGen)
     where
         (rand, newGen) = uniformR (0, 1) gen
 nodeAlter lVec (IntGradientNudge nIndex nRangeT nDirec nProb) (fixedPairs, gen)
-    | (rand >= nProb) && nDirec && (cState < nRangeT) =
+    | (nProb >= rand) && nDirec && (cState < nRangeT) =
         (bumpedUp:fixedPairs, newGen)
-    | (rand >= nProb) && (not nDirec) && (cState > 0) =
+    | (nProb >= rand) && (not nDirec) && (cState > 0) =
         (bumpedDown:fixedPairs, newGen)
     | otherwise = (fixedPairs, newGen)
     where
