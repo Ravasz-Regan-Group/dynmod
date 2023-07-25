@@ -11,15 +11,22 @@ module Types.Simulation
     , Folder (..)
     , LayerVec
     , FixedVec
+    , RangeTop
     , LayerSpecs (..)
     , layerPrep
     , LayerNameIndexBimap
+    , LayerRangeVec
     , PSStepper
+    , PNStepper'
+    , PAStepper'
     , InvalidLVReorder (..)
     , synchStep
+    , noisyStep'
+    , asyncStep'
     , topStates
     , mkAttractor
     , layerVecReorder
+    , attractorMMReorder
     , inputs
     , inputCombos
     , inputLevels
@@ -115,7 +122,7 @@ type Thread = B.Vector LayerVec
 type Attractor = Thread
 -- Collection of Attractors, mapped to the HashSet of their attractor basin.
 type AttractorSet = M.HashMap Attractor (HS.HashSet LayerVec)
--- This is the what's written when we write attractors out to storage. It
+-- This is what's written when we write attractors out to storage. It
 -- contains the attractors from the Fine layer of the DMModel and the switch
 -- mappings from the next layer up. 
 type AttractorBundle = ( DMMSModelMapping
@@ -124,8 +131,14 @@ type AttractorBundle = ( DMMSModelMapping
 -- Steppers primed with everything they need except a LayerVec
 -- Synchronous, deterministic
 type PSStepper = LayerVec -> LayerVec
--- Noisy, synchronous
-type PAStepper = LayerVec -> Simulation LayerVec
+-- Noisy, synchronous, non-monadic
+type PNStepper' = LayerVec -> StdGen -> (LayerVec, StdGen)
+-- Asynchronous, deterministic (noisy in which DMNode is selected to update at a
+-- time, but deterministic in that no DMNode slips), non-monadic. 
+type PAStepper' = LayerVec -> StdGen -> (LayerVec, StdGen)
+-- Asynchronous, deterministic (noisy in which DMNode is selected to update at a
+-- time, but deterministic in that no DMNode slips), monadic. 
+-- type PAStepper = LayerVec -> Simulation LayerVec
 
 data InvalidLVReorder = NewOldOrderingMismatch
                       | OldOrderingLVMismatch
@@ -244,7 +257,7 @@ mkAttractor vecVec = B.backpermute vecVec $ B.generate vLength indexShift
         vLength = B.length vecVec
         indexShift i = (i + smallestIndex) `rem` vLength
 
--- Chain a uniformR  function so that I can fold up the LayerRange to get a
+-- Chain a uniformR function so that I can fold up the LayerRange to get a
 -- random LayerVec, and also end up with a single g -> (a, g) function to pass
 -- to state. 
 chainSR :: (S.Seq NodeState, StdGen)
@@ -295,10 +308,21 @@ synchStep ivs tts lVec = newVec
     where
         newVec = U.fromList $ L.zipWith (tableGateEval lVec) ivs tts 
 
+-- Synchronous, noisy network update. Non-monadic
+noisyStep' :: PSStepper -> Probability -> LayerRangeVec
+           -> LayerVec -> StdGen
+           -> (LayerVec, StdGen)
+noisyStep' psStepper noiseLevel lrVec lVec gen = (slippedVec, newGen)
+    where
+        (slippedVec, newGen) = nStepFunc noiseLevel rangedNVec gen
+        rangedNVec = U.zip nextVec lrVec
+        nextVec = psStepper lVec
+
 nStepFunc :: Double
-             -> U.Vector (NodeState, (NodeState, RangeTop))
-             -> StdGen
-             -> (LayerVec, StdGen)
+-- A zipped LayerVec and LayerRangeVec 
+          -> U.Vector (NodeState, (NodeState, RangeTop))
+          -> StdGen
+          -> (LayerVec, StdGen)
 nStepFunc noiseLevel rangedNVec g = (lVec, newG)
     where
         (lSeq , newG) = U.foldl' (chainP noiseLevel) (S.empty, g) rangedNVec
@@ -308,9 +332,9 @@ nStepFunc noiseLevel rangedNVec g = (lVec, newG)
 -- to get see if any if the LayerVec's states slip due to noise, and also end up
 -- with a single g -> (a, g) function to pass to state. 
 chainP :: Double
-          -> (S.Seq NodeState, StdGen)
-          -> (NodeState, (NodeState, RangeTop))
-          -> (S.Seq NodeState, StdGen)
+       -> (S.Seq NodeState, StdGen)
+       -> (NodeState, (NodeState, RangeTop))
+       -> (S.Seq NodeState, StdGen)
 chainP p (buildSeq, g) (nState, (low, high))
     | chance > p = (buildSeq S.|> nState, newG)
     | otherwise =
@@ -322,18 +346,32 @@ chainP p (buildSeq, g) (nState, (low, high))
     where
         (chance, newG) = uniformR (0 :: Double, 1 :: Double) g
 
--- Asynchronous, deterministic network update
-asyncStep :: Int -- Length of a LayerVec in this ModelLayer
-          -> M.HashMap NodeIndex TruthTable
-          -> M.HashMap NodeIndex IndexVec
-          -> LayerVec
-          -> Simulation LayerVec
-asyncStep vecLength ttMap ivMap lVec = do
-    updateIndex <- state $ uniformR (0, vecLength - 1)
-    let tTable = ttMap M.! updateIndex
+-- Asynchronous, deterministic network update. 
+-- asyncStep :: Int -- Length of a LayerVec in this ModelLayer
+--           -> M.HashMap NodeIndex TruthTable
+--           -> M.HashMap NodeIndex IndexVec
+--           -> LayerVec
+--           -> Simulation LayerVec
+-- asyncStep vecLength ttMap ivMap lVec = do
+--     updateIndex <- state $ uniformR (0, vecLength - 1)
+--     let tTable = ttMap M.! updateIndex
+--         iVec = ivMap M.! updateIndex
+--         newVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
+--     return newVec
+
+-- Asynchronous, deterministic network update. Non-monadic
+asyncStep' :: Int -- Length of a LayerVec in this ModelLayer
+           -> M.HashMap NodeIndex TruthTable
+           -> M.HashMap NodeIndex IndexVec
+           -> LayerVec -> StdGen
+           -> (LayerVec, StdGen)
+asyncStep' vecLength ttMap ivMap lVec gen = (nextVec, newGen)
+    where
+        (updateIndex, newGen) = uniformR (0, vecLength - 1) gen
+        tTable = ttMap M.! updateIndex
         iVec = ivMap M.! updateIndex
-        newVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
-    return newVec
+        nextVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
+
 
 -- Construct (LayerNameIndexBimap, LayerRangeVec, TruthTableList, IndexVecList)
 -- from a ModelLayer. Ordering is alphabetical by node name in each. 
@@ -421,6 +459,17 @@ soleSelfLoops mG = onlys
         nodes = Gr.nodes mG
         onlyMe g n = Gr.pre g n == [n]
 
+-- Order the nodes in an attractor according to the Switch partitioning of the
+-- layer above. 
+attractorMMReorder :: DMMSModelMapping
+                   -> LayerNameIndexBimap
+                   -> Attractor
+                   -> Either InvalidLVReorder Attractor
+attractorMMReorder dmmsMM lniBMap att =
+    traverse (layerVecReorder lniBMap switchNodeOrder) att
+    where
+        switchNodeOrder = concatMap snd dmmsMM
+
 -- Re-order a LayerVec according to a new List of NodeNames. Basic error
 -- checking, but use at your own risk. 
 layerVecReorder :: LayerNameIndexBimap
@@ -431,7 +480,7 @@ layerVecReorder lniBMap newOrder lVec
     | (L.sort . BM.keys) lniBMap /= L.sort newOrder =
         Left NewOldOrderingMismatch
     | BM.size lniBMap /= U.length lVec = Left OldOrderingLVMismatch
-    | otherwise = Right $  U.backpermute lVec permuteVec
+    | otherwise = Right $ U.backpermute lVec permuteVec
         where
              permuteVec = U.fromList $ (lniBMap BM.!) <$> newOrder
 

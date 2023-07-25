@@ -53,15 +53,10 @@ main = do
                                                           ((fst . snd) rightP)
                         _ ->
                             fail $ "Not a dmms file: " <> toFilePath cFilePath
-                Procedure ps -> let
-                    pOut = M.runParser modelFileParse strFileName fileclInput in
-                    procedureDMMS mFilePath ps pOut
-                Experiment es -> let
-                    pOut = M.runParser modelFileParse strFileName fileclInput in
-                    experimentDMMS mFilePath es pOut
-                Figure fs -> let
-                    pOut = M.runParser modelFileParse strFileName fileclInput in
-                    figureDMMS mFilePath fs pOut
-        _ -> fail $ "Not a dmms file: " <> toFilePath mFilePath
+                Procedure ps -> procedureDMMS mFilePath ps pOut
+                Experiment es -> experimentDMMS mFilePath es pOut
+                Figure fs -> figureDMMS mFilePath fs pOut
+                where pOut = M.runParser modelFileParse strFileName fileclInput
+        _ -> fail $ "Not a dmms file: " <> strFileName
 
 

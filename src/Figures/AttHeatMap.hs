@@ -9,16 +9,14 @@ module Figures.AttHeatMap
 
 import Types.DMModel
 import Types.Simulation
+import Types.Figures
 import Properties.Attractors
 import Plots
 import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Graphics.Svg.Core (renderText, Element)
-import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.HashSet as HS
-
-type SVGText = T.Text
 
 -- Here we actively misinterpret a ModelEnv as specifying random state slots and
 -- noisy step slots instead of a single run with those numbers, but the data is

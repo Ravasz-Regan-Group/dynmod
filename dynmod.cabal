@@ -3,8 +3,6 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.35.1.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: e6d266427426a38d111348b3855c6d7a369bbc504f8da7a195d25bcf3367f689
 
 name:           dynmod
 version:        0.7.0.0
@@ -33,6 +31,7 @@ library
       Parse.UI
       Types.DMModel
       Types.Simulation
+      Types.Figures
       Parse.GML
       Types.GML
       Compare
@@ -49,9 +48,12 @@ library
       Properties.Attractors
       Figures.AttHeatMap
       Figures.InputSpaceFigure
+      Figures.ExperimentRun
   other-modules:
       Parse.Attractor
+      Parse.VEX
       Text.LaTeX.DynMod.Extra
+      Types.DMInvestigation
       Paths_dynmod
   hs-source-dirs:
       src
@@ -68,6 +70,7 @@ library
     , deepseq
     , diagrams-lib
     , diagrams-svg
+    , extra
     , fgl
     , hashable
     , megaparsec
@@ -83,7 +86,6 @@ library
     , safe-exceptions
     , scientific
     , split
-    , splitmix
     , svg-builder
     , text
     , unordered-containers

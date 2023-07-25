@@ -32,6 +32,7 @@ library:
   - Parse.UI
   - Types.DMModel
   - Types.Simulation
+  - Types.Figures
   - Parse.GML
   - Types.GML
   - Compare
@@ -48,6 +49,7 @@ library:
   - Properties.Attractors
   - Figures.AttHeatMap
   - Figures.InputSpaceFigure
+  - Figures.ExperimentRun
   ghc-options:
   - -Wall
   - -O2
@@ -78,7 +80,7 @@ library:
   - parallel
   - deepseq
   - random
-  - splitmix # Remove this when you move to GHC 9.2.1
+#   - splitmix # Remove this when you move to GHC 9.2.1
   - split
   - diagrams-lib
   - diagrams-svg
@@ -86,6 +88,7 @@ library:
   - svg-builder
   - SVGFonts
   - bimap
+  - extra
 
 executables:
   dynmod:

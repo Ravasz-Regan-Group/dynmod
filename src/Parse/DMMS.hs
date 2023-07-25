@@ -24,7 +24,7 @@ import Data.Validation
 import Data.List.Unique (repeated)
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
+import qualified Text.Megaparsec.Char.Lexer as LE
 import Data.Scientific
 import qualified Data.List as L
 import Data.Maybe (fromJust, mapMaybe)
@@ -39,28 +39,28 @@ import Numeric (readHex)
 type Parser = Parsec Void T.Text
 
 sc :: Parser ()
-sc = L.space space1 lineCmnt blockCmnt
+sc = LE.space space1 lineCmnt blockCmnt
   where
-    lineCmnt  = L.skipLineComment "//"
-    blockCmnt = L.skipBlockComment "/*" "*/"
+    lineCmnt  = LE.skipLineComment "//"
+    blockCmnt = LE.skipBlockComment "/*" "*/"
 
 hsc :: Parser ()
-hsc = L.space hspace1 lineCmnt blockCmnt
+hsc = LE.space hspace1 lineCmnt blockCmnt
   where
-    lineCmnt  = L.skipLineComment "//"
-    blockCmnt = L.skipBlockComment "/*" "*/"
+    lineCmnt  = LE.skipLineComment "//"
+    blockCmnt = LE.skipBlockComment "/*" "*/"
 
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
+lexeme = LE.lexeme sc
 
 hlexeme :: Parser a -> Parser a
-hlexeme = L.lexeme hsc
+hlexeme = LE.lexeme hsc
 
 symbol :: T.Text -> Parser T.Text
-symbol = L.symbol sc
+symbol = LE.symbol sc
 
 hsymbol :: T.Text -> Parser T.Text
-hsymbol = L.symbol hsc
+hsymbol = LE.symbol hsc
 
 -- | 'braces' parses something between braces.
 
@@ -81,15 +81,15 @@ hparens = between (hsymbol "(") (hsymbol ")")
 -- | 'number' parses an number in scientific format.
 
 number :: Parser Scientific
-number = lexeme L.scientific
+number = lexeme LE.scientific
 
 signedNumber :: Parser Scientific
-signedNumber = L.signed sc number
+signedNumber = LE.signed sc number
 
 -- | 'integer' parses an Int. (Note that this does not parse signs!)
 
 integer :: Parser Int
-integer = lexeme L.decimal
+integer = lexeme LE.decimal
 
 
 -- | 'colon' parses a colon.
@@ -144,7 +144,7 @@ variable = (lexeme . try) (p >>= check)
 
 -- Parse a dmms file. 
 modelFileParse :: Parser (FileFormatVersion, (DMModel, CitationDictionary))
-modelFileParse = (,) <$> dmmsVersion <*> modelCiteParse <* eof
+modelFileParse = sc >> (,) <$> dmmsVersion <*> modelCiteParse <* eof
 
 -- Parse the dmms file format version. 
 dmmsVersion :: Parser FileFormatVersion
@@ -1003,7 +1003,7 @@ slurpTable = do
 parseTableRow :: Int -> Parser [NodeState]
 parseTableRow n = do
     inputs <- count (n - 1) (intParse <?> show IncompleteOrOversizedRow)
-    output <- L.decimal
+    output <- LE.decimal
     skipMany (symbol " " <|> (T.singleton <$> tab))
     _ <- eol
     return (inputs ++ [output])
@@ -1013,7 +1013,7 @@ parseTableRow n = do
 -- any individual row is incomplete or too long. 
 intParse :: Parser Int
 intParse = do
-    n <- L.decimal
+    n <- LE.decimal
     skipSome (symbol " " <|> (T.singleton <$> tab))
     return n
 

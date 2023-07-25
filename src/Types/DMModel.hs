@@ -87,6 +87,7 @@ module Types.DMModel
     , coarseLayer
     , fineLayer
     , mkLayerBinding
+    , findLayerWithBinding
     , layerNodes
     , layerRanges
     , nodeCombinations
@@ -116,6 +117,7 @@ module Types.DMModel
 -- the future. 
 
 import Utilities
+import Data.Hashable
 import Text.LaTeX.Base.Class (fromLaTeX, commS)
 import Text.LaTeX.Base.Commands (footnotesize)
 import Text.LaTeX.Base.Math (math)
@@ -133,11 +135,21 @@ import qualified Data.HashSet as Set
 import Data.Validation
 import qualified Data.List.Unique as Uniq
 import qualified Data.Versions as Ver
-import qualified Data.List as L
+import qualified Data.List.Extra as L
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
 import Data.String (IsString(..))
 import qualified Data.Bifunctor as BF
+
+-- We need a Hashable version of Colour to put them into HashMaps, but this will
+-- really only work for a Double-esque a in Colour a. I'd rather not use a
+-- newtype and then try to GeneralisedNewtypeDeriving all of Colour's instances.
+-- I know I'd forget something. 
+instance (Hashable a, Ord a, Floating a)=> Hashable (C.Colour a) where
+    hashWithSalt salt colr =
+        salt `hashWithSalt` x `hashWithSalt` y `hashWithSalt` z
+        where
+            SC.RGB x y z = SC.toSRGB colr
 
 -- Defining the types that will comprise a model,
 -- to parse, verify, and run simulations
@@ -1345,11 +1357,22 @@ modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
 modelCiteKeys (LayerBinding _ mLayer dmModel) =
     (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 
--- Extract all the names of the layers of  DMModel SUPPRESSED
--- layerNames :: DMModel -> [T.Text]
--- layerNames (Fine ml) = [(modelName . modelMeta) ml]
--- layerNames (LayerBinding _ mLayer dmModel) =
---     ((modelName . modelMeta) mLayer) : (layerNames dmModel)
+-- Extract all the names of the layers of  DMModel
+layerNames :: DMModel -> [T.Text]
+layerNames (Fine ml) = [(modelName . modelMeta) ml]
+layerNames (LayerBinding _ mLayer dmModel) =
+    ((modelName . modelMeta) mLayer) : (layerNames dmModel)
+
+-- Find a ModelLayer and the ModelMapping that binds it to the next ModelLayer
+-- up, if either of them exist
+findLayerWithBinding :: T.Text
+                     -> DMModel
+                     -> Maybe (Maybe ModelMapping, ModelLayer)
+findLayerWithBinding lName dmM = (,) foundMap <$> foundLayer
+    where
+        foundMap = ((-1 +) <$> layerIndex) >>= ((modelMappings dmM) L.!?)
+        foundLayer = layerIndex >>= ((modelLayers dmM) L.!?)
+        layerIndex = L.elemIndex lName (layerNames dmM)
 
 -- Peel off the coarsest (topmost) ModelLayer of a DMModel
 coarseLayer :: DMModel -> ModelLayer

@@ -120,12 +120,11 @@ attRunDown' stepper aSetTr lV = runDown' lV M.empty 0 aSetTr
 --                     False -> return atts
 
 -- Are the Attractors from a parsed attractor.csv actually Attractors of the
--- given ModelLayer form the parsed DMMS file? The given DMModel has been
--- checked to have at least 2 layers. We use the Fine and first LayerBinding. 
-attractorCheck :: DMModel
+-- given ModelLayer from the parsed DMMS file? 
+attractorCheck :: (DMMSModelMapping, ModelLayer)
                -> AttractorBundle
                -> (Validation [AttractorsInvalid] (HS.HashSet Attractor))
-attractorCheck dmModel (csvMMap, csvLNIBMap, atts) =
+attractorCheck (dmmsMMap, mL) (csvMMap, csvLNIBMap, atts) =
     case mmCheck csvMMap dmmsMMap of
     err:errs -> Failure (err:errs)
     [] -> (validationed valF orderedAtts) <* checkedAtts
@@ -138,9 +137,6 @@ attractorCheck dmModel (csvMMap, csvLNIBMap, atts) =
                 (lNISwitchThread csvLNIBMap dmmsLNIBMap) (HS.toList atts))
             dmmsPSStepper = synchStep dmmsIVList dmmsTTList
             LayerSpecs dmmsLNIBMap _ dmmsTTList dmmsIVList = layerPrep mL
-    where
-        dmmsMMap = (fst . modelMappingSplit . last . modelMappings) dmModel
-        mL = fineLayer dmModel
 
 valF :: Validation [InvalidLVReorder] (HS.HashSet Attractor)
      -> Validation [AttractorsInvalid] (HS.HashSet Attractor)

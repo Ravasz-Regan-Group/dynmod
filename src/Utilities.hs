@@ -74,9 +74,8 @@ allTheSame (x:xs) = all (== x) xs
 -- Combine Validation Failures monoidally in the error. 
 errorRollup :: [Validation a b] -> [a]
 errorRollup = foldr ePop []
-                where ePop v es = case isFailure v of
-                                  True  -> ((\(Failure e) -> e) v) : es
-                                  False -> es
+                where ePop (Failure e) es = e:es
+                      ePop (Success _) es = es
 
 
 -- In a list of n HashSets, this finds any element in any set that occurs in
@@ -201,5 +200,25 @@ quadUncurry f ((a, b), (c, d)) = f a b c d
 doubleUncurry :: (a -> b -> c -> d -> e) -> (a, b) -> (c, d) -> e
 doubleUncurry f (a, b) (c, d) = f a b c d
 
-isProb :: (Ord a, Num a) => a -> Bool
-isProb p = (0 <= p) && (p <= 1)
+type Probability = Double
+
+mkProb :: Double -> Maybe Probability
+mkProb p
+    | (0 <= p) && (p <= 1) = Just p
+    | otherwise = Nothing
+
+-- I want to know if an input in an InputCoord is set to an integer rather than
+-- a real, so as to avoid trying to stochastically set a value that can only
+-- ever have one result. The problem is that checking if a Float is "actually"
+-- an Int is fraught with rounding errors and other floating point trouble. 
+-- The following, from:
+-- https://stackoverflow.com/questions/1164003/how-do-i-test-if-a-floating-point
+--                                              -number-is-an-integer-in-haskell
+-- is good enough for my purposes. 
+-- True if x is an int to n decimal places
+-- isInt :: (Integral a, RealFrac b) => a -> b -> Bool
+-- isInt n x = (round $ 10^(fromIntegral n) * (x - (fromIntegral $ round x))) == 0
+-- Non-polymorphic version (which is all I need)
+isInt :: Int -> Double -> Bool
+isInt n x = ((round $ 10^n * (x - (fromInteger $ round x))) :: Int) == 0
+

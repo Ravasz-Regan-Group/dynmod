@@ -12,6 +12,8 @@ module DynmodIO
 import Input
 import Types.DMModel
 import Types.Simulation
+import Types.DMInvestigation
+import Types.Figures
 import SuppMat
 import Compare
 import Render
@@ -19,6 +21,7 @@ import Parse.DMMS
 import Parse.GML
 import Parse.Attractor
 import Parse.UI
+import Parse.VEX
 import Visualize
 import Utilities
 import Properties.Attractors
@@ -26,6 +29,7 @@ import Text.LaTeX.Base.Render (render)
 import Publish
 import Figures.AttHeatMap
 import Figures.InputSpaceFigure
+import Figures.ExperimentRun
 import Types.GML
 import qualified ReadWrite as RW
 import qualified Data.List.Split as Split
@@ -71,6 +75,19 @@ experimentDMMS f experiment (Right parsed) = do
         GridSearch ((EParams rN nN nProb), mult) ->
             gridDMMS f dmmsMMap mult mEnv
             where mEnv = ModelEnv fLayer rN nProb nN 0 []
+        VEX vexText -> do
+            vexFilePath <- resolveFile' $ T.unpack $ vexText
+            (_, vexFileExt) <- splitExtension vexFilePath
+            vexFileContent <- RW.readFile vexFilePath
+            let vexFileNameStr = toFilePath vexFilePath
+            case vexFileExt of
+                ".vex" ->
+                    runVEX f vexFilePath dmModel pOut
+                    where pOut = M.runParser experimentFileParse
+                                             vexFileNameStr
+                                             vexFileContent
+                _ -> fail $ "Not a vex file: " <> vexFileNameStr
+            
 
 attFindDMMS :: Path Abs File
             -> DMMSModelMapping
@@ -113,6 +130,7 @@ gridDMMS f mMap mult mEnv = do
     RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
     writeAttractorBundle f lniBMap mMap allAtts
 
+-- Write out an AttractorBundle to disk. 
 writeAttractorBundle :: Path Abs File
                      -> LayerNameIndexBimap
                      -> DMMSModelMapping
@@ -122,13 +140,12 @@ writeAttractorBundle f lniBMap mapping attSet = do
     (fName, _) <- splitExtension $ filename f
     let attVecList = HS.toList attSet
         attNumber = length attVecList
-        switchNodeOrder = concatMap snd mapping
-        reordattVecList = case sequence (sequence <$>
-            (layerVecReorder lniBMap switchNodeOrder <<$>> attVecList)) of
-                (Left err) -> fail $ "Attractor reorder failed: " <>
-                                     (show err)
+        reorderedAttList =
+            case traverse (attractorMMReorder mapping lniBMap)
+                          attVecList
+            of  (Left err) -> fail $ "Attractor reorder failed: " <> (show err)
                 (Right r)  -> r
-        attLLists = U.toList <<$>> (B.toList <$> reordattVecList)
+        attLLists = U.toList <<$>> (B.toList <$> reorderedAttList)
         attSizes = L.length <$> attLLists
         flatAttTanspLists = L.transpose (mconcat attLLists)
         switchRows = mappingFormat mapping
@@ -136,7 +153,6 @@ writeAttractorBundle f lniBMap mapping attSet = do
             ((T.pack . show) attNumber)
         fNameString = fromRelFile fName
         attFileName = fNameString ++ "_attractors"
-
     attFileNameRel <- parseRelFile attFileName
     attFileNameRelWExt <- (addExtension ".csv") attFileNameRel
     RW.writeFile attFileNameRelWExt attFile
@@ -160,6 +176,111 @@ mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
         spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
             ((T.pack . show) <<$>> Split.splitPlaces ss r)
 
+runVEX :: Path Abs File
+       -> Path Abs File
+       -> DMModel
+       -> Either (M.ParseErrorBundle T.Text Void) VEXInvestigation
+       -> IO ()
+runVEX _ _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
+runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
+    vexDMMSFILEPath <- resolveFile' dmmsFilePStr
+    case dmmsPath == vexDMMSFILEPath of
+        False -> fail errMessage
+            where
+                errMessage = "The parsed DMMS file: " <> toFilePath dmmsPath <>
+                    "\n  and the DMMSFile from " <>
+                    toFilePath (filename vexPath) <> ": " <>
+                    toFilePath vexDMMSFILEPath <> "\n  do not match. "
+        True -> case mkDMInvestigation dmModel vexLayerExpSpecs of
+            Failure errs -> do
+                mapM_ putStrLn ((T.unpack . vexErrorPrep) <$> errs)
+            Success lExpSpecs -> do
+                putStrLn "Good vex validation"
+                attSets <- mapM (mkInvestigationAtts dmModel) vexLayerExpSpecs
+                putStrLn "Good attractors"
+                let cMap = mkColorMap dmModel
+                gen <- initStdGen
+                putStrLn "Running experiments..."
+                let iResults = runInvestigation cMap gen $ zip attSets lExpSpecs
+                    numExp = sum $ (length . layerResultERs) <$> iResults
+                    expTense
+                        | numExp == 1 = " experiment. "
+                        | otherwise = " experiments. "
+                putStrLn $ "Ran " <> show numExp <> expTense
+                putStrLn "Generating figures..."
+                let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets)
+                                                                iResults
+                writeVexFigs dmmsPath lRFigs
+
+writeVexFigs :: Path Abs File
+             -> [([(ExpContext, [(Barcode, SVGText)])], Maybe SVGText)]
+             -> IO ()
+writeVexFigs f layerFigs = mapM_ (writeLayerFig f) layerFigs
+
+writeLayerFig :: Path Abs File
+              -> ([(ExpContext, [(Barcode, SVGText)])], Maybe SVGText)
+              -> IO ()
+writeLayerFig f (expPairs, m5DSVGText) = do
+    mapM_ (writeExpFig f) expPairs
+    mapM_ (writeFiveDFig f) m5DSVGText
+
+writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, SVGText)]) -> IO ()
+writeExpFig f ((ExpCon expName expType), svgPairs) = do
+    let dirStem = parent f
+    dirExp <- parseRelDir "_EXP"
+    dirCat <- case expType of
+        P1 -> parseRelDir "Pulse1"
+        KDOE -> parseRelDir "KD_OE"
+        GenExp -> parseRelDir "General_Time_Series"
+    dirExpName <- parseRelDir (T.unpack expName)
+    let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
+    ensureDir dirFull
+    mapM_ (writeExpBCFig dirFull) svgPairs
+
+writeExpBCFig :: Path Abs Dir -> (Barcode, SVGText) -> IO ()
+writeExpBCFig dirFull (bc, svgT) = do
+    let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+    relFileName <- parseRelFile ("bc" <> T.unpack bcPatterns)
+    relFileNameWExt <- addExtension ".svg" relFileName
+    let absFileNameWExt = dirFull </> relFileNameWExt
+    RW.writeFile absFileNameWExt svgT
+
+-- Make the part of the filename for the time series figures associated with a
+-- particular Bar in a particular Barcode. If the Bar has matched to a
+-- Phenotype, number it out of the total number of Phenotypes associated with
+-- that Switch (1-indexed numbering). If not, denote it with an 'm' for "miss".
+barFNPattern :: Bar -> T.Text
+barFNPattern b = case barPhenotype b of
+    Nothing -> "m"
+-- We reverse the PhenotypeNames so that the numbers in the file name match up
+-- with the numbered legend we make inside the SVG file, which are listed from
+-- the bottom up. 
+    Just phName -> (T.pack . show . (+1) . fromJust .
+        flip L.elemIndex ((L.reverse . phenotypeNames) b)) phName
+    
+        
+
+mkInvestigationAtts :: DMModel -> VEXLayerExpSpec -> IO (HS.HashSet Attractor)
+mkInvestigationAtts dmModel vLExSpec = case layerMatch dmModel vLExSpec of
+    Failure errs -> fail $ show errs
+    Success ((mM, mL), _) -> case sampling vLExSpec of
+        SampleOnly (SamplingParameters rN nN nProb) -> do
+            gen <- initStdGen
+            let mEnv = ModelEnv mL rN nProb nN 0 []
+                atts = evalState (attractors mEnv) gen
+            return atts
+        ReadOnly csvfileString -> do
+            (_, _, atts) <- loadAttCSV (dmmsMM, mL) csvfileString
+            return atts
+        ReadAndSample (SamplingParameters rN nN nProb) csvfileString -> do
+            gen <- initStdGen
+            let mEnv = ModelEnv mL rN nProb nN 0 []
+                generatedAtts = evalState (attractors mEnv) gen
+            (_, _, loadedAtts) <- loadAttCSV (dmmsMM, mL) csvfileString
+            return $ generatedAtts <> loadedAtts
+        where
+            dmmsMM = (fst . modelMappingSplit) mM
+            
 
 updateDMMS :: Path Abs File
            -> T.Text
@@ -398,28 +519,42 @@ figureDMMS _ _ (Left err) = PS.pPrint (M.errorBundlePretty err)
 figureDMMS f attFileName (Right parsed) = do
     putStrLn "Good parse"
     let dmModel = (fst . snd) parsed
+        cMap = mkColorMap dmModel
         fLayer = fineLayer dmModel
-        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
-    attFilePath <- resolveFile' $ T.unpack attFileName
-    attFileInput <- RW.readFile attFilePath
-    let parsedAttBundle = attractorFileParse attFileInput
-    case attractorCheck dmModel parsedAttBundle of
-        Failure errs -> fail $ show errs
-        Success atts -> do
-            mMap <- twoLayerModelMapping $ modelMappings dmModel
-            let dmMMap = (fst . modelMappingSplit) mMap
-                attBundle = (dmMMap, lniBMap, atts)
-            putStrLn "Generating Figure"
-            fiveDFig <- mkFiveDFigure dmModel attBundle
-            putStrLn "Writing SVG File"
-            writeFiveDFig f fiveDFig
+    mMap <- twoLayerModelMapping $ modelMappings dmModel
+    let dmmsMMap = (fst . modelMappingSplit) mMap
+    (_, _, atts) <- loadAttCSV (dmmsMMap, fLayer) $ T.unpack attFileName
+    putStrLn "Generating Figure"
+    fiveDFig <- mkFiveDFigure cMap (mMap, fLayer) atts
+    putStrLn "Writing SVG File"
+    writeFiveDFig f fiveDFig
+
+-- Read and validate an attractor csv file.
+-- Parse attractor csv files correctly!!!!!!!
+loadAttCSV :: (DMMSModelMapping, ModelLayer) -> FilePath -> IO (AttractorBundle)
+loadAttCSV (dmmsMMap, mL) csvAttFStr = do
+    csvAttFilePath <- resolveFile' csvAttFStr
+    (_, csvAFExt) <- splitExtension csvAttFilePath
+    attFileContent <- RW.readFile csvAttFilePath
+    case csvAFExt of
+        ".csv" -> do
+            let parsedAttBundle = attractorFileParse attFileContent
+            case attractorCheck (dmmsMMap, mL) parsedAttBundle of
+                Failure errs -> fail $ show errs
+                Success atts -> do  
+                    let LayerSpecs lniBimap _ _ _ = layerPrep mL
+                    return (dmmsMMap, lniBimap, atts)
+        _ -> fail $ "not a cvs file: " <> csvAttFStr
+
 
 -- Interact with the user to determine which, if any, inputs are pinned in the
 -- 5-D figure, then generate the SVG. 
-mkFiveDFigure :: DMModel -> AttractorBundle -> IO (SVGText)
-mkFiveDFigure dmModel attBundle = do
-    let fLayer = fineLayer dmModel
-        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
+mkFiveDFigure :: ColorMap
+              -> (ModelMapping, ModelLayer)
+              -> HS.HashSet Attractor
+              -> IO (SVGText)
+mkFiveDFigure cMap (mMap, fLayer) atts = do
+    let LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         ipPtNodes = (inputs . modelGraph) fLayer
         numEnv = L.length ipPtNodes
         inptOpts = inputOptions ipPtNodes
@@ -429,9 +564,8 @@ mkFiveDFigure dmModel attBundle = do
         True -> case numEnv == 0 of
             True -> fail "Fine layer has no environmental inputs!"
             False -> do
-                return $ attractorESpaceFigure dmModel
-                                               attBundle
-                                               (ipPtNodes, U.empty)
+                return $ attractorESpaceFigure cMap mMap lniBMap atts
+                                    (InputBundle ipPtNodes U.empty Nothing)
         False -> do
             putStrLn $ "There are more than 5 environments. Please choose at \
                 \least " <> (show $ numEnv - 5) <> " to pin:"
@@ -443,61 +577,20 @@ mkFiveDFigure dmModel attBundle = do
                     PS.pPrint (M.errorBundlePretty err)
                     fail "Bad pin parse."
                 (Right parsedPinned) -> do
-                    let iBundle = mkInputBundle ipPtNodes lniBMap parsedPinned
-                    return $ attractorESpaceFigure dmModel attBundle iBundle
+                    let iB = mkInputBundle ipPtNodes lniBMap parsedPinned
+                    return $ attractorESpaceFigure cMap mMap lniBMap atts iB
 
-
-inputOptions :: [[DMNode]] -> [[(NodeName, Int)]]
-inputOptions inPtNDs = inputOpt <$> inPtNDs
-    where
-        inputOpt :: [DMNode] -> [(NodeName, Int)]
-        inputOpt [] = []
-        inputOpt [n] = L.unfoldr nOpts 0
-            where
-                nOpts i
-                    | i <= nRange = Just (iEntry, i + 1)
-                    | otherwise = Nothing
-                        where
-                            iEntry = (nName, i)
-                (nName, nRange) = nodeRange n
-        inputOpt ns = (nName, 0):(fst $ foldr otherOpts ([], 1) rNS)
-            where
-                nName = head rNS
-                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
-                otherOpts nN (optss, i) = ((nN, i):optss, i + 1)
-
-
-textInputOptions :: [[DMNode]] -> T.Text
-textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
-    where
-        txtInputOpt :: [DMNode] -> T.Text
-        txtInputOpt [] = T.empty
-        txtInputOpt [n] = T.intercalate "\n" $ nName:(L.unfoldr nOpts 0)
-            where
-                nOpts i
-                    | i <= nRange = Just (iLine, i + 1)
-                    | otherwise = Nothing
-                        where
-                            iLine = "    " <> nName <> ":" <>
-                                ((T.pack . show) i)
-                (nName, nRange) = nodeRange n
-        txtInputOpt ns = T.intercalate "\n" $ nName:
-            (fst $ foldr otherOpts (["    " <> nName <> ":0"], 1) rNS)
-            where
-                nName = head rNS
-                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
-                otherOpts :: NodeName -> ([T.Text], Int) -> ([T.Text], Int)
-                otherOpts nN (optss, i) = (opt:optss, i + 1)
-                    where opt = "    " <> nN <> ":" <> (T.pack . show) i
 
 -- Consume the [[DMNode]] which is the list of environmental inputs, the map
 -- between the LayerVec index position and DMNode NodeNames, and the nodes
--- pinned by the user, and produce an InputBundle
+-- pinned by the user, and produce an InputBundle. This InputBundle will not
+-- have a BarcodeFilter
 mkInputBundle :: [[DMNode]]
               -> LayerNameIndexBimap
               -> [(NodeName, Int)]
               -> InputBundle
-mkInputBundle inputDMNodes lniBMap inputChoices = (freeINs, pinnedVec)
+mkInputBundle inputDMNodes lniBMap inputChoices =
+    InputBundle freeINs pinnedVec Nothing
     where
         pinnedVec = U.fromList $ (BF.first (lniBMap BM.!)) <$> choiceAssocs
         choiceAssocs :: [(NodeName, NodeState)]
@@ -518,8 +611,8 @@ pickStates inputChoices nodeStack = pickState keyChoice nodeStack
         findChoice nNames (nName, _) = nName `elem` nNames
         stackNames = (nodeName . nodeMeta) <$> nodeStack
 
--- Remember that single-node inputs might be integer-valued, and so must dealt
--- with separately. 
+-- Remember that single-node inputs might be integer-valued, and so must be
+-- dealt with separately. 
 pickState :: (NodeName, Int) -> [DMNode] -> [(NodeName, NodeState)]
 pickState iChoice [_] = [iChoice]
 pickState (_, i) ns = (setState 0 <$> zeroNs) <> (setState 0 <$> oneNs)

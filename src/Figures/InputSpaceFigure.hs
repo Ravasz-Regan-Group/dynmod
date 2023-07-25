@@ -1,17 +1,27 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE DeriveGeneric             #-}
 
 module Figures.InputSpaceFigure
     ( attractorESpaceFigure
-    , SVGText
-    , InputBundle
+    , InputBundle(..)
+    , Barcode
+    , BarcodeFilter(..)
+    , Bar(..)
+    , mkBarcode
+    , ColorMap
+    , mkColorMap
+    , attMatch
+    , bcFilterF
     ) where    
 
 import Types.DMModel
 import Types.Simulation
+import Types.Figures
 import Utilities
+import Data.Hashable
 import Diagrams.Prelude
 import Diagrams.Backend.SVG
 import Graphics.Svg.Core (renderText, Element)
@@ -24,26 +34,31 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
+import GHC.Generics (Generic)
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (isNothing, catMaybes)
 
-
-type SVGText = T.Text
 type AttractorIndex = Int
 
-
-type ColorMap = M.HashMap NodeName LocalColor
-
 -- Types to construct 5D diagrams with BarCodeClusters.
--- The 1-5 Environments that will form the axes of environmental diagrams, plus
--- any remaining inputs fixed to particular values, to prevent the diagram from
--- containing many extraneous attractors. 
-type InputBundle = ([[DMNode]], FixedVec)
+-- The 1-5 Environments that will form the axes of environmental diagrams,
+-- possibly in an order specified in an ISFSpec, any remaining inputs fixed to
+-- particular values to prevent the diagram from containing many extraneous
+-- attractors, and maybe a BarcodeFilter. 
+data InputBundle = InputBundle { ibInputs :: [[DMNode]]
+                               , ibFixedVec :: FixedVec
+                               , ibBCFilter :: Maybe BarcodeFilter
+                               } deriving (Eq, Show)
+
 type Barcode = [Bar]
 data Bar = BR { barKind :: BarKind
               , attractorSize :: Int
-              } deriving (Eq, Show)
+              , switchName :: NodeName
+              , phenotypeNames :: [PhenotypeName]
+              , barPhenotype :: Maybe PhenotypeName
+              } deriving (Eq, Show, Generic)
+instance Hashable Bar
 
 -- For a given Phenotype, where (if anywhere) do the SubSpaces of the Phenotype
 -- match to state(s) of the resident global Attractor. Both Phenotypes and
@@ -59,23 +74,35 @@ data BarKind = FullMiss BarHeight
              | RedLineBar BarHeight PhenotypeIndex -- One Phenotype in the
 -- Switch is clearly the least bad match to the resident global Attractor
 -- (an n-way tie prevents RedLineBars)
-             | MatchBar [Slice] LocalColor
-             deriving (Eq, Show)
+             | MatchBar [Slice]
+                        LocalColor
+             deriving (Eq, Show, Generic)
+instance Hashable BarKind
 type BarHeight = Int
 type PhenotypeIndex = Int
 
 
 data Slice = Match AttractorSize AttractorMatchIndices
            | Miss AttractorSize
-           deriving (Eq, Show)
+           deriving (Eq, Show, Generic)
+instance Hashable Slice
 type AttractorSize = Int
 type AttractorMatchIndices = [[Int]]
 
 data SliceCandidate = MissCandidate AttractorSize
-                    | RedLineCandidate BarHeight MatchCount
-                    | MatchCandidate AttractorSize AttractorMatchIndices
+                    | RedLineCandidate BarHeight MatchCount PhenotypeName
+                    | MatchCandidate AttractorSize
+                                     AttractorMatchIndices
+                                     PhenotypeName
                     deriving (Eq, Show)
 type MatchCount = Int
+
+-- Sometimes input space figures have many Barcodes at each input coordinate. 
+-- Barcode filters allow the user to exclude irrelevant Barcodes, or only
+-- include particularly relevant Barcodes. 
+data BarcodeFilter = OnlyBCF [(NodeName, PhenotypeName)]
+                   | ExcludeBCF [(NodeName, PhenotypeName)]
+                   deriving (Eq, Show, Ord)
 
 type ESpacePointDia = Diagram B
 type BarcodeDia = Diagram B
@@ -88,8 +115,13 @@ type BarcodeDia = Diagram B
 -- will be have been pinned by the user. If there are none, the user will have
 -- been notified. 
 
-attractorESpaceFigure :: DMModel -> AttractorBundle -> InputBundle -> SVGText
-attractorESpaceFigure dmModel aBundle (freeINodes, fixedINodeFixVec) =
+attractorESpaceFigure :: ColorMap
+                      -> ModelMapping
+                      -> LayerNameIndexBimap
+                      -> HS.HashSet Attractor
+                      -> InputBundle
+                      -> SVGText
+attractorESpaceFigure cMap mMap lniBMap atts iBundle =
     eSpaceRenderText $ frame 3.0 $ figureDia === legendDia
     where
         figureDia
@@ -99,9 +131,11 @@ attractorESpaceFigure dmModel aBundle (freeINodes, fixedINodeFixVec) =
             | otherwise = someSpaces5DFigure dimList
                                              eSpacePointDias
                                              $ eSpaceNames freeINodes
-        eSpacePointDias = eSpacePointDia <$> barcodeClusters
-        barcodeClusters = ((barcodeCluster dmModel lniBMap) . HS.toList) <$>
-                                                            attClusters
+        eSpacePointDias = eSpacePointDia <$> filteredBCClusters
+        filteredBCClusters = filter (bcFilterF (ibBCFilter iBundle)) <$>
+                                                        barcodeClusters
+        barcodeClusters = mkBCCluster <$> attClusters
+        mkBCCluster = fmap (fst . mkBarcode cMap mMap lniBMap) . HS.toList
         attClusters = attPartition atts <$> netInputCombos
         netInputCombos = (fixedINodeFixVec <>) <$> figOrdFINodeCs
 --   The order that an input is displayed in a figure is big-endian,
@@ -112,10 +146,9 @@ attractorESpaceFigure dmModel aBundle (freeINodes, fixedINodeFixVec) =
         levelReorder = (((U.concat . L.reverse) <$>) . sequenceA . reverse)
         dimList = ((+(-1)) . L.length) <$> naiveLevels
         naiveLevels = inputLevels lniBMap <$> freeINodes
-        (_, lniBMap, atts) = aBundle
         legendDia = attESpaceFigLegend cMap mMap
-        cMap = mkColorMap dmModel
-        mMap = (last . modelMappings) dmModel
+        fixedINodeFixVec = ibFixedVec iBundle
+        freeINodes = ibInputs iBundle
 
 allLines5DFigure :: [Int] -> [Diagram B] -> [[NodeName]] -> Diagram B
 allLines5DFigure dimList clusters iNames = dFigure <> axisLabels
@@ -161,9 +194,11 @@ someSpaces5DFigure dimList clusters iNames = mconcat $ axisLabels:gridDBs
                       & shaftStyle %~ lw ultraThin
 
 threeChunkS :: [Int] -> Int
-threeChunkS ds = (xi + 1) * (yi + 1) * (zi + 1)
-    where
-        [xi, yi, zi] = take 3 ds
+threeChunkS [] = 0
+threeChunkS [i] = i + 1
+threeChunkS [i, j] = (i + 1) * (j + 1)
+threeChunkS [i, j, k] = (i + 1) * (j + 1) * (k + 1)
+threeChunkS ds = (product . fmap (+1) . take 3) ds
 
 
 -- Consume a HS.HashSet Attractor and a FixedVec that represents a point in the
@@ -179,7 +214,6 @@ attMatch :: FixedVec -> Attractor -> Bool
 attMatch fVec att = not $ U.any (checkV att) fVec
     where
         checkV anAtt (nIndex, nState) = ((B.head anAtt) U.! nIndex) /= nState
-
 
 -- Make the NodeNames that will go on diagram axes. The reverse gives the
 -- correct order for display in the figure. 
@@ -204,73 +238,84 @@ eSpaceNames nns = (eSpaceName . reverse) <$> nns
                 headName = (nodeName . nodeMeta . head) ns
 
 
-barcodeCluster :: DMModel -> LayerNameIndexBimap -> [Attractor] -> [Barcode]
-barcodeCluster dmModel lniBMap atts = mkBarcode cMap mMap lniBMap <$> atts
-    where
-        cMap = mkColorMap dmModel
-        mMap = (last . modelMappings) dmModel
-
-
 mkColorMap :: DMModel -> ColorMap
 mkColorMap dmm = M.fromList nameColorPairs
     where
         nameColorPairs = (\n -> (nodeName n, nodeColor n)) <$> nodesMetas
         nodesMetas = nodeMeta <$> ((concat . modelNodes) dmm)
 
-
-
 -- Generate a Barcode to represent Attractors on environment-space figures.
--- Assumes the ColorMap order matches that of the Attractor. 
+-- Assumes the ColorMap order matches that of the Attractor. Return the
+-- Attractor as well, because we will often want to filter Attractors by the
+-- properties of their associated Barcodes. 
 mkBarcode :: ColorMap
           -> ModelMapping
           -> LayerNameIndexBimap
           -> Attractor
-          -> Barcode
-mkBarcode cM mM lniBMap att = (uncurry (mkBar lniBMap att)) <$>
-    colorSwitchPairs
+          -> (Barcode, Attractor)
+mkBarcode cM mM lniBMap att = (bc, att)
     where
-        colorSwitchPairs = ((cM M.!) `BF.first`) <$> nameSwitchPairs
-        nameSwitchPairs = (\(nName, (_, phs)) -> (nName, phs)) <$> nonEmptyPhs
+        bc = (uncurry (mkBar lniBMap att)) <$> colorSwitchPairs
+        colorSwitchPairs = (\(sN, ps) -> (cM M.! sN, (sN, ps))) <$> nameSPairs
+        nameSPairs = (\(nName, (_, phs)) -> (nName, phs)) <$> nonEmptyPhs
         nonEmptyPhs = filter ((/= []) . snd . snd) mM
 
 
 -- Make a single Bar in a Barcode. 
-mkBar :: LayerNameIndexBimap -> Attractor -> LocalColor -> [Phenotype] -> Bar
-mkBar lniBMap att sColor phs
-    | areMatches = BR (MatchBar sweptSlices sColor) attSize
+mkBar :: LayerNameIndexBimap
+      -> Attractor
+      -> LocalColor
+      -> (NodeName, [Phenotype])
+      -> Bar
+mkBar lniBMap att sColor (sName, phs)
+    | areMatches && (HS.size phNSet == 1) =
+        BR (MatchBar sweptSlices sColor)
+            attSize
+            sName
+            phNames
+           (Just ((head . HS.toList) phNSet))
+    | areMatches && (HS.size phNSet /= 1)
+        = BR (MatchBar sweptSlices sColor) attSize sName phNames Nothing
     | otherwise  = case foldr redLinePrune (Nothing, 0, 0) sCandidates of
-        (Just rlb, _, _) -> BR rlb attSize
-        (Nothing, _, _)  -> BR (FullMiss (length sCandidates)) attSize
+        (Just (rlb, phName), _, _) ->
+            BR rlb attSize sName phNames (Just phName)
+        (Nothing, _, _)  ->
+            BR (FullMiss (length sCandidates)) attSize sName phNames Nothing
     where
-        (sweptSlices, areMatches) =
-            foldr (matchSweep attSize) ([], False) sCandidates
+        (sweptSlices, areMatches, phNSet) =
+            foldr (matchSweep attSize) ([], False, HS.empty) sCandidates
         sCandidates = (mkSliceCandidate lniBMap att) <$> orderedPHs
 --      We order the phenotypes by switchNodeState descending so the the Bar
 --      will have the 0 state at the bottom, rather than the top. 
         orderedPHs = (L.reverse . L.sortOn switchNodeState) phs
         attSize = B.length att
+        phNames = phenotypeName <$> phs
 
 -- Scan a [SliceCandidate] for good matches:
-matchSweep :: Int -> SliceCandidate -> ([Slice], Bool) -> ([Slice], Bool)
-matchSweep _ (MissCandidate attSize) (slcs, areMs) =
-    ((Miss attSize):slcs, areMs)
-matchSweep attSize (RedLineCandidate _ _) (slcs, areMs) =
-    ((Miss attSize):slcs, areMs)
-matchSweep _ (MatchCandidate i j) (slcs, _) = ((Match i j):slcs, True)
+matchSweep :: Int
+           -> SliceCandidate
+           -> ([Slice], Bool, HS.HashSet PhenotypeName)
+           -> ([Slice], Bool, HS.HashSet PhenotypeName)
+matchSweep _ (MissCandidate attSize) (slcs, areMs, phNSet) =
+    ((Miss attSize):slcs, areMs, phNSet)
+matchSweep attSize (RedLineCandidate _ _ _) (slcs, areMs, phNSet) =
+    ((Miss attSize):slcs, areMs, phNSet)
+matchSweep _ (MatchCandidate i j phName) (slcs, _, phNSet) =
+    ((Match i j):slcs, True, HS.insert phName phNSet)
 
 
 -- Scan a [SliceCandidate] for a RedLineBar:
 redLinePrune :: SliceCandidate
-             -> ((Maybe BarKind), Int, Int)
-             -> ((Maybe BarKind), Int, Int)
+             -> (Maybe (BarKind, PhenotypeName), Int, Int)
+             -> (Maybe (BarKind, PhenotypeName), Int, Int)
 redLinePrune (MissCandidate _) (mRLB, highestRS, phIndex) =
     (mRLB, highestRS, phIndex + 1)
-redLinePrune (MatchCandidate _ _) (mRLB, highestRS, phIndex) =
+redLinePrune (MatchCandidate _ _ _) (mRLB, highestRS, phIndex) =
     (mRLB, highestRS, phIndex + 1)
-redLinePrune (RedLineCandidate phSize i) (mRLB, highestRS, phIndex)
+redLinePrune (RedLineCandidate phSize i phName) (mRLB, highestRS, phIndex)
     | i < highestRS = (mRLB, highestRS, phIndex + 1)
     | i == highestRS = (Nothing, highestRS, phIndex + 1)
-    | otherwise = (Just (RedLineBar phSize phIndex), i, phIndex + 1)
+    | otherwise = (Just ((RedLineBar phSize phIndex), phName), i, phIndex + 1)
 
 -- Make a single SliceCandidate. 
 mkSliceCandidate :: LayerNameIndexBimap
@@ -283,8 +328,10 @@ mkSliceCandidate lniBMap att ph
         Nothing -> MissCandidate attSize
         Just (ordIntPh, ordAtt, attOffset)
             | not $ isStrictlyIncreasing matchInts -> MissCandidate attSize
-            | any isNothing matches -> RedLineCandidate rlcCount fPrintSize
-            | otherwise -> MatchCandidate attSize rightOrderedLoops
+            | any isNothing matches ->
+                RedLineCandidate rlcCount fPrintSize phName
+            | otherwise ->
+                MatchCandidate attSize rightOrderedLoops phName
             where
                 rightOrderedLoops = (\i -> (attOffset + i) `rem` attSize) <<$>>
                     allLoops
@@ -297,6 +344,7 @@ mkSliceCandidate lniBMap att ph
     where
         intPh = (BF.first (lniBMap BM.!)) <<$>> fPrint
         fPrintSize = length fPrint
+        phName = phenotypeName ph
         fPrint = fingerprint ph
         attSize = B.length att
 
@@ -351,6 +399,20 @@ loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
                 newLastIndex = last oMatchInts
                 oMatchInts = catMaybes otherMatches
                 otherMatches = matchLocation anAtt <$> sSs
+
+bcFilterF :: Maybe BarcodeFilter -> Barcode -> Bool
+bcFilterF Nothing _ = True
+bcFilterF (Just (OnlyBCF sPhPairs)) bc = all (phCheck bcPairs) sPhPairs
+    where bcPairs = (\x -> (switchName x, barPhenotype x)) <$> bc
+bcFilterF (Just (ExcludeBCF sPhPairs)) bc = not $ any (phCheck bcPairs) sPhPairs
+    where bcPairs = (\x -> (switchName x, barPhenotype x)) <$> bc
+
+phCheck :: [(NodeName, Maybe PhenotypeName)]
+        -> (NodeName, PhenotypeName) -> Bool
+phCheck bcPs (nName, phName) = case L.find ((==) nName . fst) bcPs of
+    Nothing -> True
+    Just (_, Nothing) -> True
+    Just (_, Just checkedPhN) -> checkedPhN == phName
 
 ------------------------------------------------------------------------------
 -- Diagrams functions
@@ -416,10 +478,8 @@ barDia bar = case barKind bar of
                                                # lineWidth none
             halfHeight :: Double
             halfHeight = slHeight / 2.0
-    MatchBar slices lColor -> bDia -- <> barRect
+    MatchBar slices lColor -> bDia
         where
---             barRect :: Diagram B
---             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat diaSlices # center
             diaSlices = sliceDia lColor <$> slices
     where
@@ -459,7 +519,7 @@ eSpaceRenderDia = renderDia  SVG
                              True
                              )
 
-eSpaceRenderText :: Diagram B -> T.Text
+eSpaceRenderText :: Diagram B -> SVGText
 eSpaceRenderText = LT.toStrict . renderText . eSpaceRenderDia
 
 mkGridEdges :: [Int] -> [([Int], [Int])]
@@ -632,7 +692,7 @@ attESpaceFigLegend cMap mMap = hsep 1.0 evenedBlocks
         maxBlockHeight = maximum phSizes
         phSizes :: [Double]
         phSizes = (fromIntegral . length . snd . snd) <$> nonEmptyPhs
-        nonEmptyPhs = filter ((/= []) . snd . snd) mMap
+        nonEmptyPhs = filter (not . null . snd . snd) mMap
         lScale = 2.0 :: Double
 
 switchLegend :: ColorMap -> Double -> Switch -> Diagram B

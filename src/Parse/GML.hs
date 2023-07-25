@@ -51,7 +51,7 @@ signedNumber :: Parser Scientific
 signedNumber = L.signed sc number
 
 gmlParse :: Parser GML
-gmlParse = (some $ (,) <$> keyParse <*> gValueParse)
+gmlParse = sc >> (some $ (,) <$> keyParse <*> gValueParse)
 
 keyParse :: Parser GKey
 keyParse = lexeme $ T.pack <$> ((:) <$> letterChar <*> (many alphaNumChar))

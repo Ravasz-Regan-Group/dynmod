@@ -4,9 +4,11 @@
 module Input where    
 
 import Paths_dynmod (version)
+import Parse.UI
 import Utilities
 import qualified Data.Text as T
 import qualified Options.Applicative as O
+import qualified Text.Megaparsec as M
 import Data.Version (showVersion)
 import Control.Applicative ((<|>))
 
@@ -42,9 +44,12 @@ data Procedures = Procedures {
 
 data Experiments = GridSearch (EParams, GParam)
                  | AttractorFind EParams
+                 | VEX VexFile
                  deriving (Eq, Show)
 
-type Figures = T.Text
+type VexFile = T.Text
+
+type Figures = T.Text -- The file to get an AttractorBundle from
 
 -- The number of random states per input combination, noisy steps per random
 -- state, and the probability that any particular gate will slip on a step. 
@@ -57,7 +62,7 @@ type Figures = T.Text
 data EParams = EParams {
       randomState :: Int
     , noisySteps :: Int
-    , noiseProb :: Double
+    , noiseProb :: Probability
     } deriving (Eq, Show)
 
 -- The grid multiplier for the --grid option. U
@@ -122,7 +127,7 @@ procedureParser = Procedure <$> (Procedures
        <> O.help "Whether to write publication warnings to <FILE>_warnings.txt")
     <*> O.switch
         ( O.long "coord_colors"
-       <> O.short 'e'
+       <> O.short 'i'
        <> O.help "Whether to write node coordinates & colors to \
             \<FILE>_graph_details.txt")
     <*> O.switch
@@ -150,23 +155,27 @@ procedureParser = Procedure <$> (Procedures
        )
 
 experimentParser :: O.Parser Activity
-experimentParser = Experiment <$> (attFindParser <|> gridParser)
+experimentParser = Experiment <$> (attFindParser <|> gridParser <|> vexParser)
+
+eParamReader :: O.ReadM Experiments
+eParamReader = do
+    o <- O.str
+    case M.runParser eParamParse "" o of
+        (Left epErr) -> do
+            fail (M.errorBundlePretty epErr)
+        (Right eP) -> return $ AttractorFind $ uncurry3 EParams eP
     
 
 gParamReader :: O.ReadM Experiments
 gParamReader = do
     o <- O.str
-    let [a, b, c, d] = words o
-    return $ GridSearch (EParams (read a) (read b) (read c), (read d))
-
-eParamReader :: O.ReadM Experiments
-eParamReader = do
-    o <- O.str
-    let [a, b, c] = words o
-    return $ (AttractorFind $ EParams (read a) (read b) (read c))
+    case M.runParser gParamParse "" o of
+        (Left gpErr) -> do
+            fail (M.errorBundlePretty gpErr)
+        (Right (eP, gP)) -> return $ GridSearch (uncurry3 EParams eP , gP)
 
 attFindParser :: O.Parser Experiments
-attFindParser = O.option (eParamReader >>= probCheck)
+attFindParser = O.option eParamReader
                        ( O.long "attractors"
                       <> O.short 'a'
                       <> O.metavar "Int,Int,Double" 
@@ -176,7 +185,7 @@ attFindParser = O.option (eParamReader >>= probCheck)
                        )
 
 gridParser :: O.Parser Experiments
-gridParser = O.option (gParamReader >>= probCheck)
+gridParser = O.option gParamReader
                        ( O.long "grid"
                       <> O.metavar "Int,Int,Double,Int"
                       <> O.help "Sample the state space of the fine layer of \
@@ -185,15 +194,15 @@ gridParser = O.option (gParamReader >>= probCheck)
                             \quickly its attractors can be found. "
                        )
 
-probCheck :: Experiments -> O.ReadM Experiments
-probCheck r@(GridSearch ((EParams _ _ prob), _))
-    | isProb prob = return r
-    | otherwise = fail $ show prob ++ " is not between 0 and 1, and so cannot \
-        \be a probability"
-probCheck r@(AttractorFind (EParams _ _ prob))
-    | isProb prob = return r
-    | otherwise = fail $ show prob ++ " is not between 0 and 1, and so cannot \
-        \be a probability"
+vexParser :: O.Parser Experiments
+vexParser = VEX 
+    <$> O.strOption
+        ( O.long "experiment"
+       <> O.short 'e'
+       <> O.metavar "VEX_FILE"
+       <> O.help "Whether to read in and run the experiments in a Virtual \
+        \Experiment File (.vex) and write out the resulting figures to disk. "
+        )
 
 figureParser :: O.Parser Activity
 figureParser = Figure <$> (fiveDFigParser)
