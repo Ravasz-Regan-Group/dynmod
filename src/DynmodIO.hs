@@ -53,9 +53,10 @@ import Control.Monad.State.Strict (evalState)
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (fromJust)
+import GHC.Stack (HasCallStack)
 
 
-experimentDMMS :: Path Abs File
+experimentDMMS :: HasCallStack => Path Abs File
                -> Experiments
                -> Either
                     (M.ParseErrorBundle T.Text Void)
@@ -176,7 +177,7 @@ mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
         spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
             ((T.pack . show) <<$>> Split.splitPlaces ss r)
 
-runVEX :: Path Abs File
+runVEX :: HasCallStack => Path Abs File
        -> Path Abs File
        -> DMModel
        -> Either (M.ParseErrorBundle T.Text Void) VEXInvestigation
@@ -592,6 +593,7 @@ mkInputBundle :: [[DMNode]]
 mkInputBundle inputDMNodes lniBMap inputChoices =
     InputBundle freeINs pinnedVec Nothing
     where
+        pinnedVec :: FixedVec
         pinnedVec = U.fromList $ (BF.first (lniBMap BM.!)) <$> choiceAssocs
         choiceAssocs :: [(NodeName, NodeState)]
         choiceAssocs = concat $ pickStates inputChoices <$> fixedINs
@@ -599,27 +601,6 @@ mkInputBundle inputDMNodes lniBMap inputChoices =
         splitter iCs nodeStack = any (`elem` (fst <$> iCs)) stackNames
             where
                 stackNames = (nodeName . nodeMeta) <$> nodeStack
-
--- Consume a List of user pinning choices, a [DMNode] which constitutes a
--- single pinned environmental input, and produce the NodeName-NodeState pairs
--- which represent that pinning in the in the input nodes. 
-pickStates :: [(NodeName, Int)] -> [DMNode] -> [(NodeName, NodeState)]
-pickStates inputChoices nodeStack = pickState keyChoice nodeStack
-    where
-        -- Find the pinning choice relevant to this input
-        keyChoice = fromJust $ L.find (findChoice stackNames) inputChoices
-        findChoice nNames (nName, _) = nName `elem` nNames
-        stackNames = (nodeName . nodeMeta) <$> nodeStack
-
--- Remember that single-node inputs might be integer-valued, and so must be
--- dealt with separately. 
-pickState :: (NodeName, Int) -> [DMNode] -> [(NodeName, NodeState)]
-pickState iChoice [_] = [iChoice]
-pickState (_, i) ns = (setState 0 <$> zeroNs) <> (setState 0 <$> oneNs)
-    where zeroNs = drop ((i - 1) - inputSize) ns
-          oneNs = take ((i - 1) - inputSize) ns
-          setState j n = ((nodeName . nodeMeta) n, j)
-          inputSize = L.length ns
 
 -- For now, we do all our simulation and figure making on the two finest-grained
 -- of any given DMModel. twoLayerModelMapping complains if you pass it a single-

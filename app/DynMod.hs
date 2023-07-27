@@ -14,8 +14,9 @@ import qualified Data.Text as T
 import qualified Text.Pretty.Simple as PS
 import qualified Text.Megaparsec as M
 import GHC.Conc (par, pseq)
+import GHC.Stack (HasCallStack)
 
-main :: IO ()
+main :: HasCallStack => IO ()
 main = do
     clInput <- O.execParser opts
     mFilePath <- resolveFile' $ T.unpack $ fileN clInput

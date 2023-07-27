@@ -28,6 +28,7 @@ module Types.DMInvestigation
     , ExpKind(..)
     , AttractorResult
     , runInvestigation
+    , pickStates
     ) where
 
 import Utilities
@@ -50,6 +51,7 @@ import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (mapMaybe, fromJust)
 import Data.Bitraversable (bitraverse)
+import GHC.Stack (HasCallStack)
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -109,9 +111,8 @@ data InputPulse = InputPulse { realInputCoord :: RealInputCoord
                              , inputDuration :: Either Duration Duration
                              } deriving (Eq, Show)
 
--- Set an environmental input (or inputs) to a particular value. Continuous
--- values will be stochastically set on each time-step. Note that each input. 
--- can be set by only one DMNode. 
+-- Set an environmental input (or inputs) to a particular value. Real
+-- values will be stochastically set on each time-step. 
 type RealInputCoord = U.Vector (NodeIndex, RealNodeState)
 
 type RealNodeState = Double
@@ -331,7 +332,7 @@ data NudgeDirection = NudgeUp
 -- Produce a DMInvestigation, or a [VEXInvestigationInvalid] to tell us what
 -- went wrong. The only thing that we validate at parse is that all layer names
 -- in the VEX file are unique. 
-mkDMInvestigation :: DMModel -> [VEXLayerExpSpec]
+mkDMInvestigation :: HasCallStack => DMModel -> [VEXLayerExpSpec]
                   -> Validation [VEXInvestigationInvalid] DMInvestigation
 mkDMInvestigation dmM vlExSpecs = case traverse (layerMatch dmM) vlExSpecs of
     Failure err -> Failure err
@@ -352,7 +353,7 @@ layerMatch dmM vLExSpec = case findLayerWithBinding vLName dmM of
         vLName = vexLayerName vLExSpec
 
 
-mkLayerExpSpec :: ((ModelMapping, ModelLayer), VEXLayerExpSpec)
+mkLayerExpSpec :: HasCallStack => ((ModelMapping, ModelLayer), VEXLayerExpSpec)
                -> Validation [VEXInvestigationInvalid] LayerExpSpec
 mkLayerExpSpec ((mM, mL), vLExSpec) = 
     LayerExpSpec <$> pure mM
@@ -414,7 +415,7 @@ mkInIBFixedVec mL pinnedIs
         [InValidISDPinnedInputs oobInputs properInputs]
     | L.length unpinnedInputs > 5 = Failure
         [ExcessUnpinnedISDInputs pinningChoices]
-    | otherwise = Success $ U.fromList $ (BF.first) (lniBMap BM.!) <$> pinnedIs
+    | otherwise = Success $ mkPinnedVec inPts lniBMap pinnedIs
     where
         pinningChoices = "\nThere are more than 5 unpinned environmental \
             \inputs. Please choose at least " <> leftoverN <> " to pin:\n"
@@ -436,6 +437,13 @@ mkInIBFixedVec mL pinnedIs
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
         pinnedRepeats = (Uniq.repeated . fmap fst) pinnedIs
 
+
+-- Starting from a [[DMNode]] of environmental inputs and a parsed
+-- (NodeName, Int), produce a [(NodeName, Int)] that represents that setting in
+-- the network, where, e.g, (GF_High,2) may actually be represented by
+-- [(GF,1), (GF_High, 1)]. 
+-- mkInputNodes :: [[DMNode]] -> (NodeName, Int) -> [(NodeName, Int)]
+
 -- Calculate the possible integer pinnings for environmental inputs. 
 inputOptions :: [[DMNode]] -> [[(NodeName, Int)]]
 inputOptions inPtNDs = inputOpt <$> inPtNDs
@@ -450,12 +458,9 @@ inputOptions inPtNDs = inputOpt <$> inPtNDs
                         where
                             iEntry = (nName, i)
                 (nName, nRange) = nodeRange n
-        inputOpt ns = (nName, 0):((L.reverse . fst) $
-                                            foldr otherOpts ([], 1) rNS)
+        inputOpt ns = (head rNS, 0):(zip rNS $ L.repeat 1)
             where
-                nName = last rNS
-                rNS = (nodeName . nodeMeta) <$> ns
-                otherOpts nN (optss, i) = ((nN, i):optss, i + 1)
+                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
 
 -- Pretty print the possible integer pinnings for environmental inputs. 
 textInputOptions :: [[DMNode]] -> T.Text
@@ -472,14 +477,12 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
                             iLine = "    " <> nName <> ":" <>
                                 ((T.pack . show) i)
                 (nName, nRange) = nodeRange n
-        txtInputOpt ns = T.intercalate "\n" $ nName: ((L.reverse . fst) $
-                foldr otherOpts (["    " <> nName <> ":0"], 1) rNS)
+        txtInputOpt ns = T.intercalate "\n" $ nName:("    " <> nName <> ":0"):
+                 (otherOpts <$> rNS)
             where
-                nName = last rNS
-                rNS = (nodeName . nodeMeta) <$> ns
-                otherOpts :: NodeName -> ([T.Text], Int) -> ([T.Text], Int)
-                otherOpts nN (optss, i) = (opt:optss, i + 1)
-                    where opt = "    " <> nN <> ":" <> (T.pack . show) i
+                nName = head rNS
+                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
+                otherOpts nN = "    " <> nN <> ":1"
 
 
 mkIBBCFilter :: ModelMapping -> BarcodeFilter
@@ -506,7 +509,7 @@ phValidate mM phs
         mMPhenotypes = filter (not . null) $ snd <<$>> mM
 
 
-mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
+mkDMExperiment :: HasCallStack => ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
 mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPulses) =
     DMExperiment <$> pure exName
@@ -597,7 +600,7 @@ mkInEnvFV mL inEnvPIs
     | (not . null) oobInputs = Failure
         [InValidSMSPinnedInputs oobInputs properInputs]
     | (not . null) unpinnedInputs = Failure [UnpinnedSMSInputs pinningChoices]
-    | otherwise = Success $ U.fromList $ (BF.first) (lniBMap BM.!) <$> inEnvPIs
+    | otherwise = Success $ mkPinnedVec inPts lniBMap inEnvPIs
     where
         pinningChoices = "There are unpinned environmental inputs. Please pin \
             \the following:\n" <> tUPOpts
@@ -632,7 +635,7 @@ mkExpBCFilter mM  (maybeExpBCF, eitherISFSpec) =
         dropLeft (Left _) = Nothing
         dropLeft (Right r) = Just r
 
-mkStepper :: ExperimentStep -> LayerSpecs -> ExpStepper
+mkStepper :: HasCallStack => ExperimentStep -> LayerSpecs -> ExpStepper
 mkStepper SynchronousExpStepper lSpecs = SD stepper
     where
         stepper = synchStep (iVecList lSpecs) (tTableList lSpecs)
@@ -667,10 +670,9 @@ mkRealInputCoordinate mL vexRealPIs
         [NonInputNodesInNodeAltPinnedInput nonInputNs]
     | (not . null) oobInputs = Failure
         [InValidRealPinnedInputs oobInputs properInputs]
-    | otherwise = Success realInputCoords
+    | otherwise = Success $ mkPinnedVec inPts lniBMap vexRealPIs
     where
-        realInputCoords = U.fromList $ (BF.first) (lniBimap BM.!) <$> vexRealPIs
-        LayerSpecs lniBimap _ _ _ = layerPrep mL
+        LayerSpecs lniBMap _ _ _ = layerPrep mL
         properInputs = "\nPinned Node(s) must be real values from the following\
             \ ranges:\n" <> txtInOpts
         txtInOpts = realTextInputOptions inPts
@@ -779,13 +781,13 @@ nodeAltTo2IntNodeAlt mL (GradientNudge nName nDirection nProb) =
 
 -- Run all the experiments from a DMInvestigation. The paired Attractors must
 -- be checked beforehand. 
-runInvestigation :: ColorMap
+runInvestigation :: HasCallStack => ColorMap
                  -> StdGen -> [(HS.HashSet Attractor, LayerExpSpec)]
                  -> [LayerResult]
 runInvestigation cMap gen attLExpSpecPairs = snd $
     L.mapAccumL (runLayerExperiments cMap) gen attLExpSpecPairs
 
-runLayerExperiments :: ColorMap
+runLayerExperiments :: HasCallStack => ColorMap
                     -> StdGen -> (HS.HashSet Attractor, LayerExpSpec)
                     -> (StdGen, LayerResult)
 runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
@@ -804,7 +806,8 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- each attractor in the set, where n is the length of the attractor, starting
 -- at the next in the loop each time. AttractorResults are then combined if
 -- their Barcodes are identical. 
-runExperiment :: (Attractor -> (Barcode, Attractor)) -> HS.HashSet Attractor
+runExperiment :: HasCallStack =>
+            (Attractor -> (Barcode, Attractor)) -> HS.HashSet Attractor
               -> StdGen -> DMExperiment -> (StdGen, ExperimentResult)
 runExperiment layerBCG attSet gen ex = (newGen, (exCon, groupedAResultsThds))
     where
@@ -815,7 +818,7 @@ runExperiment layerBCG attSet gen ex = (newGen, (exCon, groupedAResultsThds))
         exCon = ExpCon (experimentName ex) (expKind ex)
 
 
-runAttractor :: DMExperiment
+runAttractor :: HasCallStack => DMExperiment
              -> StdGen -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
 runAttractor ex gen (bc, att) = (newGen, (bc, attRThreads))
@@ -824,13 +827,14 @@ runAttractor ex gen (bc, att) = (newGen, (bc, attRThreads))
         attList = B.toList att
         attL = length att
 
-runLayerVec :: DMExperiment -> Int -> StdGen -> LayerVec -> (StdGen, Thread)
+runLayerVec :: HasCallStack =>
+                 DMExperiment -> Int -> StdGen -> LayerVec -> (StdGen, Thread)
 runLayerVec ex attL gen lVec = L.foldl' pulseF (gen, B.singleton lVec) iPls
     where
         pulseF = pulseFold attL (expStepper ex)
         iPls = inputPulses ex
 
-pulseFold :: Int -> ExpStepper 
+pulseFold :: HasCallStack => Int -> ExpStepper 
           -> (StdGen, Thread) -> InputPulse -> (StdGen, Thread)
 pulseFold attL sTPR (gen, eThr) iPulse = case sTPR of
     (SD stepper) -> (newGen, eThr <> newThr)
@@ -873,7 +877,8 @@ pulseFold attL sTPR (gen, eThr) iPulse = case sTPR of
             Right d -> d
 
 -- Fix an integer value for a real-valued input coordinate. 
-coordFix :: RealInputCoord -> LayerVec -> StdGen -> (LayerVec, StdGen)
+coordFix :: HasCallStack =>
+    RealInputCoord -> LayerVec -> StdGen -> (LayerVec, StdGen)
 coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
     where
         (fixedVec, newGen) = U.foldr' setInput (U.empty, gen) iCoord
@@ -888,7 +893,7 @@ coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
 
 -- Prime a LayerVec with any alterations that a continuous Input setting or
 -- mutated DMNode might require. 
-expStepPrime :: RealInputCoord
+expStepPrime :: HasCallStack => RealInputCoord
              -> [IntNodeAlteration]
              -> LayerVec
              -> StdGen
@@ -897,12 +902,13 @@ expStepPrime iCoord nAlts lVec gen = nodesAlter nAlts coordFixedVec naGen
     where
         (coordFixedVec, naGen) = coordFix iCoord lVec gen
 
-nodesAlter :: [IntNodeAlteration] -> LayerVec -> StdGen -> (LayerVec, StdGen)
+nodesAlter :: HasCallStack =>
+         [IntNodeAlteration] -> LayerVec -> StdGen -> (LayerVec, StdGen)
 nodesAlter nAlts lVec gen = (lVec U.// fixedList, newGen)
     where
         (fixedList, newGen) = foldr (nodeAlter lVec) ([], gen) nAlts
 
-nodeAlter :: LayerVec
+nodeAlter :: HasCallStack => LayerVec
           -> IntNodeAlteration
           -> ([(NodeIndex, NodeState)], StdGen)
           -> ([(NodeIndex, NodeState)], StdGen)
@@ -922,4 +928,47 @@ nodeAlter lVec (IntGradientNudge nIndex nRangeT nDirec nProb) (fixedPairs, gen)
         bumpedUp = (nIndex, cState + 1)
         (rand, newGen) = uniformR (0, 1) gen
         cState = lVec U.! nIndex
+
+-- Consume a stack of environmental inputs, a LayerNameIndexBimap, and a list of
+-- user pinning choices, and produce a Vector to set those inputs in a LayerVec,
+-- optionally after a real-valued input is stochastically set. 
+mkPinnedVec :: (Num a, U.Unbox a)
+            => [[DMNode]]
+            -> LayerNameIndexBimap
+            -> [(NodeName, a)]
+            -> U.Vector (NodeIndex, a)
+mkPinnedVec inPts lniBMap pinnedIs = pinnedVec
+    where
+        pinnedVec = U.fromList $ (BF.first (lniBMap BM.!)) <$> choiceAssocs
+        choiceAssocs = concat $ pickStates pinnedIs <$> fixedINs
+        fixedINs = L.filter (picker pinnedIs) inPts
+        picker pIs nodeStack = any (`elem` (fst <$> pIs)) $
+            (nodeName . nodeMeta) <$> nodeStack
+
+-- Consume a List of user pinning choices, a [DMNode] which constitutes a
+-- single pinned environmental input, and produce the NodeName-NodeState pairs
+-- which represent that pinning in the in the input nodes. 
+pickStates :: (Num a, U.Unbox a)
+           => [(NodeName, a)]
+           -> [DMNode]
+           -> [(NodeName, a)]
+pickStates inputChoices nodeStack = pickState keyChoice nodeStack
+    where
+        -- Find the pinning choice relevant to this input
+        keyChoice = fromJust $ L.find (findChoice stackNames) inputChoices
+        findChoice nNames (nName, _) = nName `elem` nNames
+        stackNames = (nodeName . nodeMeta) <$> nodeStack
+
+-- Remember that single-node inputs might be integer-valued, and so must be
+-- dealt with separately. 
+pickState :: (Num a, U.Unbox a) => (NodeName, a) -> [DMNode] -> [(NodeName, a)]
+pickState iChoice@(inputName, _) ns = case L.length ns of
+    1 -> [iChoice]
+    _ -> (zip zeroNodes $ repeat 0) <> [iChoice] <> (zip oneNodes $ repeat 1)
+        where
+            zeroNodes = take choiceIndex stackNames
+            oneNodes = drop (choiceIndex + 1) stackNames
+            choiceIndex = (fromJust . L.findIndex (== inputName)) stackNames
+            stackNames = (nodeName . nodeMeta) <$> ns
+
 

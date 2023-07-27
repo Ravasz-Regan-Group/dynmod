@@ -51,6 +51,7 @@ import qualified Data.List.Unique as Uniq
 import Data.Maybe (fromJust)
 import qualified Data.Sequence as S
 import qualified Data.List as L
+import GHC.Stack (HasCallStack)
 
 
 type Simulation = State StdGen
@@ -298,12 +299,13 @@ otherStates lVec lniBMap nName rangeTop = vecs
         nodeIndex = lniBMap BM.! nName
 
 
-tableGateEval :: LayerVec -> IndexVec -> TruthTable -> NodeState
+tableGateEval :: HasCallStack => LayerVec -> IndexVec -> TruthTable -> NodeState
 tableGateEval lVec iVec tTable =
     let n = tTable M.! (U.backpermute lVec iVec) in n
 
 -- Synchronous, deterministic network update
-synchStep :: IndexVecList -> TruthTableList -> LayerVec -> LayerVec
+synchStep :: HasCallStack =>
+            IndexVecList -> TruthTableList -> LayerVec -> LayerVec
 synchStep ivs tts lVec = newVec
     where
         newVec = U.fromList $ L.zipWith (tableGateEval lVec) ivs tts 
