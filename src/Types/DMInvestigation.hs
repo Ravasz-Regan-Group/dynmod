@@ -438,12 +438,6 @@ mkInIBFixedVec mL pinnedIs
         pinnedRepeats = (Uniq.repeated . fmap fst) pinnedIs
 
 
--- Starting from a [[DMNode]] of environmental inputs and a parsed
--- (NodeName, Int), produce a [(NodeName, Int)] that represents that setting in
--- the network, where, e.g, (GF_High,2) may actually be represented by
--- [(GF,1), (GF_High, 1)]. 
--- mkInputNodes :: [[DMNode]] -> (NodeName, Int) -> [(NodeName, Int)]
-
 -- Calculate the possible integer pinnings for environmental inputs. 
 inputOptions :: [[DMNode]] -> [[(NodeName, Int)]]
 inputOptions inPtNDs = inputOpt <$> inPtNDs
@@ -712,12 +706,11 @@ realTextInputOptions inPtNDs = T.intercalate "\n" $ realTxtInputOpt <$> inPtNDs
                 theRange = ":x, x ∈ [0, " <> (T.pack . show) nRange <> "]"
                 (nName, nRange) = nodeRange n
         realTxtInputOpt ns = T.intercalate "\n" $ firstRange:
-            (otherOpts <$> (zip ((L.drop 1 . L.reverse) ns) [1..]))
+            (otherOpts <$> rNS)
             where
-                otherOpts :: (DMNode, Int) -> T.Text
-                otherOpts (n, i) = (nodeName . nodeMeta) n <> ":x, x ∈ (" <>
-                    (T.pack . show) i <> ", " <> (T.pack . show) (i + 1) <> "]"
-                firstRange = (nodeName . nodeMeta . last) ns <> ":x, x ∈ [0,1]"
+                otherOpts nN = nN <> ":x, x ∈ (0,1]"
+                firstRange = head rNS <> ":x, x ∈ [0,1]"
+                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
 
 mkIntNodeAlterations :: ModelLayer -> [NodeAlteration]
                      -> Validation [VEXInvestigationInvalid] [IntNodeAlteration]
