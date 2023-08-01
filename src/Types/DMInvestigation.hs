@@ -883,7 +883,7 @@ coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
     where
         (fixedVec, newGen) = U.foldr' setInput (U.empty, gen) iCoord
         setInput (nIndex, realNState) (aVec, aGen)
-            | rand >= realNState =
+            | realNState >= rand =
                 (U.cons (nIndex, ceiling realNState) aVec, uGen)
             | otherwise = (U.cons (nIndex, floor realNState) aVec, uGen)
             where

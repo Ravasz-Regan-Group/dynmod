@@ -26,8 +26,9 @@ gradientPick pucGr (low, high) pick
     | otherwise = Just $ pucGr B.! pickIndex
     where
         pickIndex = round (pick * transform)
-        transform = 255 / magnitude
+        transform = (gradientSize - 1) / magnitude -- Avoid off-by-one error
         magnitude = high - low
+        gradientSize = (fromIntegral . B.length) pucGr
 
 
 

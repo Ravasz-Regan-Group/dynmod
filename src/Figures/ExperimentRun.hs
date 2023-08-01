@@ -193,7 +193,8 @@ nodeStateDia (rangeB, rangeT) stripHt nState = dia
         theFillColor = case cPick of
             Nothing -> fcA transparent
             Just c -> fillColor c
-        cPick = gradientPick plasmaCM fracRange $ fromIntegral nState
+        cPick = gradientPick (B.reverse plasmaCM) fracRange realNState
+        realNState = fromIntegral nState
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
 runSwitchDia :: ColorMap -> Int -> (Switch, Maybe PhenotypeName) -> Diagram B
