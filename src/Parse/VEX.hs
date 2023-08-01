@@ -362,10 +362,16 @@ showHiddenCheck vexLExpSpec = case vexISpaceSpec vexLExpSpec of
                 newVexExps = insertBCF bcF <$> (vexExperiments vexLExpSpec)
 
 insertBCF :: BarcodeFilter -> VEXExperiment -> VEXExperiment
-insertBCF bc (GeneralExp n inEnv es ps) = GeneralExp n newInEnv es ps
-    where newInEnv = inEnv {showHidden = Right bc}        
-insertBCF bc (Pulse1 ts inEnv d f) = Pulse1 ts newInEnv d f
-    where newInEnv = inEnv {showHidden = Right bc}        
-insertBCF bc (KnockDOverE ts inEnv d alts) = KnockDOverE ts newInEnv d alts
-    where newInEnv = inEnv {showHidden = Right bc}        
+insertBCF bc (GeneralExp n inEnv es ps)
+    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps 
+    | otherwise = GeneralExp n inEnv es ps
+    where newInEnv = inEnv {showHidden = Right bc} 
+insertBCF bc (Pulse1 ts inEnv d f)
+    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f
+    | otherwise = Pulse1 ts inEnv d f
+    where newInEnv = inEnv {showHidden = Right bc}
+insertBCF bc (KnockDOverE ts inEnv d alts)
+    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts
+    | otherwise = KnockDOverE ts inEnv d alts
+    where newInEnv = inEnv {showHidden = Right bc}
 
