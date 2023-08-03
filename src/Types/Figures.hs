@@ -14,7 +14,7 @@ type SVGText = T.Text
 type ColorMap = M.HashMap NodeName LocalColor
 
 -- Pick a color from one of the perceptually uniform color gradients in
--- Constants. They all have 256 colors. Do not apply this to anything else! 
+-- Constants. 
 gradientPick :: RealFrac a => PUCGradient
                              -> (a, a)
                              -> a

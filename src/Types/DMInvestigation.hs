@@ -27,6 +27,9 @@ module Types.DMInvestigation
     , ExpContext(..)
     , ExpKind(..)
     , AttractorResult
+    , Timeline
+    , WasForced
+    , PulseSpacing
     , runInvestigation
     , pickStates
     ) where
@@ -147,7 +150,13 @@ type ExperimentResult = (ExpContext, [AttractorResult])
 
 data ExpContext = ExpCon T.Text ExpKind deriving (Eq, Show)
 
-type AttractorResult = (Barcode, [Thread])
+type AttractorResult = (Barcode, ([Timeline], [PulseSpacing]))
+
+type PulseSpacing = Int -- The spacing between pulses
+type Timeline = B.Vector AnnotatedLayerVec
+type AnnotatedLayerVec = U.Vector (NodeState, WasForced)
+
+type WasForced = Bool -- Was the NodeState in question forced to this state?
 
 data ExpStepper = SD PSStepper
                 | SN PNStepper'
@@ -802,10 +811,9 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 runExperiment :: HasCallStack =>
             (Attractor -> (Barcode, Attractor)) -> HS.HashSet Attractor
               -> StdGen -> DMExperiment -> (StdGen, ExperimentResult)
-runExperiment layerBCG attSet gen ex = (newGen, (exCon, groupedAResultsThds))
+runExperiment layerBCG attSet gen ex = (newGen, (exCon, attResults))
     where
-        groupedAResultsThds = M.toList $ M.fromListWith (<>) aResultThds
-        (newGen, aResultThds) = L.mapAccumL (runAttractor ex) gen filteredAtts
+        (newGen, attResults) = L.mapAccumL (runAttractor ex) gen filteredAtts
         filteredAtts = attFilter ex $ layerBCG <$> attList
         attList = HS.toList attSet
         exCon = ExpCon (experimentName ex) (expKind ex)
@@ -814,59 +822,77 @@ runExperiment layerBCG attSet gen ex = (newGen, (exCon, groupedAResultsThds))
 runAttractor :: HasCallStack => DMExperiment
              -> StdGen -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
-runAttractor ex gen (bc, att) = (newGen, (bc, attRThreads))
+runAttractor ex gen (bc, att) = (newGen, (bc, (tmLns, pSpaces)))
     where
-        (newGen, attRThreads) = L.mapAccumL (runLayerVec ex attL) gen attList
+        (newGen, tmLns) = L.mapAccumL (runLayerVec ex attL) gen attList
         attList = B.toList att
+        -- We drop the last spacing because we do not need to put a pulse line
+        -- at the end of the figure. 
+        pSpaces = L.init $ pSpace <$> pDurs 
+            where
+                pSpace (Left dur) = max dur attL
+                pSpace (Right dur) = dur
+        pDurs = (fmap inputDuration . inputPulses) ex
         attL = length att
 
-runLayerVec :: HasCallStack =>
-                 DMExperiment -> Int -> StdGen -> LayerVec -> (StdGen, Thread)
-runLayerVec ex attL gen lVec = L.foldl' pulseF (gen, B.singleton lVec) iPls
+runLayerVec :: HasCallStack
+            => DMExperiment
+            -> Int
+            -> StdGen
+            -> LayerVec
+            -> (StdGen, Timeline)
+runLayerVec ex attL gen lVec = B.tail <$> (L.foldl' pulseF (gen, tmlnSeed) iPls)
     where
+--      We drop the seed AnnotatedLayerVec because this way we can alter, step,
+--      and annotate each AnnotatedLayerVec in the Timeline in its own unfoldr
+--      step. 
+        tmlnSeed = B.singleton $ U.map (\x -> (x, True)) lVec
         pulseF = pulseFold attL (expStepper ex)
         iPls = inputPulses ex
 
-pulseFold :: HasCallStack => Int -> ExpStepper 
-          -> (StdGen, Thread) -> InputPulse -> (StdGen, Thread)
-pulseFold attL sTPR (gen, eThr) iPulse = case sTPR of
-    (SD stepper) -> (newGen, eThr <> newThr)
+pulseFold :: HasCallStack
+          => Int
+          -> ExpStepper
+          -> (StdGen, Timeline)
+          -> InputPulse
+          -> (StdGen, Timeline)
+pulseFold attL sTPR (gen, tmLn) iPulse = case sTPR of
+    (SD stepper) -> (newGen, tmLn <> newTmLn)
         where
-            newThr = B.unfoldrExactN iDur sdUnfolder (prepLV, uGen)
-            sdUnfolder (aVec, aGen) = (aNextVec, (aNextVec, aNewGen))
+            newTmLn = B.unfoldrExactN iDur sdUnfolder (intInputPrLV, uGen)
+            sdUnfolder (aVec, aGen) = (anVec, (aNextVec, aNewGen))
                 where
-                    aNextVec = stepper aPrimedVec
-                    (aPrimedVec, aNewGen) =
+                    aNextVec = stepper $ (fst . U.unzip) anVec
+                    (anVec, aNewGen) =
                         expStepPrime justRealICoords nAlts aVec aGen
-    (SN stepper) -> (newGen, eThr <> newThr)
+    (SN stepper) -> (newGen, tmLn <> newTmLn)
         where
-            newThr = B.unfoldrExactN iDur snUnfolder (prepLV, uGen)
-            snUnfolder (aVec, aGen) = (aNextVec, (aNextVec, aNewGen))
+            newTmLn = B.unfoldrExactN iDur snUnfolder (intInputPrLV, uGen)
+            snUnfolder (aVec, aGen) = (anVec, (aNextVec, aNewGen))
                 where
-                    (aNextVec, aNewGen) = stepper aPrimedVec noisyStepGen
-                    (aPrimedVec, noisyStepGen) =
+                    (aNextVec, aNewGen) = stepper steppingVec noisyStepGen
+                    steppingVec = (fst . U.unzip) anVec
+                    (anVec, noisyStepGen) =
                         expStepPrime justRealICoords nAlts aVec aGen
-    (AD stepper) -> (newGen, eThr <> newThr)
+    (AD stepper) -> (newGen, tmLn <> newTmLn)
         where
-            newThr = B.unfoldrExactN iDur adUnfolder (prepLV, uGen)
-            adUnfolder (aVec, aGen) = (aNextVec, (aNextVec, aNewGen))
+            newTmLn = B.unfoldrExactN iDur adUnfolder (intInputPrLV, uGen)
+            adUnfolder (aVec, aGen) = (anVec, (aNextVec, aNewGen))
                 where
-                    (aNextVec, aNewGen) = stepper aPrimedVec asyncStepGen
-                    (aPrimedVec, asyncStepGen) =
+                    (aNextVec, aNewGen) = stepper steppingVec asyncStepGen
+                    steppingVec = (fst . U.unzip) anVec
+                    (anVec, asyncStepGen) =
                         expStepPrime justRealICoords nAlts aVec aGen
     where
-        (newGen, uGen) = split nGen
-        (prepLV, nGen) = coordFix justRealICoords intInputPreppedLVec gen
-        intInputPreppedLVec = U.update startVec roundedIntICoords
+        (newGen, uGen) = split gen
+        intInputPrLV = U.update startVec roundedIntICoords
         roundedIntICoords = U.map (round <$>) justIntICoords
         (justIntICoords, justRealICoords) = U.partition (isInt 7 . snd) iCoords
         iCoords = realInputCoord iPulse
-        startVec = B.last eThr
+        startVec = (fst . U.unzip . B.last) tmLn
         nAlts = intNodeAlterations iPulse
         iDur = case inputDuration iPulse of
-            Left d
-                | d <= attL -> attL
-                | otherwise -> d
+            Left d -> max d attL
             Right d -> d
 
 -- Fix an integer value for a real-valued input coordinate. 
@@ -885,23 +911,25 @@ coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
                          , (fromInteger . ceiling) realNState)
 
 -- Prime a LayerVec with any alterations that a continuous Input setting or
--- mutated DMNode might require. 
-expStepPrime :: HasCallStack => RealInputCoord
+-- mutated DMNode might require, and return it with the vector that denotes
+-- which nodes were altered. 
+expStepPrime :: HasCallStack
+             => RealInputCoord
              -> [IntNodeAlteration]
              -> LayerVec
              -> StdGen
-             -> (LayerVec, StdGen)
-expStepPrime iCoord nAlts lVec gen = nodesAlter nAlts coordFixedVec naGen
+             -> (AnnotatedLayerVec, StdGen)
+expStepPrime iCoord nAlts lVec gen = (U.zip alteredVec wasForcedVec, newGen)
     where
-        (coordFixedVec, naGen) = coordFix iCoord lVec gen
+        wasForcedVec = (U.replicate vecSize False) U.// wasForcedList
+        wasForcedList = const True <<$>> alteredList
+        alteredVec = coordFixedVec U.// alteredList
+        (alteredList, newGen) = foldr (nodeAlter coordFixedVec) ([], nGen) nAlts
+        (coordFixedVec, nGen) = coordFix iCoord lVec gen
+        vecSize = U.length lVec
 
-nodesAlter :: HasCallStack =>
-         [IntNodeAlteration] -> LayerVec -> StdGen -> (LayerVec, StdGen)
-nodesAlter nAlts lVec gen = (lVec U.// fixedList, newGen)
-    where
-        (fixedList, newGen) = foldr (nodeAlter lVec) ([], gen) nAlts
-
-nodeAlter :: HasCallStack => LayerVec
+nodeAlter :: HasCallStack
+          => LayerVec
           -> IntNodeAlteration
           -> ([(NodeIndex, NodeState)], StdGen)
           -> ([(NodeIndex, NodeState)], StdGen)

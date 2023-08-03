@@ -29,6 +29,21 @@ import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
 import System.IO.Unsafe (unsafePerformIO)
 
+-- BarcodeResult combines AttractorResults by equality on Barcodes, because all
+-- of the AttractorResults for a given Barcode will be turned into figures in
+-- ine SVG file. 
+type BarcodeResult = (Barcode, [([Timeline], [PulseSpacing])])
+
+attResCombine :: [AttractorResult] -> [BarcodeResult]
+attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
+    where
+        preppedArs = pure <<$>> ars
+
+-- The color gradient we use to indicate locked or nudged nodes. 
+trimmedRocketCM :: PUCGradient
+trimmedRocketCM = (B.reverse . B.drop trimsize . B.reverse) rocketCM
+    where trimsize = length rocketCM `quot` 4
+
 layerRunFigure :: ColorMap
                -> HS.HashSet Attractor
                -> LayerResult
@@ -48,10 +63,10 @@ expRunFigure :: ColorMap
              -> ModelLayer
              -> ExperimentResult
              -> (ExpContext, [(Barcode, SVGText)])
-expRunFigure cMap mM mL (exCon, attResults) = (exCon, attSVGsWBCs)
+expRunFigure cMap mM mL (exCon, attResults) = (exCon, bcSVGsWBCs)
     where
-        attSVGsWBCs = expRunRenderText <<$>> attDiasWBCs
-        attDiasWBCs = attRunDia cMap mM mL <$> attResults
+        bcSVGsWBCs = expRunRenderText <<$>> bcDiasWBCs
+        bcDiasWBCs = bcRunDia cMap mM mL <$> (attResCombine attResults)
 
 expRunRenderText :: Diagram B -> SVGText
 expRunRenderText = LT.toStrict . renderText . expRunRenderDia
@@ -66,18 +81,19 @@ expRunRenderDia = renderDia  SVG
                              )
 
 
-attRunDia :: ColorMap
-          -> ModelMapping
-          -> ModelLayer
-          -> AttractorResult
-          -> (Barcode, Diagram B)
-attRunDia cMap mM mL (bc, attThreads) = (bc, vsep 5.0 (legendDia:attFigs))
+bcRunDia :: ColorMap
+         -> ModelMapping
+         -> ModelLayer
+         -> BarcodeResult
+         -> (Barcode, Diagram B)
+bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 (legendDia:bcFigs))
     where
-        attFigs = runDia cMap mM mL bc <$> attThreads
-        legendDia = attRunFigLegendDia cMap bc
+        bcFigs = mconcat $ attRunDia <$> tmLnPIs
+        attRunDia (tmLns, pIs) = runDia cMap mM mL bc pIs <$> tmLns
+        legendDia = bcRunFigLegendDia cMap bc
 
-attRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
-attRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
+bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
+bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
     where
         evenedBlocks = zipWith (switchLegend' cMap) phHeights bc
         phHeights = ((maxBlockHeight * lScale) / ) <$> phSizes
@@ -133,67 +149,105 @@ runDia :: ColorMap
        -> ModelMapping
        -> ModelLayer
        -> Barcode
-       -> Thread
+       -> [PulseSpacing]
+       -> Timeline
        -> Diagram B
-runDia cMap mM mL bc thr = (switchFig ||| nodeNameBlock |||
-                                    (vsep 2.0 [nodeStripBlock, timeAxis]))
+runDia cMap mM mL bc pulseSps tmLn = (switchFig ||| nodeNameBlock |||
+            (vsep 2.0 [pulseLines `atop` nodeStripBlock, timeAxis]))
     where
-        timeAxis = timeAxisDia stripHt $ B.length reordThr
+        timeAxis = timeAxisDia stripHt $ B.length reordTmLn
         switchFig = vsep stripHt switchFigs
         switchFigs = runSwitchDia cMap stripHt <$> switchPHPairs
         -- We want to annotate the Switch name with the phenotype this run
         -- started in, if such exists, so we pair them before passing to
         -- runSwitchDia
-        switchPHPairs :: [(Switch, Maybe PhenotypeName)]
         switchPHPairs = findBar bc <$> mM
-        nodeStripBlock :: Diagram B
+        pulseLines = translateX (-0.5) $ translateY 1 $
+            hcat $ (pulseLine (height nodeStripBlock)) <$> (pulseSps)
         nodeStripBlock = (vsep stripHt . fmap vcat) chunkedNodeStrips
-        chunkedNodeStrips :: [[Diagram B]]
         chunkedNodeStrips = splitPlaces switchLs nodeStrips
         nodeNameBlock = nodeNameBlockDia switchLs stripHt switchNodeOrder
-        nodeStrips = nodeStripDia reordLNIBMap reordRTs stripHt <$> timelines
+        nodeStrips =
+            nodeStripDia reordLNIBMap reordRTs stripHt <$> (annTimeStrips)
         stripHt = 2
-        timelines :: [(NodeName, [Int])]
-        timelines = zip switchNodeOrder transpRThr
-        transpRThr = (L.transpose . B.toList . fmap U.toList) reordThr
+        annTimeStrips = zip switchNodeOrder transpRTmLn
+        transpRTmLn = (L.transpose . B.toList . fmap U.toList) reordTmLn
         -- We want to striate the runs by Switch, so we will need these spacings
         switchLs = (L.length . fst . snd) <$> mM
         -- We need to group the figure by Switch, so we first reorder all of the
-        -- LayerVecs in the Thread, as well as all of our helper data structures
+        -- AnnotatedLayerVecs in the Timeline, as well as all of our helper data
+        -- structures
         reordRTs = U.backpermute rangeTs permuteVec
             where permuteVec = U.fromList $ (lniBMap BM.!) <$> switchNodeOrder
         reordLNIBMap = BM.fromList $ zip switchNodeOrder [0..]
-        reordThr :: Thread
-        reordThr = case attractorMMReorder (fst <<$>> mM) lniBMap thr of
+        reordTmLn = case timelineMMReorder (fst <<$>> mM) lniBMap tmLn of
             Right r -> r
-            Left errs -> error $ "reordThr in ExperimentRun.hs has: " <>
+            Left errs -> error $ "reordTmLn in ExperimentRun.hs has: " <>
                                                                     show errs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
         switchNodeOrder = concatMap (fst . snd) mM
+
+-- Mark where each new pulse begins. 
+pulseLine :: Double -> Int -> Diagram B
+pulseLine lHeight pIndex = ((strutX strutWidth) ||| vLine) # alignY (1) # alignL
+    where 
+        vLine = vrule lHeight # lc red # lw ultraThin
+        strutWidth = fromIntegral pIndex
+
+-- Order the nodes in an Timeline according to the Switch partitioning
+-- of the layer above. 
+timelineMMReorder :: U.Unbox a
+                  => DMMSModelMapping
+                  -> LayerNameIndexBimap
+                  -> B.Vector (U.Vector (NodeState, a))
+                  -> Either InvalidLVReorder
+                           (B.Vector (U.Vector (NodeState, a)))
+timelineMMReorder dmmsMM lniBMap tmLn =
+    traverse (annotatedLayerVecReorder lniBMap switchNodeOrder) tmLn
+    where
+        switchNodeOrder = concatMap snd dmmsMM
+
+-- Re-order an AnnotatedLayerVec according to a new List of NodeNames. Basic
+-- error checking, but use at your own risk. 
+annotatedLayerVecReorder :: U.Unbox a
+                         => LayerNameIndexBimap
+                         -> [NodeName]
+                         -> U.Vector (NodeState, a)
+                         -> Either InvalidLVReorder (U.Vector (NodeState, a))
+annotatedLayerVecReorder lniBMap newOrder annLVec
+    | (L.sort . BM.keys) lniBMap /= L.sort newOrder =
+        Left NewOldOrderingMismatch
+    | BM.size lniBMap /= U.length lVec = Left OldOrderingLVMismatch
+    | otherwise = Right $ U.zip reorderedLVec reorderedAnnVec
+        where
+             reorderedAnnVec = U.backpermute annVec permuteVec
+             reorderedLVec = U.backpermute lVec permuteVec
+             permuteVec = U.fromList $ (lniBMap BM.!) <$> newOrder
+             (lVec, annVec) = U.unzip annLVec
 
 findBar :: Barcode -> Switch -> (Switch, Maybe PhenotypeName)
 findBar bc sw = (sw, phN)
     where phN = (L.find (\b -> switchName b == fst sw) bc) >>= barPhenotype
 
-
 nodeStripDia :: LayerNameIndexBimap
              -> LayerRangeVec
              -> Int
-             -> (NodeName, [Int])
+             -> (NodeName, [(NodeState, WasForced)])
              -> Diagram B
-nodeStripDia reordLNIBMap reordRTs stripHt (nName, tLine) = timeStrip
+nodeStripDia reordLNIBMap reordRTs stripHt (nName, annTLine) = timeStrip
     where
-        timeStrip = hcat $ nodeStateDia nRange stripHt <$> tLine
+        timeStrip = hcat $ nodeStateDia nRange stripHt <$> annTLine
         nRange = reordRTs U.! (reordLNIBMap BM.! nName)
 
-nodeStateDia :: (Int, Int) -> Int -> Int -> Diagram B
-nodeStateDia (rangeB, rangeT) stripHt nState = dia
+nodeStateDia :: (Int, Int) -> Int -> (NodeState, WasForced) -> Diagram B
+nodeStateDia (rangeB, rangeT) stripHt (nState, wForced) = dia
     where
         dia = rect 1 (fromIntegral stripHt) # theFillColor # lineWidth none
         theFillColor = case cPick of
             Nothing -> fcA transparent
             Just c -> fillColor c
-        cPick = gradientPick plasmaCM fracRange realNState
+        cPick | not wForced = gradientPick plasmaCM fracRange realNState
+              | otherwise   = gradientPick trimmedRocketCM fracRange realNState
         realNState = fromIntegral nState
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
@@ -205,7 +259,7 @@ runSwitchDia cMap stripHt (sw, mPhName) = (tText' textH swText) <> swBox
         swText = case mPhName of
             Nothing -> swName
             Just phName -> swName <> " - " <> phName
-        rectW = 36.0
+        rectW = 24.0
         textH = fromIntegral stripHt
         rectH = fromIntegral $ stripHt * ((length . fst . snd) sw)
         swColor = cMap M.! swName
