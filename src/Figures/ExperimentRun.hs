@@ -39,10 +39,15 @@ attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
     where
         preppedArs = pure <<$>> ars
 
+-- The color gradient we use to display the state of nodes. 
+trimmedPlasmaCM :: PUCGradient
+trimmedPlasmaCM = B.drop trimSize plasmaCM
+    where trimSize = length plasmaCM `quot` 4
+
 -- The color gradient we use to indicate locked or nudged nodes. 
 trimmedRocketCM :: PUCGradient
-trimmedRocketCM = (B.reverse . B.drop trimsize . B.reverse) rocketCM
-    where trimsize = length rocketCM `quot` 4
+trimmedRocketCM = (B.reverse . B.drop trimSize . B.reverse) rocketCM
+    where trimSize = (3 * length rocketCM) `quot` 20
 
 layerRunFigure :: ColorMap
                -> HS.HashSet Attractor
@@ -246,7 +251,7 @@ nodeStateDia (rangeB, rangeT) stripHt (nState, wForced) = dia
         theFillColor = case cPick of
             Nothing -> fcA transparent
             Just c -> fillColor c
-        cPick | not wForced = gradientPick cividisCM fracRange realNState
+        cPick | not wForced = gradientPick trimmedPlasmaCM fracRange realNState
               | otherwise   = gradientPick trimmedRocketCM fracRange realNState
         realNState = fromIntegral nState
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
