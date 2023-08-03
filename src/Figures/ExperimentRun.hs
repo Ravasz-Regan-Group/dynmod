@@ -246,7 +246,7 @@ nodeStateDia (rangeB, rangeT) stripHt (nState, wForced) = dia
         theFillColor = case cPick of
             Nothing -> fcA transparent
             Just c -> fillColor c
-        cPick | not wForced = gradientPick plasmaCM fracRange realNState
+        cPick | not wForced = gradientPick cividisCM fracRange realNState
               | otherwise   = gradientPick trimmedRocketCM fracRange realNState
         realNState = fromIntegral nState
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)

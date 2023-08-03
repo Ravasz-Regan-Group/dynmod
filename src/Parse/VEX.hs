@@ -327,8 +327,9 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
         )
     )
 
-flipParse :: Parser (NodeName, NodeState)
-flipParse = rword "Flip" >> colon >> (,) <$> variable <*> (comma >> integer)
+flipParse :: Parser (NodeName, RealNodeState)
+flipParse = rword "Flip" >> colon >> (,) <$> variable <*>
+            (comma >> (toRealFloat <$> number))
 
 -- Parse a KDOE. t_0 and t_end are optional, so they are wrapped in a Maybe
 kdoeParse :: Parser VEXExperiment

@@ -180,7 +180,7 @@ data VEXInvestigationInvalid =
     | BCFSwitchRepeats [NodeName]
     | UnknownSwitchesInBCFilter [NodeName]
     | UnknownPhenotypesInSwitches [(NodeName, PhenotypeName)]
-    | Pulse1FlipDoesNotChangeStartingModelState (NodeName, NodeState) 
+    | Pulse1FlipDoesNotChangeStartingModelState (NodeName, RealNodeState) 
     | SMSPinnedInputsHaveRepeats [NodeName]
     | UnknownNodesInSMSPinnedInputs [NodeName]
     | NonInputNodesInSMSPinnedInput [NodeName]
@@ -304,7 +304,7 @@ data VEXExperiment =
     | Pulse1 (Maybe Duration, Maybe Duration) -- t_0 and t_end
               InitialEnvironment
               Duration -- pulse duration
-             (NodeName, NodeState)
+             (NodeName, RealNodeState)
 -- A parsed KDOE{}.
     | KnockDOverE (Maybe Duration, Maybe Duration) -- t_0 and t_end
                    InitialEnvironment
@@ -521,7 +521,7 @@ mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPulses) =
                  <*> traverse (mkInputPulse mL) vexPulses        
                  <*> pure GenExp
 mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
-    | elem (pName, pState) (initCoord inEnv) = Failure
+    | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
         DMExperiment <$> pure expName
@@ -541,7 +541,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
                 case L.find (\x -> ((pName ==) . fst) x) initialCs of
                 Nothing -> realFlip:initialCs
                 Just a -> realFlip:(L.delete a initialCs)
-            realFlip = (pName, fromIntegral pState)
+            realFlip = (pName, pState)
             initialCs :: [(NodeName, RealNodeState)]
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             expName = "pulse1_" <> pName <> "-" <> (T.pack . show) pState <> "-"
