@@ -640,6 +640,7 @@ findInAdjs n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
 -- Error handling types
 
 data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
+                  | DuplicateFineMapNodes [NodeName]
                   | ExcessFineMapNodes [NodeName]
                   | MissingFineMapNodes [NodeName]
                   | ExcessCoarseMapNodes [NodeName]
@@ -659,6 +660,9 @@ data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
                   | PhOutOfOrder (NodeName, [NodeState])
                   | PhMissingOrTooHigh (NodeName, [NodeState])
                   | PhDuplicateAssigns (NodeName, [NodeState])
+                  | SubSpaceNodesNotInSwitch (NodeName, [NodeName])
+                  | UnknownSubSpaceNode NodeName
+                  | InvalidSubSpaceNodeValue (NodeName, NodeState)
                   | DuplicatedModelNames [NodeName]
 --                   | MissingCitations MissingCitations
     deriving (Show, Eq)
@@ -775,6 +779,7 @@ mkLayerBinding :: DMMSModelMapping -> [SwitchProfile] -> ModelLayer -> DMModel
 mkLayerBinding dmmsMMap sProfiles mLayer mModel =
     ((dmmsMMap, sProfiles, mLayer, mModel)          <$
     (noCoarseDupes $ fst <$> dmmsMMap)              <*
+    (traverse noFineDupes $ snd <$> dmmsMMap)       <*
     fineNodesmatch mapFineNodes mNodes              <*
     coarseNodesMatch  mapCoarseNodes graphNodes     <*
     isMapSurjective dmmsMMap) `bindValidation` mkModelMapping
@@ -792,6 +797,11 @@ noCoarseDupes :: [NodeName] -> Validation [ModelInvalid] [NodeName]
 noCoarseDupes cs = case Uniq.repeated cs of
     []   -> Success cs
     errs -> Failure $ [DuplicateCoarseMapNodes errs]
+
+noFineDupes :: [NodeName] -> Validation [ModelInvalid] [NodeName]
+noFineDupes cs = case Uniq.repeated cs of
+    []   -> Success cs
+    errs -> Failure $ [DuplicateFineMapNodes errs]
 
 -- Check that the fine-grain nodes from a ModelMapping are the same up to
 -- permutation as the nodes from the DMModel. 
@@ -834,23 +844,34 @@ isMapSurjective ms
 -- already been validated in mkLayerBinding. 
 mkModelMapping :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
                -> Validation [ModelInvalid] DMModel
-mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) =
-    (traverse phIsMonotonic sProfiles)        *>
-    (traverse phNoMissingOrTooHigh sProfiles) *>
-    (traverse phNoDupes sProfiles)            *>
-    noDupeSwitches sProfiles                  *>
-    noExtraSwitches dmmsMMap sProfiles        *>
-    allSwitchStatesCovered sProfiles mLayer   *>
-    noSubSpaceRepeatedNodes sProfiles         *>
-    noSubSpaceSubSets sProfiles               *>
+mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) = 
+    (traverse phIsMonotonic sProfiles)         *>
+    (traverse phNoMissingOrTooHigh sProfiles)  *>
+    (traverse phNoDupes sProfiles)             *>
+    noDupeSwitches sProfiles                   *>
+    noExtraSwitches dmmsMMap sProfiles         *>
+    allSwitchStatesCovered sProfiles mLayer    *>
+    noSubSpaceRepeatedNodes sProfiles          *>
+    noSubSpaceSubSets sProfiles                *>
+    subSpaceNodesInSwitch dmmsMMap sProfiles   *>
+    subSpaceNodeStatesCovered fineMLayer sProfiles *>
     pure (LayerBinding mm mLayer mModel)
     
     where
-        mm = foldr (f sProfiles) [] dmmsMMap
-        f :: [SwitchProfile] -> (NodeName, [NodeName]) -> [Switch] -> [Switch]
-        f sProfs (nN, nNs) switches = case L.find ((== nN) . fst) sProfs of
-            Nothing -> (nN, (nNs, [])):switches
-            Just (_, phenotypes) -> (nN, (nNs, phenotypes)):switches
+        mm = foldr (mappingsMatcher sProfiles) [] dmmsMMap
+        fineMLayer = coarseLayer mModel
+
+-- Fold together a DMMSModelMapping and a [SwitchProfile] int a ModelMapping.
+-- NOTE! This assumes that all checks have been performed! do not use outside of
+-- mkModelMapping or subSpaceNodesInSwitch!
+mappingsMatcher :: [SwitchProfile]
+                -> (NodeName, [NodeName])
+                -> [Switch]
+                -> [Switch]
+mappingsMatcher sPrfs (nN, nNs) switches = case L.find ((== nN) . fst) sPrfs of
+    Nothing -> (nN, (nNs, [])):switches
+    Just (_, phenotypes) -> (nN, (nNs, phenotypes)):switches
+        
 
 -- Check that the Phenotype state assignments are listed in increasing monotonic
 -- order. Also check for negative
@@ -970,6 +991,50 @@ noSubSpaceSubSets sProfiles =
                                 (filter (Set.isSubsetOf sSSet) remainingHS)
         subSpaceSets = Set.fromList <$> subSpaces
         subSpaces = concatMap fingerprint (concatMap snd sProfiles)
+
+-- Do the NodeNames in the SubSpaces of a SwitchProfile occur in the
+-- corresponding DMMSModelMapping? Note that we already know that each Phenotype
+-- and DMMSModelMapping SwitchName had a corresponding DMNode from
+-- allSwitchStatesCovered and coarseNodesMatch, respectively, so we just need to
+-- pair them up and check.  
+subSpaceNodesInSwitch :: DMMSModelMapping -> [SwitchProfile]
+                      -> Validation [ModelInvalid] [SwitchProfile]
+subSpaceNodesInSwitch dmmsMMap sProfiles =
+    traverse subSpaceNodesInSwitch' mappingPairs
+    where
+        mappingPairs = foldr (mappingsMatcher sProfiles) [] dmmsMMap
+
+subSpaceNodesInSwitch' :: (NodeName, ([NodeName],[Phenotype]))
+                       -> Validation [ModelInvalid] SwitchProfile
+subSpaceNodesInSwitch' (nName, (dmmsMMFineNNames, phs))
+    | excessSSNNs == [] = Success (nName, phs)
+    | otherwise = Failure $ [SubSpaceNodesNotInSwitch (nName, excessSSNNs)]
+    where
+        excessSSNNs = subSpaceNodeNames L.\\ dmmsMMFineNNames
+        subSpaceNodeNames = (Uniq.sortUniq . fmap fst) subSpacePairs
+        subSpacePairs :: [(NodeName, NodeState)]
+        subSpacePairs = mconcat $ concatMap fingerprint phs
+
+-- Check that each node in each SubSpace has a corresponding DMNode, and that
+-- its referenced state exists. 
+subSpaceNodeStatesCovered :: ModelLayer -> [SwitchProfile]
+                          -> Validation [ModelInvalid] [(NodeName, NodeState)]
+subSpaceNodeStatesCovered fineMLayer sProfiles =
+    traverse (subSpaceNodeStatesCovered' fineRanges) subSpacePairs
+    where
+        fineRanges = layerRanges fineMLayer
+        subSpacePairs = mconcat $ concatMap fingerprint phs
+        phs = concatMap snd sProfiles
+
+subSpaceNodeStatesCovered' :: LayerRange -> (NodeName, NodeState)
+       -> Validation [ModelInvalid] (NodeName, NodeState)
+subSpaceNodeStatesCovered' lRange (nName, nState) =
+    case Map.lookup nName lRange of
+    Just n
+        | nState >= 0 && nState <= n -> Success (nName, nState)
+        | otherwise -> Failure $ [InvalidSubSpaceNodeValue (nName, nState)]
+    Nothing -> Failure $ [UnknownSubSpaceNode nName]
+    
 
 -- Split a ModelMapping into a DMMSModelMapping and a [SwitchProfile]. 
 modelMappingSplit :: ModelMapping -> (DMMSModelMapping, [SwitchProfile])

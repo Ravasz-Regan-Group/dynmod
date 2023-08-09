@@ -38,6 +38,8 @@ import GHC.Generics (Generic)
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (isNothing, catMaybes)
+import GHC.Stack (HasCallStack)
+import qualified Debug.Trace as TR
 
 type AttractorIndex = Int
 
@@ -318,7 +320,8 @@ redLinePrune (RedLineCandidate phSize i phName) (mRLB, highestRS, phIndex)
     | otherwise = (Just ((RedLineBar phSize phIndex), phName), i, phIndex + 1)
 
 -- Make a single SliceCandidate. 
-mkSliceCandidate :: LayerNameIndexBimap
+mkSliceCandidate :: HasCallStack
+                 => LayerNameIndexBimap
                  -> Attractor
                  -> Phenotype
                  -> SliceCandidate
@@ -342,7 +345,12 @@ mkSliceCandidate lniBMap att ph
                 matchInts = catMaybes matches
                 matches = matchLocation ordAtt <$> ordIntPh
     where
-        intPh = (BF.first (lniBMap BM.!)) <<$>> fPrint
+        intPh :: HasCallStack => [IntSubSpace]
+        intPh = tracerF <<$>> fPrint
+            where
+                tracerF (x, y) = TR.trace ("intPh: " <> (T.unpack x))
+                                        (lniBMap BM.! x, y)
+--         (BF.first (lniBMap BM.!)) <<$>> fPrint
         fPrintSize = length fPrint
         phName = phenotypeName ph
         fPrint = fingerprint ph
@@ -551,7 +559,7 @@ mkPoints dimList unitScale = case dimList of
     [x, y, z] -> cubePoints x y z unitScale
     [x, y, z, w] -> tesseractPoints x y z w unitScale
     [x, y, z, w, v] -> penteractPoints x y z w v unitScale
-    ds -> error $ ((show . L.length) ds) ++ " is too many dimensions!"
+    ds -> error $ ((show) ds) ++ " is too many dimensions!"
 
 -- Create sets of points at which to place barcode clusters. Note that each is a
 -- grid of multiples of such shapes, as the environmental inputs whose values

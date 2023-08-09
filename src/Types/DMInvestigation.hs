@@ -194,6 +194,7 @@ data VEXInvestigationInvalid =
     | UnknownNodesInNodeAlts [NodeName]
     | InputsInNodeAlts [NodeName]
     | InvalidNodeAltLocks [(NodeName, NodeState)] T.Text
+    | AbsentSwitchProfiles
     deriving (Eq, Show, Ord)
 
 vexErrorPrep :: VEXInvestigationInvalid -> T.Text
@@ -258,6 +259,10 @@ vexErrorPrep (InputsInNodeAlts nNms) = "InputsInNodeAlts: " <>
 vexErrorPrep (InvalidNodeAltLocks badPairs properPairText) =
     "InvalidNodeAltLocks: " <>
         T.intercalate ", " ((T.pack . show) <$> badPairs) <> properPairText
+vexErrorPrep AbsentSwitchProfiles =
+    "AbsentSwitchProfiles: " <>
+        "There are no SwitchProfiles in the DMMS file, so we cannot make an \
+            \environmental input figure. "
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
 
@@ -372,16 +377,21 @@ mkLayerExpSpec ((mM, mL), vLExSpec) =
 
 mkDMInvesIBundle :: ModelMapping -> ModelLayer -> ISFSpec
                  -> Validation [VEXInvestigationInvalid] InputBundle
-mkDMInvesIBundle mM mL isfSpec =
-    InputBundle <$> mkInputNodes mL (axesOrdering isfSpec)
-                <*> mkInIBFixedVec mL (pinnedInputs isfSpec)
-                <*> traverse (mkIBBCFilter mM) (bcFilter isfSpec)
+mkDMInvesIBundle mM mL isfSpec = case filter ((/= []) . snd . snd) mM of
+    [] -> Failure [AbsentSwitchProfiles]
+    _ -> InputBundle <$> mkInputNodes mL axesOrd pinnedNs
+                     <*> mkInIBFixedVec mL pinnedNs
+                     <*> traverse (mkIBBCFilter mM) (bcFilter isfSpec)
+            where
+                pinnedNs = pinnedInputs isfSpec
+                axesOrd = axesOrdering isfSpec
 
--- Pull out the input nodes of a given ModelLayer, and order them by the order
--- given in the VEX file, if such an ordering exists and is valid. 
-mkInputNodes :: ModelLayer -> [NodeName]
+-- Pull out the input nodes of a given ModelLayer, remove pinned input nodes,
+-- and order them by the order given in the VEX file, if such an ordering exists
+-- and is valid. 
+mkInputNodes :: ModelLayer -> [NodeName] -> [(NodeName, Int)]
              -> Validation [VEXInvestigationInvalid] [[DMNode]]
-mkInputNodes mL axesOrd
+mkInputNodes mL axesOrd inputChoices
     | (not . null) axesRepeats = Failure [AxesOrderHasRepeats axesRepeats]
     | (not . null) nonPresentAxes =
         Failure [UnknownNodesInAxesOrder nonPresentAxes]
@@ -391,8 +401,8 @@ mkInputNodes mL axesOrd
         Failure [MultipleAxesNodesFromSingleInput axesMultiplyInStacks]
     | otherwise = Success orderedInputs
     where
-        orderedInputs = extractedInputs <> (initialInputs L.\\ extractedInputs)
-        extractedInputs = inputExtract initialInputs <$> axesOrd
+        orderedInputs = extractedInputs <> (nonPinnedIs L.\\ extractedInputs)
+        extractedInputs = inputExtract nonPinnedIs <$> axesOrd
         axesMultiplyInStacks = filter moreThanOne $ L.intersect axesOrd <$>
             inputNodeNames
         moreThanOne xs = L.length xs > 1
@@ -400,7 +410,10 @@ mkInputNodes mL axesOrd
         axesRepeats = Uniq.repeated axesOrd
         nonInputAxes = axesOrd L.\\ inputNodeNamesFlat
         inputNodeNamesFlat = mconcat inputNodeNames
-        inputNodeNames = (nodeName . nodeMeta) <<$>> initialInputs
+        inputNodeNames = (nodeName . nodeMeta) <<$>> nonPinnedIs
+        nonPinnedIs = L.filter (pinnedIF inputChoices) initialInputs
+        pinnedIF iCs nodeStack = not $ any (`elem` (fst <$> iCs)) stackNames
+            where stackNames = (nodeName . nodeMeta) <$> nodeStack
         initialInputs = (inputs . modelGraph) mL
         mlInputNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
 
@@ -762,7 +775,8 @@ txtNodeLockOpts oobLocks mlNodeRanges =
                 -- the node in the NodeLock exists in the ModelLayer
                 rTop = (snd . fromJust . L.find ((==) altName . fst)) nRanges
 
-nodeAltTo2IntNodeAlt :: ModelLayer
+nodeAltTo2IntNodeAlt :: HasCallStack
+                     => ModelLayer
                      -> NodeAlteration
                      -> IntNodeAlteration
 nodeAltTo2IntNodeAlt mL (NodeLock nName nState lProb) =
@@ -953,7 +967,7 @@ nodeAlter lVec (IntGradientNudge nIndex nRangeT nDirec nProb) (fixedPairs, gen)
 -- Consume a stack of environmental inputs, a LayerNameIndexBimap, and a list of
 -- user pinning choices, and produce a Vector to set those inputs in a LayerVec,
 -- optionally after a real-valued input is stochastically set. 
-mkPinnedVec :: (Num a, U.Unbox a)
+mkPinnedVec :: (Num a, U.Unbox a, HasCallStack)
             => [[DMNode]]
             -> LayerNameIndexBimap
             -> [(NodeName, a)]

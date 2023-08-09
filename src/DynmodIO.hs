@@ -560,33 +560,42 @@ mkFiveDFigure cMap (mMap, fLayer) atts = do
         numEnv = L.length ipPtNodes
         inptOpts = inputOptions ipPtNodes
         txtInptOpts = textInputOptions ipPtNodes
-    putStrLn $ show numEnv <> " environmental inputs to plot. "
-    case numEnv <= 5 of
-        True -> case numEnv == 0 of
-            True -> fail "Fine layer has no environmental inputs!"
-            False -> do
-                return $ attractorESpaceFigure cMap mMap lniBMap atts
-                                    (InputBundle ipPtNodes U.empty Nothing)
-        False -> do
-            putStrLn $ "There are more than 5 environments. Please choose at \
-                \least " <> (show $ numEnv - 5) <> " to pin:"
-            putStrLn $ (T.unpack txtInptOpts) <> "\n"
-            pins <- getLine
-            let pinsPOut = M.runParser (pinsParse inptOpts) "" (T.pack pins)
-            case pinsPOut of
-                (Left err) -> do
-                    PS.pPrint (M.errorBundlePretty err)
-                    fail "Bad pin parse."
-                (Right parsedPinned) -> do
-                    let iB = mkInputBundle ipPtNodes lniBMap parsedPinned
-                    return $ attractorESpaceFigure cMap mMap lniBMap atts iB
+    case filter ((/= []) . snd . snd) mMap of
+        [] -> do
+            fail "There are no SwitchProfiles in the DMMS file, so we \
+                \cannot make an environmental input figure. "
+        _ -> do
+            putStrLn $ show numEnv <> " environmental inputs to plot. "
+            case numEnv <= 5 of
+                True -> case numEnv == 0 of
+                    True -> fail "Fine layer has no environmental inputs!"
+                    False -> do
+                        return $ attractorESpaceFigure cMap mMap lniBMap atts
+                                        (InputBundle ipPtNodes U.empty Nothing)
+                False -> do
+                    putStrLn $ "There are more than 5 environments. Please \
+                        \choose at least " <> (show $ numEnv - 5) <> " to pin:"
+                    putStrLn $ (T.unpack txtInptOpts) <> "\n"
+                    pins <- getLine
+                    let pinsPOut = M.runParser (pinsParse inptOpts) ""
+                                                                (T.pack pins)
+                    case pinsPOut of
+                        (Left err) -> do
+                            PS.pPrint (M.errorBundlePretty err)
+                            fail "Bad pin parse."
+                        (Right parsedPinned) -> do
+                            let iB =
+                                    mkInputBundle ipPtNodes lniBMap parsedPinned
+                            return $
+                                attractorESpaceFigure cMap mMap lniBMap atts iB
 
 
 -- Consume the [[DMNode]] which is the list of environmental inputs, the map
 -- between the LayerVec index position and DMNode NodeNames, and the nodes
 -- pinned by the user, and produce an InputBundle. This InputBundle will not
 -- have a BarcodeFilter
-mkInputBundle :: [[DMNode]]
+mkInputBundle :: HasCallStack
+              => [[DMNode]]
               -> LayerNameIndexBimap
               -> [(NodeName, Int)]
               -> InputBundle
