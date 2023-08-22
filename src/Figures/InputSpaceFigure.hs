@@ -36,10 +36,8 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
 import GHC.Generics (Generic)
 import qualified Data.List as L
-import qualified Data.Bifunctor as BF
 import Data.Maybe (isNothing, catMaybes)
 import GHC.Stack (HasCallStack)
-import qualified Debug.Trace as TR
 
 type AttractorIndex = Int
 
@@ -346,10 +344,8 @@ mkSliceCandidate lniBMap att ph
                 matches = matchLocation ordAtt <$> ordIntPh
     where
         intPh :: HasCallStack => [IntSubSpace]
-        intPh = tracerF <<$>> fPrint
-            where
-                tracerF (x, y) = TR.trace ("intPh: " <> (T.unpack x))
-                                        (lniBMap BM.! x, y)
+        intPh = f <<$>> fPrint
+            where f (x, y) = (lniBMap BM.! x, y)
 --         (BF.first (lniBMap BM.!)) <<$>> fPrint
         fPrintSize = length fPrint
         phName = phenotypeName ph

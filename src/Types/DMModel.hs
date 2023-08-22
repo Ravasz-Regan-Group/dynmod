@@ -42,13 +42,6 @@ module Types.DMModel
     , LinkEffect(..)
     , LinkType(..)
     , ModelInvalid(..)
-    , DuplicateCoarseMapNodes
-    , ExcessFineMapNodes
-    , MissingFineMapNodes
-    , ExcessCoarseMapNodes
-    , MissingCoarseMapNodes
-    , FineInMultipleCoarse
-    , DuplicatedNodeNames
     , NodeInvalid(..)
     , GateInvalid(..)
     , NodeRefdNodesMismatch
@@ -666,13 +659,6 @@ data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
                   | DuplicatedModelNames [NodeName]
 --                   | MissingCitations MissingCitations
     deriving (Show, Eq)
-type DuplicateCoarseMapNodes = [NodeName]
-type ExcessFineMapNodes      = [NodeName]
-type MissingFineMapNodes     = [NodeName]
-type ExcessCoarseMapNodes    = [NodeName]
-type MissingCoarseMapNodes   = [NodeName]
-type FineInMultipleCoarse    = [NodeName]
-type DuplicatedNodeNames     = [NodeName]
 -- type MissingCitations = [BibTeXKey]
 
 data GateInvalid = InconsistentNames

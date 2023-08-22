@@ -40,9 +40,9 @@ attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
         preppedArs = pure <<$>> ars
 
 -- The color gradient we use to display the state of nodes. 
-trimmedPlasmaCM :: PUCGradient
-trimmedPlasmaCM = B.drop trimSize plasmaCM
-    where trimSize = length plasmaCM `quot` 4
+-- trimmedPlasmaCM :: PUCGradient
+-- trimmedPlasmaCM = B.drop trimSize plasmaCM
+--     where trimSize = length plasmaCM `quot` 4
 
 -- The color gradient we use to indicate locked or nudged nodes. 
 trimmedRocketCM :: PUCGradient
@@ -157,26 +157,29 @@ runDia :: ColorMap
        -> [PulseSpacing]
        -> Timeline
        -> Diagram B
-runDia cMap mM mL bc pulseSps tmLn = (switchFig ||| nodeNameBlock |||
-            (vsep 2.0 [pulseLines `atop` nodeStripBlock, timeAxis]))
+runDia cMap mM mL bc pulseSps tmLn =
+            (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
     where
-        timeAxis = timeAxisDia stripHt $ B.length reordTmLn
-        switchFig = vsep stripHt switchFigs
-        switchFigs = runSwitchDia cMap stripHt <$> switchPHPairs
+        timeAxis = switchSpacer ||| (timeAxisDia stripHt $ B.length reordTmLn)
+        pulseLineFig = switchSpacer ||| pulselines
+        switchSpacer = strutX ((width . head) switchFigs)
+            -- (nnBWidth + swFWidth)
+        pulselines = showOrigin $ hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
+        figBlock = vsep stripHt chunkedFigBlocks
+        chunkedFigBlocks = zipWith (|||) switchFigs nodeStripBlocks
+        switchFigs = zipWith (|||) switchNameFigs nnBlocks
+        switchNameFigs = runSwitchDia cMap stripHt swFWidth <$> switchPHPairs
         -- We want to annotate the Switch name with the phenotype this run
         -- started in, if such exists, so we pair them before passing to
         -- runSwitchDia
         switchPHPairs = findBar bc <$> mM
-        pulseLines = translateX (-0.5) $ translateY 1 $
-            hcat $ (pulseLine (height nodeStripBlock)) <$> (pulseSps)
-        nodeStripBlock = (vsep stripHt . fmap vcat) chunkedNodeStrips
-        chunkedNodeStrips = splitPlaces switchLs nodeStrips
-        nodeNameBlock = nodeNameBlockDia switchLs stripHt switchNodeOrder
-        nodeStrips =
-            nodeStripDia reordLNIBMap reordRTs stripHt <$> (annTimeStrips)
-        stripHt = 2
-        annTimeStrips = zip switchNodeOrder transpRTmLn
-        transpRTmLn = (L.transpose . B.toList . fmap U.toList) reordTmLn
+        nodeStripBlocks = (alignY (0) . vcat) <$>
+            (splitPlaces switchLs nodeStrips)
+        nnBlocks = nodeNameBlockDia switchLs stripHt switchNodeOrder
+        nodeStrips = nodeStripDia reordLNIBMap reordRTs stripHt <$> annTStrips
+        (stripHt, swFWidth) = (2.0, 24.0) :: (Double, Double)
+        annTStrips = zip switchNodeOrder transposedRTmLn
+        transposedRTmLn = (L.transpose . B.toList . fmap U.toList) reordTmLn
         -- We want to striate the runs by Switch, so we will need these spacings
         switchLs = (L.length . fst . snd) <$> mM
         -- We need to group the figure by Switch, so we first reorder all of the
@@ -187,8 +190,8 @@ runDia cMap mM mL bc pulseSps tmLn = (switchFig ||| nodeNameBlock |||
         reordLNIBMap = BM.fromList $ zip switchNodeOrder [0..]
         reordTmLn = case timelineMMReorder (fst <<$>> mM) lniBMap tmLn of
             Right r -> r
-            Left errs -> error $ "reordTmLn in ExperimentRun.hs has: " <>
-                                                                    show errs
+            Left errs ->
+                error $ "reordTmLn in ExperimentRun.hs has: " <> show errs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
         switchNodeOrder = concatMap (fst . snd) mM
 
@@ -236,7 +239,7 @@ findBar bc sw = (sw, phN)
 
 nodeStripDia :: LayerNameIndexBimap
              -> LayerRangeVec
-             -> Int
+             -> Double
              -> (NodeName, [(NodeState, WasForced)])
              -> Diagram B
 nodeStripDia reordLNIBMap reordRTs stripHt (nName, annTLine) = timeStrip
@@ -244,47 +247,47 @@ nodeStripDia reordLNIBMap reordRTs stripHt (nName, annTLine) = timeStrip
         timeStrip = hcat $ nodeStateDia nRange stripHt <$> annTLine
         nRange = reordRTs U.! (reordLNIBMap BM.! nName)
 
-nodeStateDia :: (Int, Int) -> Int -> (NodeState, WasForced) -> Diagram B
+nodeStateDia :: (Int, Int) -> Double -> (NodeState, WasForced) -> Diagram B
 nodeStateDia (rangeB, rangeT) stripHt (nState, wForced) = dia
     where
-        dia = rect 1 (fromIntegral stripHt) # theFillColor # lineWidth none
+        dia = rect 1 stripHt # theFillColor # lineWidth none
         theFillColor = case cPick of
             Nothing -> fcA transparent
             Just c -> fillColor c
-        cPick | not wForced = gradientPick trimmedPlasmaCM fracRange realNState
+        cPick | not wForced = gradientPick plasmaCM fracRange realNState
               | otherwise   = gradientPick trimmedRocketCM fracRange realNState
         realNState = fromIntegral nState
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
-runSwitchDia :: ColorMap -> Int -> (Switch, Maybe PhenotypeName) -> Diagram B
-runSwitchDia cMap stripHt (sw, mPhName) = (tText' textH swText) <> swBox
+runSwitchDia :: ColorMap
+             -> Double
+             -> Double
+             -> (Switch, Maybe PhenotypeName)
+             -> Diagram B
+runSwitchDia cMap stripHt rectW (sw, mPhName) = (tText' stripHt swText) <> swBox
     where
         swBox :: Diagram B
         swBox = rect rectW rectH # fillColor swColor # lineWidth none
         swText = case mPhName of
             Nothing -> swName
             Just phName -> swName <> " - " <> phName
-        rectW = 24.0
-        textH = fromIntegral stripHt
-        rectH = fromIntegral $ stripHt * ((length . fst . snd) sw)
+        rectH = stripHt * ((fromIntegral . length . fst . snd) sw)
         swColor = cMap M.! swName
         swName = fst sw
 
 -- Make the timeline for the figure. 
-timeAxisDia :: Int -> Int -> Diagram B
-timeAxisDia strpHght runLength = axisArrow ===
-                                 tText' ((fromIntegral strpHght) * 2) "Time"
+timeAxisDia :: Double -> Int -> Diagram B
+timeAxisDia strpHght runLength = axisArrow === tText' (strpHght * 2) "Time"
     where
         axisArrow =
             arrow' (with & headLength .~ tiny)
                       (fromIntegral runLength) # lw thin
 
--- Make the vertical block of NodeName labels, grouped and spaced out into
--- switches. 
-nodeNameBlockDia :: [Int] -> Int -> [NodeName] -> Diagram B
-nodeNameBlockDia switchLs stripHt switchNodeOrder = dia
+-- Make the vertical blocks of NodeName labels, grouped by switch. 
+nodeNameBlockDia :: [Int] -> Double -> [NodeName] -> [Diagram B]
+nodeNameBlockDia switchLs stripHt switchNodeOrder = alignY (0) <$>  dia
     where
-        dia = (vsep (fromIntegral stripHt) . fmap vcat) chunkedPaddednLabels
+        dia = fmap vcat chunkedPaddednLabels
         chunkedPaddednLabels = splitPlaces switchLs paddedLabels
         paddedLabels = padder maxW <$> nLabels
         padder m d = padX (m / (width d)) d
@@ -292,8 +295,8 @@ nodeNameBlockDia switchLs stripHt switchNodeOrder = dia
         nLabels = nodeStripLabelDia stripHt <$> switchNodeOrder
 
 -- Make a NodeName label. 
-nodeStripLabelDia :: Int -> T.Text -> Diagram B
-nodeStripLabelDia stripHt nName = tText' (fromIntegral stripHt) nName # alignL
+nodeStripLabelDia :: Double -> T.Text -> Diagram B
+nodeStripLabelDia stripHt nName = tText' stripHt nName # alignL
 
 tText' :: Double -> T.Text -> Diagram B
 tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
