@@ -88,7 +88,7 @@ toGML (LayerBinding mm ml dm) = fileHeader <> bulk
 -- fields if the node in question is part of a group or is a group, so we pass
 -- that information in as well. 
 mkGMLNode :: Map.HashMap Int Int -> Bool -> Gr.LNode DMNode -> (GKey, GValue)
-mkGMLNode groupIDs isGroup n
+mkGMLNode groupIDs isGroup (nodeID, dmNode)
     | isGroup = ((mkGKey "node") `orElse` "error", gValue)
     | otherwise = ((mkGKey "node") `orElse` "error", fValue)
     where
@@ -147,8 +147,6 @@ mkGMLNode groupIDs isGroup n
         nColor = (T.pack . SC.sRGB24show . nodeColor . nodeMeta) dmNode
         coords = (nodeCoordinate . nodeMeta) dmNode
         nName = (nodeName . nodeMeta) dmNode
-        nodeID = fst n
-        dmNode = snd n
         
 -- Make a GML (GKey, GValue) pair out of a Gr.LEdge DMLink.
 mkGMLEdge :: Gr.LEdge DMLink -> (GKey, GValue)

@@ -34,6 +34,7 @@ import Data.Char (toLower)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
+import Debug.Trace (trace)
 
 
 type Parser = Parsec Void T.Text
@@ -173,44 +174,44 @@ modelParse = between (symbol "Model{") (symbol "Model}")
         <|> (Fine <$> modelLayerParse)
     ) >>= modelDupeCheck
       >>= nodeDupeCheck
-      >>= nodeDifferentiate 
+      >>= nodeDifferentiate
       >>= phenotypeDupeCheck
 
 -- Return a DMModel whose Gr.Nodes are unique in all layers. This is useful when
 -- doing anything related to the ModelMappings, since by definition they work
 -- with Gr.LNodes from different Gr.Gr DMNode DMLink graphs. 
 nodeDifferentiate :: DMModel -> Parser DMModel
-nodeDifferentiate dmm@(Fine _) = return dmm
-nodeDifferentiate (LayerBinding mm ml dm) = return $ go mm ml dm 0
+nodeDifferentiate dMM = do
+    let spreadDMM = nDifferentiate dMM 0
+    return spreadDMM
+
+
+nDifferentiate :: DMModel -> Int -> DMModel
+nDifferentiate (Fine mL) offSet =
+    --trace ("Fine: " ++ (T.unpack . modelName) mMeta ++ "_" ++ show offSet)
+        Fine shiftedLayer
     where
-        go mapping layer (LayerBinding mm' ml' dm') offSet =
-          LayerBinding mapping shiftedLayer $ go mm' ml' dm' newOffset
-            where
-                newOffset = 1 + ((maximum . Gr.nodes) shiftedGraph)
-                shiftedLayer = ModelLayer shiftedGraph meta
-                shiftedGraph = indexShift offSet graph
-                graph = modelGraph layer
-                meta = modelMeta layer
-        go mapping layer (Fine ml') offSet =
-          LayerBinding mapping shiftedCoarseL $ Fine shiftedFineL
-            where
-                shiftedFineL = ModelLayer shiftedFineG fMeta
-                shiftedFineG = indexShift fineOffset fGraph
-                fGraph = modelGraph ml'
-                fMeta = modelMeta ml'
-                fineOffset = 1 + ((maximum . Gr.nodes) shiftedCoarseG)
-                shiftedCoarseL = ModelLayer shiftedCoarseG cMeta
-                shiftedCoarseG = indexShift offSet cGraph
-                cGraph = modelGraph layer
-                cMeta = modelMeta layer
+        shiftedLayer = ModelLayer shiftedGraph mMeta
+        shiftedGraph = indexShift offSet mGraph
+        (mGraph, mMeta) = (modelGraph mL, modelMeta mL)
+nDifferentiate (LayerBinding mM mL dm) offSet =
+    --trace ("LB: " ++ (T.unpack . modelName) mMeta ++ "_" ++ show offSet)
+        LayerBinding mM shiftedLayer (nDifferentiate dm newOffSet)
+    where
+        newOffSet =  1 + ((maximum . Gr.nodes) shiftedGraph)
+        shiftedLayer = ModelLayer shiftedGraph mMeta
+        shiftedGraph = indexShift offSet mGraph
+        (mGraph, mMeta) = (modelGraph mL, modelMeta mL)
+
 
 indexShift :: Int -> Gr.Gr a b -> Gr.Gr a b
-indexShift offSet g = Gr.mkGraph sNodes sEdges
+indexShift offSet g = Gr.mkGraph sNodes sEdges -- Reassemble the graph. 
     where
+        -- Shift the node IDs and the node references in the edges. 
         sEdges = ((\i (x, y, z) -> (x + i, y + i, z)) offSet) <$> edges
         sNodes = (B.first (+ offSet)) <$> nodes
-        edges  = Gr.labEdges g
-        nodes = Gr.labNodes g
+        -- Dissasemble the graph to get at the nodes and edges.
+        (edges, nodes)  = (Gr.labEdges g, Gr.labNodes g)
 
 
 -- Check that ALL NodeNames in the entire parsed DMModel are unique. 

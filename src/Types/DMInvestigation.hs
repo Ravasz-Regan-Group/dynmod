@@ -54,7 +54,6 @@ import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (mapMaybe, fromJust)
 import Data.Bitraversable (bitraverse)
-import GHC.Stack (HasCallStack)
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -79,6 +78,7 @@ data LayerExpSpec = LayerExpSpec {
 -- nodes, as in a wet-lab organism experiment.
 data DMExperiment = DMExperiment {
       experimentName :: T.Text
+    , experimentDetails :: T.Text
 --    Select the relevant Attractors from those of the whole layer. 
     , attFilter :: [(Barcode, Attractor)] -> [(Barcode, Attractor)]
     , expStepper :: ExpStepper
@@ -148,7 +148,9 @@ data LayerResult = LayerResult
     }
 type ExperimentResult = (ExpContext, [AttractorResult])
 
-data ExpContext = ExpCon T.Text ExpKind deriving (Eq, Show)
+data ExpContext = ExpCon ExpName ExpDetails ExpKind deriving (Eq, Show)
+type ExpName = T.Text
+type ExpDetails = T.Text
 
 type AttractorResult = (Barcode, ([Timeline], [PulseSpacing]))
 
@@ -346,7 +348,7 @@ data NudgeDirection = NudgeUp
 -- Produce a DMInvestigation, or a [VEXInvestigationInvalid] to tell us what
 -- went wrong. The only thing that we validate at parse is that all layer names
 -- in the VEX file are unique. 
-mkDMInvestigation :: HasCallStack => DMModel -> [VEXLayerExpSpec]
+mkDMInvestigation :: DMModel -> [VEXLayerExpSpec]
                   -> Validation [VEXInvestigationInvalid] DMInvestigation
 mkDMInvestigation dmM vlExSpecs = case traverse (layerMatch dmM) vlExSpecs of
     Failure err -> Failure err
@@ -367,7 +369,7 @@ layerMatch dmM vLExSpec = case findLayerWithBinding vLName dmM of
         vLName = vexLayerName vLExSpec
 
 
-mkLayerExpSpec :: HasCallStack => ((ModelMapping, ModelLayer), VEXLayerExpSpec)
+mkLayerExpSpec :: ((ModelMapping, ModelLayer), VEXLayerExpSpec)
                -> Validation [VEXInvestigationInvalid] LayerExpSpec
 mkLayerExpSpec ((mM, mL), vLExSpec) = 
     LayerExpSpec <$> pure mM
@@ -525,10 +527,11 @@ phValidate mM phs
         mMPhenotypes = filter (not . null) $ snd <<$>> mM
 
 
-mkDMExperiment :: HasCallStack => ModelMapping -> ModelLayer -> VEXExperiment
+mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
 mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPulses) =
     DMExperiment <$> pure exName
+                 <*> pure exName
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper expStep (layerPrep mL))
                  <*> traverse (mkInputPulse mL) vexPulses        
@@ -538,6 +541,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
         DMExperiment <$> pure expName
+                     <*> pure expDetails
                      <*> mkAttFilter mM mL inEnv
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> traverse (mkInputPulse mL) p1Alts
@@ -557,18 +561,21 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
             realFlip = (pName, pState)
             initialCs :: [(NodeName, RealNodeState)]
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
-            expName = "pulse1_" <> pName <> "-" <> (T.pack . show) pState <> "-"
-                <> ((T.pack . show) dur) <> "_wInputs_" <> textInputs
+            expName = "pulse1_" <> pName <> "_wInputs_" <> textInputs
+            expDetails = "pulse1_" <> pName <> "-" <> (T.pack . show) pState <>
+                "-" <> ((T.pack . show) dur) <> "_wInputs_" <> textInputs
             textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
             tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
 mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts) =
     DMExperiment <$> pure expName
+                 <*> pure expDetails
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                  <*> traverse (mkInputPulse mL) [startP, kdoePulse, endP]
                  <*> pure KDOE
     where
         expName = "KD_OE_" <> kdoeName nAlts <> "_wInputs_" <> textInputs
+        expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
         textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
         tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
         startP = maybe (VEXInPt initialCs [] (Left 50)) f t_0
@@ -583,8 +590,14 @@ mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts) =
 kdoeName :: [NodeAlteration] -> T.Text
 kdoeName alts = T.intercalate "_" $ kdoeName' <$> alts
     where
-        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> (T.pack . show) nS
-            <> "-" <> (T.pack . show) lP
+        kdoeName' (NodeLock nN _ _) = "Lock_" <> nN
+        kdoeName' (GradientNudge nN nD _) = (T.pack . show) nD <> nN
+
+kdoeDetails :: [NodeAlteration] -> T.Text
+kdoeDetails alts = T.intercalate "_" $ kdoeName' <$> alts
+    where
+        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> "-" <>
+            (T.pack . show) nS <> "-" <> (T.pack . show) lP
         kdoeName' (GradientNudge nN nD nP) = (T.pack . show) nD <> nN <> "-"
             <> (T.pack . show) nP
 
@@ -651,7 +664,7 @@ mkExpBCFilter mM  (maybeExpBCF, eitherISFSpec) =
         dropLeft (Left _) = Nothing
         dropLeft (Right r) = Just r
 
-mkStepper :: HasCallStack => ExperimentStep -> LayerSpecs -> ExpStepper
+mkStepper :: ExperimentStep -> LayerSpecs -> ExpStepper
 mkStepper SynchronousExpStepper lSpecs = SD stepper
     where
         stepper = synchStep (iVecList lSpecs) (tTableList lSpecs)
@@ -775,10 +788,7 @@ txtNodeLockOpts oobLocks mlNodeRanges =
                 -- the node in the NodeLock exists in the ModelLayer
                 rTop = (snd . fromJust . L.find ((==) altName . fst)) nRanges
 
-nodeAltTo2IntNodeAlt :: HasCallStack
-                     => ModelLayer
-                     -> NodeAlteration
-                     -> IntNodeAlteration
+nodeAltTo2IntNodeAlt :: ModelLayer -> NodeAlteration -> IntNodeAlteration
 nodeAltTo2IntNodeAlt mL (NodeLock nName nState lProb) =
     IntNodeLock nIndex nState lProb
     where
@@ -797,14 +807,16 @@ nodeAltTo2IntNodeAlt mL (GradientNudge nName nDirection nProb) =
 
 -- Run all the experiments from a DMInvestigation. The paired Attractors must
 -- be checked beforehand. 
-runInvestigation :: HasCallStack => ColorMap
-                 -> StdGen -> [(HS.HashSet Attractor, LayerExpSpec)]
+runInvestigation :: ColorMap
+                 -> StdGen
+                 -> [(HS.HashSet Attractor, LayerExpSpec)]
                  -> [LayerResult]
 runInvestigation cMap gen attLExpSpecPairs = snd $
     L.mapAccumL (runLayerExperiments cMap) gen attLExpSpecPairs
 
-runLayerExperiments :: HasCallStack => ColorMap
-                    -> StdGen -> (HS.HashSet Attractor, LayerExpSpec)
+runLayerExperiments :: ColorMap
+                    -> StdGen
+                    -> (HS.HashSet Attractor, LayerExpSpec)
                     -> (StdGen, LayerResult)
 runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
     where
@@ -822,19 +834,22 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- each attractor in the set, where n is the length of the attractor, starting
 -- at the next in the loop each time. AttractorResults are then combined if
 -- their Barcodes are identical. 
-runExperiment :: HasCallStack =>
-            (Attractor -> (Barcode, Attractor)) -> HS.HashSet Attractor
-              -> StdGen -> DMExperiment -> (StdGen, ExperimentResult)
+runExperiment :: (Attractor -> (Barcode, Attractor))
+              -> HS.HashSet Attractor
+              -> StdGen
+              -> DMExperiment
+              -> (StdGen, ExperimentResult)
 runExperiment layerBCG attSet gen ex = (newGen, (exCon, attResults))
     where
         (newGen, attResults) = L.mapAccumL (runAttractor ex) gen filteredAtts
         filteredAtts = attFilter ex $ layerBCG <$> attList
         attList = HS.toList attSet
-        exCon = ExpCon (experimentName ex) (expKind ex)
+        exCon = ExpCon (experimentName ex) (experimentDetails ex) (expKind ex)
 
 
-runAttractor :: HasCallStack => DMExperiment
-             -> StdGen -> (Barcode, Attractor)
+runAttractor :: DMExperiment
+             -> StdGen
+             -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
 runAttractor ex gen (bc, att) = (newGen, (bc, (tmLns, pSpaces)))
     where
@@ -849,12 +864,7 @@ runAttractor ex gen (bc, att) = (newGen, (bc, (tmLns, pSpaces)))
         pDurs = (fmap inputDuration . inputPulses) ex
         attL = length att
 
-runLayerVec :: HasCallStack
-            => DMExperiment
-            -> Int
-            -> StdGen
-            -> LayerVec
-            -> (StdGen, Timeline)
+runLayerVec :: DMExperiment -> Int -> StdGen -> LayerVec -> (StdGen, Timeline)
 runLayerVec ex attL gen lVec = B.tail <$> (L.foldl' pulseF (gen, tmlnSeed) iPls)
     where
 --      We drop the seed AnnotatedLayerVec because this way we can alter, step,
@@ -864,8 +874,7 @@ runLayerVec ex attL gen lVec = B.tail <$> (L.foldl' pulseF (gen, tmlnSeed) iPls)
         pulseF = pulseFold attL (expStepper ex)
         iPls = inputPulses ex
 
-pulseFold :: HasCallStack
-          => Int
+pulseFold :: Int
           -> ExpStepper
           -> (StdGen, Timeline)
           -> InputPulse
@@ -910,8 +919,7 @@ pulseFold attL sTPR (gen, tmLn) iPulse = case sTPR of
             Right d -> d
 
 -- Fix an integer value for a real-valued input coordinate. 
-coordFix :: HasCallStack =>
-    RealInputCoord -> LayerVec -> StdGen -> (LayerVec, StdGen)
+coordFix :: RealInputCoord -> LayerVec -> StdGen -> (LayerVec, StdGen)
 coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
     where
         (fixedVec, newGen) = U.foldr' setInput (U.empty, gen) iCoord
@@ -927,8 +935,7 @@ coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
 -- Prime a LayerVec with any alterations that a continuous Input setting or
 -- mutated DMNode might require, and return it with the vector that denotes
 -- which nodes were altered. 
-expStepPrime :: HasCallStack
-             => RealInputCoord
+expStepPrime :: RealInputCoord
              -> [IntNodeAlteration]
              -> LayerVec
              -> StdGen
@@ -942,8 +949,7 @@ expStepPrime iCoord nAlts lVec gen = (U.zip alteredVec wasForcedVec, newGen)
         (coordFixedVec, nGen) = coordFix iCoord lVec gen
         vecSize = U.length lVec
 
-nodeAlter :: HasCallStack
-          => LayerVec
+nodeAlter :: LayerVec
           -> IntNodeAlteration
           -> ([(NodeIndex, NodeState)], StdGen)
           -> ([(NodeIndex, NodeState)], StdGen)
@@ -967,7 +973,7 @@ nodeAlter lVec (IntGradientNudge nIndex nRangeT nDirec nProb) (fixedPairs, gen)
 -- Consume a stack of environmental inputs, a LayerNameIndexBimap, and a list of
 -- user pinning choices, and produce a Vector to set those inputs in a LayerVec,
 -- optionally after a real-valued input is stochastically set. 
-mkPinnedVec :: (Num a, U.Unbox a, HasCallStack)
+mkPinnedVec :: (Num a, U.Unbox a)
             => [[DMNode]]
             -> LayerNameIndexBimap
             -> [(NodeName, a)]

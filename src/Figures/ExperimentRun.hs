@@ -27,7 +27,6 @@ import Diagrams.Backend.SVG
 import Graphics.Svg.Core (renderText, Element)
 import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
-import System.IO.Unsafe (unsafePerformIO)
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
@@ -111,13 +110,18 @@ switchLegend' :: ColorMap -> Double -> Bar -> Diagram B
 switchLegend' cMap slHeight br = vcat $ (tText'' swName):slices
     where
         slices = (sliceRect <>) <$> coloredLabels
-        coloredLabels = (center . (colorRect |||)) <$> paddedPhLabels
+        coloredLabels = swLColorer <$> paddedPhLabels
+        swLColorer (isPh, bareLb)
+            | isPh = (center . (dottedColorRect |||)) bareLb
+            | otherwise = (center . (colorRect |||)) bareLb
+        dottedColorRect = cDot `atop` colorRect
+        cDot = circle (lScale * 0.5 * 0.6) # fc black
+        colorRect = rect lScale slHeight # fc (cMap M.! swName) # lw none
         sliceRect = (rect (slwidth + lScale) slHeight) # lw 0.1
-        paddedPhLabels = lLabelPad' slwidth <$> phLabels
-        slwidth = maximum $ width <$> phLabels
-        phLabels = (padX 1.1 . phTextLabel (barPhenotype br)) <$> orderedPHNames
+        paddedPhLabels = lLabelPad' slwidth <<$>> phLabels
+        slwidth = maximum $ (width . snd) <$> phLabels
+        phLabels = phTextLabel (barPhenotype br) <$> orderedPHNames
         orderedPHNames = (L.reverse . phenotypeNames) br
-        colorRect = rect lScale slHeight # fillColor (cMap M.! swName) # lw none
         swName = switchName br
         tText'' t = F.svgText def (T.unpack t) # F.fit_height (0.75 * lScale)
                                                # F.set_envelope
@@ -126,28 +130,30 @@ switchLegend' cMap slHeight br = vcat $ (tText'' swName):slices
                                                # center
         lScale = 5.0 :: Double 
 
+
 lLabelPad' :: Double -> Diagram B -> Diagram B
 lLabelPad' widest lLabel = padX tweak lLabel
     where
         tweak = widest / (width lLabel)
 
-phTextLabel :: Maybe PhenotypeName -> PhenotypeName -> Diagram B
-phTextLabel mPhName phName
-    | mPhName == Just phName = bText phName
-    | otherwise = tText'' phName
+phTextLabel :: Maybe PhenotypeName -> PhenotypeName -> (Bool, Diagram B)
+phTextLabel mPhName phName = padX 1.1 <$> phLabel
     where
+        phLabel
+            | mPhName == Just phName = (True, {-bText-} tText'' phName)
+            | otherwise = (False, tText'' phName)
         tText'' t = F.svgText def (T.unpack t) # F.fit_height (0.75 * lScale)
                                                # F.set_envelope
                                                # fillColor black
                                                # lineWidth none
                                                # center
-        bText t = F.svgText tOpts (T.unpack t) # F.fit_height (0.75 * lScale)
-                                               # F.set_envelope
-                                               # fillColor black
-                                               # italic
-                                               # lineWidth none
-                                               # center
-        tOpts = F.TextOpts (unsafePerformIO F.lin) F.KERN False
+--         bText t = F.svgText tOpts (T.unpack t) # F.fit_height (0.75 * lScale)
+--                                                # F.set_envelope
+--                                                # fillColor black
+--                                                # italic
+--                                                # lineWidth none
+--                                                # center
+--         tOpts = F.TextOpts (unsafePerformIO F.lin) F.KERN False
         lScale = 5.0 :: Double
 
 runDia :: ColorMap
@@ -160,12 +166,13 @@ runDia :: ColorMap
 runDia cMap mM mL bc pulseSps tmLn =
             (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
     where
-        timeAxis = switchSpacer ||| (timeAxisDia stripHt $ B.length reordTmLn)
-        pulseLineFig = switchSpacer ||| pulselines
+        timeAxis = alignL $ switchSpacer |||
+             (timeAxisDia stripHt $ B.length reordTmLn)
+        pulseLineFig = alignL $ switchSpacer ||| pulselines
         switchSpacer = strutX ((width . head) switchFigs)
-            -- (nnBWidth + swFWidth)
-        pulselines = showOrigin $ hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
-        figBlock = vsep stripHt chunkedFigBlocks
+--         switchW = (width . head) switchFigs
+        pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
+        figBlock = alignL $ vsep stripHt chunkedFigBlocks
         chunkedFigBlocks = zipWith (|||) switchFigs nodeStripBlocks
         switchFigs = zipWith (|||) switchNameFigs nnBlocks
         switchNameFigs = runSwitchDia cMap stripHt swFWidth <$> switchPHPairs
@@ -197,8 +204,9 @@ runDia cMap mM mL bc pulseSps tmLn =
 
 -- Mark where each new pulse begins. 
 pulseLine :: Double -> Int -> Diagram B
-pulseLine lHeight pIndex = ((strutX strutWidth) ||| vLine) # alignY (1) # alignL
+pulseLine lHeight pIndex = lBlock # alignY (1) # alignL
     where 
+        lBlock = strutX strutWidth ||| vLine
         vLine = vrule lHeight # lc red # lw ultraThin
         strutWidth = fromIntegral pIndex
 
@@ -277,10 +285,10 @@ runSwitchDia cMap stripHt rectW (sw, mPhName) = (tText' stripHt swText) <> swBox
 
 -- Make the timeline for the figure. 
 timeAxisDia :: Double -> Int -> Diagram B
-timeAxisDia strpHght runLength = axisArrow === tText' (strpHght * 2) "Time"
+timeAxisDia strpHght runLength = axisArrow === tLabel
     where
-        axisArrow =
-            arrow' (with & headLength .~ tiny)
+        tLabel = alignL $ tText' (strpHght * 2) "Time"
+        axisArrow = alignL $ arrow' (with & headLength .~ tiny)
                       (fromIntegral runLength) # lw thin
 
 -- Make the vertical blocks of NodeName labels, grouped by switch. 

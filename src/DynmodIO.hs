@@ -53,10 +53,9 @@ import Control.Monad.State.Strict (evalState)
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (fromJust)
-import GHC.Stack (HasCallStack)
 
 
-experimentDMMS :: HasCallStack => Path Abs File
+experimentDMMS :: Path Abs File
                -> Experiments
                -> Either
                     (M.ParseErrorBundle T.Text Void)
@@ -106,7 +105,7 @@ attFindDMMS f mMap mEnv = do
     putStr "With settings: "
     PS.pPrint (randomN mEnv, noisyP mEnv, noisyN mEnv)
     let atts = evalState (attractors mEnv) gen
-    writeAttractorBundle f lniBMap mMap atts
+    writeAttractorBundle f lniBMap mMap mEnv Nothing atts
     pure atts
 
 gridDMMS :: Path Abs File -> DMMSModelMapping -> Int -> ModelEnv -> IO ()
@@ -129,17 +128,19 @@ gridDMMS f mMap mult mEnv = do
     hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
     hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
     RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-    writeAttractorBundle f lniBMap mMap allAtts
+    writeAttractorBundle f lniBMap mMap mEnv (Just mult) allAtts
 
 -- Write out an AttractorBundle to disk. 
 writeAttractorBundle :: Path Abs File
                      -> LayerNameIndexBimap
                      -> DMMSModelMapping
+                     -> ModelEnv
+                     -> Maybe Int
                      -> (HS.HashSet Attractor)
                      -> IO ()
-writeAttractorBundle f lniBMap mapping attSet = do
+writeAttractorBundle f lniBMap mapping (ModelEnv _ rN nP nN _ _) mMult atts = do
     (fName, _) <- splitExtension $ filename f
-    let attVecList = HS.toList attSet
+    let attVecList = HS.toList atts
         attNumber = length attVecList
         reorderedAttList =
             case traverse (attractorMMReorder mapping lniBMap)
@@ -153,7 +154,11 @@ writeAttractorBundle f lniBMap mapping attSet = do
         attFile = mkAttTable attSizes switchRows flatAttTanspLists <> "\n\n" <>
             ((T.pack . show) attNumber)
         fNameString = fromRelFile fName
-        attFileName = fNameString ++ "_attractors"
+        attFileNameStem = fNameString ++ "_attractors"
+        attFileName = case mMult of 
+            Nothing -> attFileNameStem ++ "_a" ++ samplePs
+            Just m -> attFileNameStem ++ "_gr" ++ samplePs ++ "_" ++ show m
+        samplePs = L.intercalate "_" $ [show rN, show nN, show nP]
     attFileNameRel <- parseRelFile attFileName
     attFileNameRelWExt <- (addExtension ".csv") attFileNameRel
     RW.writeFile attFileNameRelWExt attFile
@@ -177,7 +182,7 @@ mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
         spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
             ((T.pack . show) <<$>> Split.splitPlaces ss r)
 
-runVEX :: HasCallStack => Path Abs File
+runVEX :: Path Abs File
        -> Path Abs File
        -> DMModel
        -> Either (M.ParseErrorBundle T.Text Void) VEXInvestigation
@@ -197,7 +202,8 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 mapM_ putStrLn ((T.unpack . vexErrorPrep) <$> errs)
             Success lExpSpecs -> do
                 putStrLn "Good vex validation"
-                attSets <- mapM (mkInvestigationAtts dmModel) vexLayerExpSpecs
+                attSets <-
+                    mapM (mkInvestigationAtts dmmsPath dmModel) vexLayerExpSpecs
                 putStrLn "Good attractors"
                 let cMap = mkColorMap dmModel
                 gen <- initStdGen
@@ -226,7 +232,7 @@ writeLayerFig f (expPairs, m5DSVGText) = do
     mapM_ (writeFiveDFig f) m5DSVGText
 
 writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, SVGText)]) -> IO ()
-writeExpFig f ((ExpCon expName expType), svgPairs) = do
+writeExpFig f ((ExpCon expName expDetails expType), svgPairs) = do
     let dirStem = parent f
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
@@ -236,12 +242,13 @@ writeExpFig f ((ExpCon expName expType), svgPairs) = do
     dirExpName <- parseRelDir (T.unpack expName)
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
     ensureDir dirFull
-    mapM_ (writeExpBCFig dirFull) svgPairs
+    mapM_ (writeExpBCFig dirFull expDetails) svgPairs
 
-writeExpBCFig :: Path Abs Dir -> (Barcode, SVGText) -> IO ()
-writeExpBCFig dirFull (bc, svgT) = do
+writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, SVGText) -> IO ()
+writeExpBCFig dirFull expDetails (bc, svgT) = do
     let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-    relFileName <- parseRelFile ("bc" <> T.unpack bcPatterns)
+        rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+    relFileName <- parseRelFile rFString
     relFileNameWExt <- addExtension ".svg" relFileName
     let absFileNameWExt = dirFull </> relFileNameWExt
     RW.writeFile absFileNameWExt svgT
@@ -249,26 +256,28 @@ writeExpBCFig dirFull (bc, svgT) = do
 -- Make the part of the filename for the time series figures associated with a
 -- particular Bar in a particular Barcode. If the Bar has matched to a
 -- Phenotype, number it out of the total number of Phenotypes associated with
--- that Switch (1-indexed numbering). If not, denote it with an 'm' for "miss".
+-- that Switch (0-indexed numbering). If not, denote it with an 'm' for "miss".
 barFNPattern :: Bar -> T.Text
 barFNPattern b = case barPhenotype b of
     Nothing -> "m"
--- We reverse the PhenotypeNames so that the numbers in the file name match up
--- with the numbered legend we make inside the SVG file, which are listed from
--- the bottom up. 
-    Just phName -> (T.pack . show . (+1) . fromJust .
-        flip L.elemIndex ((L.reverse . phenotypeNames) b)) phName
+    Just phName -> (T.pack . show . fromJust .
+        flip L.elemIndex (phenotypeNames b)) phName
     
         
 
-mkInvestigationAtts :: DMModel -> VEXLayerExpSpec -> IO (HS.HashSet Attractor)
-mkInvestigationAtts dmModel vLExSpec = case layerMatch dmModel vLExSpec of
+mkInvestigationAtts :: Path Abs File
+                    -> DMModel
+                    -> VEXLayerExpSpec
+                    -> IO (HS.HashSet Attractor)
+mkInvestigationAtts dmmsF dmModel vLExSpec = case layerMatch dmModel vLExSpec of
     Failure errs -> fail $ show errs
     Success ((mM, mL), _) -> case sampling vLExSpec of
         SampleOnly (SamplingParameters rN nN nProb) -> do
             gen <- initStdGen
             let mEnv = ModelEnv mL rN nProb nN 0 []
                 atts = evalState (attractors mEnv) gen
+                LayerSpecs lniBMap _ _ _ = layerPrep mL
+            writeAttractorBundle dmmsF lniBMap dmmsMM mEnv Nothing atts
             return atts
         ReadOnly csvfileString -> do
             (_, _, atts) <- loadAttCSV (dmmsMM, mL) csvfileString
@@ -466,6 +475,8 @@ writeSupp f (dmM, cd) = do
 
 writeGML :: Path Abs File -> DMModel -> IO ()
 writeGML f dnM = do
+--     let nodeIDs = (fmap (Gr.nodes . modelGraph) . modelLayers) dnM
+--     putStrLn $ show nodeIDs
     let gmlText = (renderGML . toGML) dnM
     (gFileNameNoExt, _) <- splitExtension f
     gFileName <- addExtension ".gml" gFileNameNoExt
@@ -543,8 +554,8 @@ loadAttCSV (dmmsMMap, mL) csvAttFStr = do
             case attractorCheck (dmmsMMap, mL) parsedAttBundle of
                 Failure errs -> fail $ show errs
                 Success atts -> do  
-                    let LayerSpecs lniBimap _ _ _ = layerPrep mL
-                    return (dmmsMMap, lniBimap, atts)
+                    let LayerSpecs lniBMap _ _ _ = layerPrep mL
+                    return (dmmsMMap, lniBMap, atts)
         _ -> fail $ "not a cvs file: " <> csvAttFStr
 
 
@@ -594,8 +605,7 @@ mkFiveDFigure cMap (mMap, fLayer) atts = do
 -- between the LayerVec index position and DMNode NodeNames, and the nodes
 -- pinned by the user, and produce an InputBundle. This InputBundle will not
 -- have a BarcodeFilter
-mkInputBundle :: HasCallStack
-              => [[DMNode]]
+mkInputBundle :: [[DMNode]]
               -> LayerNameIndexBimap
               -> [(NodeName, Int)]
               -> InputBundle
@@ -628,7 +638,7 @@ writeFiveDFig :: Path Abs File -> SVGText -> IO ()
 writeFiveDFig f fiveDFigSVG = do
     (fName, _) <- splitExtension $ filename f
     let fNameString = fromRelFile fName
-        fiveDFigFileName = fNameString ++ "_5DFig"
+        fiveDFigFileName = fNameString ++ "_Attrs_Env_Space"
     fiveDFigFileNameRel <- parseRelFile fiveDFigFileName
     fiveDFigFileNameRelWExt <- (addExtension ".svg") fiveDFigFileNameRel
     RW.writeFile fiveDFigFileNameRelWExt fiveDFigSVG

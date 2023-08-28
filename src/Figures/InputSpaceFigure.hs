@@ -37,7 +37,6 @@ import qualified Data.Bimap as BM
 import GHC.Generics (Generic)
 import qualified Data.List as L
 import Data.Maybe (isNothing, catMaybes)
-import GHC.Stack (HasCallStack)
 
 type AttractorIndex = Int
 
@@ -318,8 +317,7 @@ redLinePrune (RedLineCandidate phSize i phName) (mRLB, highestRS, phIndex)
     | otherwise = (Just ((RedLineBar phSize phIndex), phName), i, phIndex + 1)
 
 -- Make a single SliceCandidate. 
-mkSliceCandidate :: HasCallStack
-                 => LayerNameIndexBimap
+mkSliceCandidate :: LayerNameIndexBimap
                  -> Attractor
                  -> Phenotype
                  -> SliceCandidate
@@ -343,7 +341,6 @@ mkSliceCandidate lniBMap att ph
                 matchInts = catMaybes matches
                 matches = matchLocation ordAtt <$> ordIntPh
     where
-        intPh :: HasCallStack => [IntSubSpace]
         intPh = f <<$>> fPrint
             where f (x, y) = (lniBMap BM.! x, y)
 --         (BF.first (lniBMap BM.!)) <<$>> fPrint
