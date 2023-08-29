@@ -34,7 +34,6 @@ import Data.Char (toLower)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
-import Debug.Trace (trace)
 
 
 type Parser = Parsec Void T.Text
@@ -154,6 +153,10 @@ dmmsVersion = versionParse "FormatVersion"
 -- Parse a DMModel and CitationDictionary. 
 modelCiteParse :: Parser (DMModel, CitationDictionary)
 modelCiteParse = ((,) <$> modelParse <*> citeDictParse)
+    >>= modelDupeCheck
+    >>= nodeDupeCheck
+    >>= nodeDifferentiate
+    >>= phenotypeDupeCheck
 
 modelParse :: Parser DMModel
 modelParse = between (symbol "Model{") (symbol "Model}") 
@@ -172,35 +175,34 @@ modelParse = between (symbol "Model{") (symbol "Model}")
             )
         )
         <|> (Fine <$> modelLayerParse)
-    ) >>= modelDupeCheck
-      >>= nodeDupeCheck
-      >>= nodeDifferentiate
-      >>= phenotypeDupeCheck
+    )
 
 -- Return a DMModel whose Gr.Nodes are unique in all layers. This is useful when
 -- doing anything related to the ModelMappings, since by definition they work
 -- with Gr.LNodes from different Gr.Gr DMNode DMLink graphs. 
-nodeDifferentiate :: DMModel -> Parser DMModel
-nodeDifferentiate dMM = do
+nodeDifferentiate :: (DMModel, CitationDictionary)
+                  -> Parser (DMModel, CitationDictionary)
+nodeDifferentiate (dMM, cd) = do
     let spreadDMM = nDifferentiate dMM 0
-    return spreadDMM
+    return (spreadDMM, cd)
 
 
 nDifferentiate :: DMModel -> Int -> DMModel
-nDifferentiate (Fine mL) offSet =
-    --trace ("Fine: " ++ (T.unpack . modelName) mMeta ++ "_" ++ show offSet)
-        Fine shiftedLayer
+nDifferentiate (Fine mL) offSet = Fine shiftedLayer
     where
+        -- Reassemble the shifted layer.
         shiftedLayer = ModelLayer shiftedGraph mMeta
         shiftedGraph = indexShift offSet mGraph
         (mGraph, mMeta) = (modelGraph mL, modelMeta mL)
 nDifferentiate (LayerBinding mM mL dm) offSet =
-    --trace ("LB: " ++ (T.unpack . modelName) mMeta ++ "_" ++ show offSet)
-        LayerBinding mM shiftedLayer (nDifferentiate dm newOffSet)
+    LayerBinding mM shiftedLayer (nDifferentiate dm newOffSet)
     where
+        -- Calculate the new offset. 
         newOffSet =  1 + ((maximum . Gr.nodes) shiftedGraph)
+        -- Reassemble the shifted layer.
         shiftedLayer = ModelLayer shiftedGraph mMeta
         shiftedGraph = indexShift offSet mGraph
+        -- Dissasemble the layer to get at the graph.
         (mGraph, mMeta) = (modelGraph mL, modelMeta mL)
 
 
@@ -215,9 +217,10 @@ indexShift offSet g = Gr.mkGraph sNodes sEdges -- Reassemble the graph.
 
 
 -- Check that ALL NodeNames in the entire parsed DMModel are unique. 
-nodeDupeCheck :: DMModel -> Parser DMModel
-nodeDupeCheck dM
-    | L.null repeats = return dM
+nodeDupeCheck :: (DMModel, CitationDictionary)
+              -> Parser (DMModel, CitationDictionary)
+nodeDupeCheck (dM, cd)
+    | L.null repeats = return (dM, cd)
     | otherwise = fail $ show $ DuplicatedNodeNames repeats
     where
         repeats = repeated ns
@@ -225,9 +228,10 @@ nodeDupeCheck dM
         layers = modelLayers dM  
 
 -- Make sure that Phenotype PhenotypeNames are globally unique. 
-phenotypeDupeCheck :: DMModel -> Parser DMModel
-phenotypeDupeCheck dM
-    | L.null repeats = return dM
+phenotypeDupeCheck :: (DMModel, CitationDictionary)
+                   -> Parser (DMModel, CitationDictionary)
+phenotypeDupeCheck (dM, cd)
+    | L.null repeats = return (dM, cd)
     | otherwise = fail $ show $ DuplicatedPhenotypeNames repeats
     where
         repeats = repeated pNs
@@ -235,9 +239,10 @@ phenotypeDupeCheck dM
         switches = (concat . modelMappings) dM
 
 -- Check that ALL ModelNames in the entire parsed DMModel are unique. 
-modelDupeCheck :: DMModel -> Parser DMModel
-modelDupeCheck dM
-    | L.null repeats = return dM
+modelDupeCheck :: (DMModel, CitationDictionary)
+               -> Parser (DMModel, CitationDictionary)
+modelDupeCheck (dM, cd)
+    | L.null repeats = return (dM, cd)
     | otherwise = fail $ show $ DuplicatedModelNames repeats
     where
         repeats = repeated ms
