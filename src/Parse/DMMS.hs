@@ -175,7 +175,7 @@ modelParse = between (symbol "Model{") (symbol "Model}")
             )
         )
         <|> (Fine <$> modelLayerParse)
-    )
+    ) 
 
 -- Return a DMModel whose Gr.Nodes are unique in all layers. This is useful when
 -- doing anything related to the ModelMappings, since by definition they work
@@ -218,7 +218,7 @@ indexShift offSet g = Gr.mkGraph sNodes sEdges -- Reassemble the graph.
 
 -- Check that ALL NodeNames in the entire parsed DMModel are unique. 
 nodeDupeCheck :: (DMModel, CitationDictionary)
-              -> Parser (DMModel, CitationDictionary)
+               -> Parser (DMModel, CitationDictionary)
 nodeDupeCheck (dM, cd)
     | L.null repeats = return (dM, cd)
     | otherwise = fail $ show $ DuplicatedNodeNames repeats

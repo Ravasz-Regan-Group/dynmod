@@ -475,8 +475,6 @@ writeSupp f (dmM, cd) = do
 
 writeGML :: Path Abs File -> DMModel -> IO ()
 writeGML f dnM = do
-    let nodeIDs = (fmap (Gr.nodes . modelGraph) . modelLayers) dnM
-    putStrLn $ show nodeIDs
     let gmlText = (renderGML . toGML) dnM
     (gFileNameNoExt, _) <- splitExtension f
     gFileName <- addExtension ".gml" gFileNameNoExt

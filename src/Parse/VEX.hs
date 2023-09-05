@@ -200,17 +200,32 @@ axesOrderParse = lexeme $ rword "AxesOrder" >>
 -- Parse a BarcodeFile. BarcodeFiles are optional, so if this parser succeeds,
 -- we wrap the result in a Just. 
 barCodeFilterParse :: Parser BarcodeFilter
-barCodeFilterParse = onlyBCParse <|> excludeBCParse
+barCodeFilterParse =  onlyBCwAnyParse
+                  <|> onlyBCWAllParse
+                  <|> excludeBCwAnyParse
+                  <|> excludeBCwAllParse
 
-onlyBCParse :: Parser BarcodeFilter
-onlyBCParse = OnlyBCF <$>
-    ((lexeme . try) $ rword "OnlyBarCodesWith" >> colon >>
+onlyBCwAnyParse :: Parser BarcodeFilter
+onlyBCwAnyParse = OnlyBarCodesWithAny <$>
+    ((lexeme . try) $ rword "OnlyBarCodesWithAny" >> colon >>
         (sepBy1 phenotypeSetParse comma)
     )
 
-excludeBCParse :: Parser BarcodeFilter
-excludeBCParse = ExcludeBCF <$>
-    ((lexeme . try) $ rword "ExcludeBarCodesWith" >> colon >>
+onlyBCWAllParse :: Parser BarcodeFilter
+onlyBCWAllParse = OnlyBarCodesWithAny <$>
+    ((lexeme . try) $ rword "OnlyBarCodesWithAll" >> colon >>
+        (sepBy1 phenotypeSetParse comma)
+    )
+
+excludeBCwAnyParse :: Parser BarcodeFilter
+excludeBCwAnyParse = ExcludeBarCodesWithAny <$>
+    ((lexeme . try) $ rword "ExcludeBarCodesWithAny" >> colon >>
+        (sepBy1 phenotypeSetParse comma)
+    )
+
+excludeBCwAllParse :: Parser BarcodeFilter
+excludeBCwAllParse = ExcludeBarCodesWithAll <$>
+    ((lexeme . try) $ rword "ExcludeBarCodesWithAll" >> colon >>
         (sepBy1 phenotypeSetParse comma)
     )
 

@@ -15,6 +15,7 @@ module Figures.InputSpaceFigure
     , mkColorMap
     , attMatch
     , bcFilterF
+    , barPhenotype
     ) where    
 
 import Types.DMModel
@@ -55,7 +56,6 @@ data Bar = BR { barKind :: BarKind
               , attractorSize :: Int
               , switchName :: NodeName
               , phenotypeNames :: [PhenotypeName]
-              , barPhenotype :: Maybe PhenotypeName
               } deriving (Eq, Show, Generic)
 instance Hashable Bar
 
@@ -70,9 +70,9 @@ instance Hashable Bar
 -- then that Phenotype is in the running to be the titular red line in a
 -- RedLineBar. 
 data BarKind = FullMiss BarHeight
-             | RedLineBar BarHeight PhenotypeIndex -- One Phenotype in the
--- Switch is clearly the least bad match to the resident global Attractor
--- (an n-way tie prevents RedLineBars)
+             | RedLineBar BarHeight PhenotypeIndex PhenotypeName -- One
+-- Phenotype in the Switch is clearly the least bad match to the resident global
+-- Attractor (an n-way tie prevents RedLineBars)
              | MatchBar [Slice]
                         LocalColor
              deriving (Eq, Show, Generic)
@@ -81,7 +81,7 @@ type BarHeight = Int
 type PhenotypeIndex = Int
 
 
-data Slice = Match AttractorSize AttractorMatchIndices
+data Slice = Match AttractorSize AttractorMatchIndices PhenotypeName
            | Miss AttractorSize
            deriving (Eq, Show, Generic)
 instance Hashable Slice
@@ -99,9 +99,17 @@ type MatchCount = Int
 -- Sometimes input space figures have many Barcodes at each input coordinate. 
 -- Barcode filters allow the user to exclude irrelevant Barcodes, or only
 -- include particularly relevant Barcodes. 
-data BarcodeFilter = OnlyBCF [(NodeName, PhenotypeName)]
-                   | ExcludeBCF [(NodeName, PhenotypeName)]
-                   deriving (Eq, Show, Ord)
+data BarcodeFilter =
+-- Only include if at ANY point along an attractor it matches to the phenotype.
+      OnlyBarCodesWithAny [(NodeName, PhenotypeName)]
+-- Only include if at EVERY point along an attractor it matches to the
+-- phenotype. 
+    | OnlyBarCodesWithAll [(NodeName, PhenotypeName)]
+-- Exclude if at ANY point along an attractor it matches to the phenotype. 
+    | ExcludeBarCodesWithAny [(NodeName, PhenotypeName)]
+-- Exclude if at EVERY point along an attractor it matches to the phenotype
+    | ExcludeBarCodesWithAll [(NodeName, PhenotypeName)]
+      deriving (Eq, Show, Ord)
 
 type ESpacePointDia = Diagram B
 type BarcodeDia = Diagram B
@@ -267,22 +275,19 @@ mkBar :: LayerNameIndexBimap
       -> (NodeName, [Phenotype])
       -> Bar
 mkBar lniBMap att sColor (sName, phs)
-    | areMatches && (HS.size phNSet == 1) =
+    | areMatches =
         BR (MatchBar sweptSlices sColor)
             attSize
             sName
             phNames
-           (Just ((head . HS.toList) phNSet))
-    | areMatches && (HS.size phNSet /= 1)
-        = BR (MatchBar sweptSlices sColor) attSize sName phNames Nothing
     | otherwise  = case foldr redLinePrune (Nothing, 0, 0) sCandidates of
-        (Just (rlb, phName), _, _) ->
-            BR rlb attSize sName phNames (Just phName)
+        (Just rlb, _, _) ->
+            BR rlb attSize sName phNames
         (Nothing, _, _)  ->
-            BR (FullMiss (length sCandidates)) attSize sName phNames Nothing
+            BR (FullMiss (length sCandidates)) attSize sName phNames
     where
-        (sweptSlices, areMatches, phNSet) =
-            foldr (matchSweep attSize) ([], False, HS.empty) sCandidates
+        (sweptSlices, areMatches) =
+            foldr (matchSweep attSize) ([], False) sCandidates
         sCandidates = (mkSliceCandidate lniBMap att) <$> orderedPHs
 --      We order the phenotypes by switchNodeState descending so the the Bar
 --      will have the 0 state at the bottom, rather than the top. 
@@ -293,20 +298,20 @@ mkBar lniBMap att sColor (sName, phs)
 -- Scan a [SliceCandidate] for good matches:
 matchSweep :: Int
            -> SliceCandidate
-           -> ([Slice], Bool, HS.HashSet PhenotypeName)
-           -> ([Slice], Bool, HS.HashSet PhenotypeName)
-matchSweep _ (MissCandidate attSize) (slcs, areMs, phNSet) =
-    ((Miss attSize):slcs, areMs, phNSet)
-matchSweep attSize (RedLineCandidate _ _ _) (slcs, areMs, phNSet) =
-    ((Miss attSize):slcs, areMs, phNSet)
-matchSweep _ (MatchCandidate i j phName) (slcs, _, phNSet) =
-    ((Match i j):slcs, True, HS.insert phName phNSet)
+           -> ([Slice], Bool)
+           -> ([Slice], Bool)
+matchSweep _ (MissCandidate attSize) (slcs, areMs) =
+    ((Miss attSize):slcs, areMs)
+matchSweep attSize (RedLineCandidate _ _ _) (slcs, areMs) =
+    ((Miss attSize):slcs, areMs)
+matchSweep _ (MatchCandidate i jss phName) (slcs, _) =
+    ((Match i jss phName):slcs, True)
 
 
 -- Scan a [SliceCandidate] for a RedLineBar:
 redLinePrune :: SliceCandidate
-             -> (Maybe (BarKind, PhenotypeName), Int, Int)
-             -> (Maybe (BarKind, PhenotypeName), Int, Int)
+             -> (Maybe BarKind, Int, Int)
+             -> (Maybe BarKind, Int, Int)
 redLinePrune (MissCandidate _) (mRLB, highestRS, phIndex) =
     (mRLB, highestRS, phIndex + 1)
 redLinePrune (MatchCandidate _ _ _) (mRLB, highestRS, phIndex) =
@@ -314,7 +319,7 @@ redLinePrune (MatchCandidate _ _ _) (mRLB, highestRS, phIndex) =
 redLinePrune (RedLineCandidate phSize i phName) (mRLB, highestRS, phIndex)
     | i < highestRS = (mRLB, highestRS, phIndex + 1)
     | i == highestRS = (Nothing, highestRS, phIndex + 1)
-    | otherwise = (Just ((RedLineBar phSize phIndex), phName), i, phIndex + 1)
+    | otherwise = (Just (RedLineBar phSize phIndex phName), i, phIndex + 1)
 
 -- Make a single SliceCandidate. 
 mkSliceCandidate :: LayerNameIndexBimap
@@ -369,7 +374,7 @@ anyMatchReorder intPh att
         (backSS, frontSS) = L.break (isSSMatch (B.head frontThread)) intPh
 
 -- Do the states in the Int-converted Subspace match the equivalent states in
--- the LayerVec
+-- the LayerVec?
 isSSMatch :: LayerVec -> IntSubSpace -> Bool
 isSSMatch lV sS = all (isStateMatch lV) sS
     where
@@ -403,17 +408,56 @@ loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
 
 bcFilterF :: Maybe BarcodeFilter -> Barcode -> Bool
 bcFilterF Nothing _ = True
-bcFilterF (Just (OnlyBCF sPhPairs)) bc = all (phCheck bcPairs) sPhPairs
-    where bcPairs = (\x -> (switchName x, barPhenotype x)) <$> bc
-bcFilterF (Just (ExcludeBCF sPhPairs)) bc = not $ any (phCheck bcPairs) sPhPairs
-    where bcPairs = (\x -> (switchName x, barPhenotype x)) <$> bc
+bcFilterF (Just (OnlyBarCodesWithAny sPhPairs)) bc =
+    all (phCheckAny (bcPairs bc)) sPhPairs
+bcFilterF (Just (OnlyBarCodesWithAll sPhPairs)) bc =
+    all (phCheckAll (bcPairs bc)) sPhPairs
+bcFilterF (Just (ExcludeBarCodesWithAny sPhPairs)) bc = not $
+    all (phCheckAny (bcPairs bc)) sPhPairs
+bcFilterF (Just (ExcludeBarCodesWithAll sPhPairs)) bc = not $
+    all (phCheckAll (bcPairs bc)) sPhPairs
 
-phCheck :: [(NodeName, Maybe PhenotypeName)]
-        -> (NodeName, PhenotypeName) -> Bool
-phCheck bcPs (nName, phName) = case L.find ((==) nName . fst) bcPs of
-    Nothing -> True
-    Just (_, Nothing) -> True
-    Just (_, Just checkedPhN) -> checkedPhN == phName
+bcPairs :: Barcode -> [(NodeName, BarKind)]
+bcPairs = fmap (\x -> (switchName x, barKind x))
+
+phCheckAny :: [(NodeName, BarKind)] -> (NodeName, PhenotypeName) -> Bool
+phCheckAny bcPs (nName, phName) = case L.find ((==) nName . fst) bcPs of
+    Nothing -> False
+    Just (_, FullMiss _) -> False
+    Just (_, RedLineBar _ _ checkedPhN) -> checkedPhN == phName
+    Just (_, MatchBar slcs _) -> case L.find (matchSlice phName) slcs of
+        Nothing -> False
+        Just (Match _ _ _) -> True
+        Just (Miss _) -> False
+
+phCheckAll :: [(NodeName, BarKind)] -> (NodeName, PhenotypeName) -> Bool
+phCheckAll bcPs (nName, phName) = case L.find ((==) nName . fst) bcPs of
+    Nothing -> False
+    Just (_, FullMiss _) -> False
+    Just (_, RedLineBar _ _ checkedPhN) -> checkedPhN == phName
+    Just (_, MatchBar slcs _) -> case L.find (matchSlice phName) slcs of
+        Nothing -> False
+        Just (Match attSize attMatchess _) ->
+            attSize == (sum . fmap length) attMatchess
+        Just (Miss _) -> False
+
+matchSlice :: PhenotypeName
+           -> Slice
+           -> Bool
+matchSlice _ (Miss _) = False
+matchSlice phName (Match _ _ checkedPhN) =  phName == checkedPhN
+
+barPhenotype :: Bar -> Maybe PhenotypeName
+barPhenotype br = case barKind br of
+    FullMiss _ -> Nothing
+    RedLineBar _ _ phName -> Just phName
+    MatchBar slcs _ -> foldr bestSl Nothing slcs
+        where
+            bestSl sl bestS = case sl of
+                Miss _ -> bestS
+                Match attSize attMatchess phName
+                    | attSize ==  (sum . fmap length) attMatchess -> Just phName
+                    | otherwise -> bestS
 
 ------------------------------------------------------------------------------
 -- Diagrams functions
@@ -459,7 +503,7 @@ barDia bar = case barKind bar of
             slices = L.replicate bHeight missSlice
             missSlice = rect barwidth slHeight # fillColor white
                                                # lineWidth 0.1
-    RedLineBar bHeight phIndex -> bDia -- <> barRect
+    RedLineBar bHeight phIndex _ -> bDia -- <> barRect
         where
 --             barRect :: Diagram B
 --             barRect = (rect (width bDia) (height bDia)) # lw 0.3
@@ -497,7 +541,7 @@ sliceDia _ (Miss attSize) = (hcat slivers) # center
         sliverWidth = slicewidth / (fromIntegral attSize)
         slicewidth = (2.0 :: Double) * (fromIntegral attSize)**alpha
         sliceHeight = 1.0 :: Double
-sliceDia c (Match attSize matchLoops) = (hcat slivers) # center
+sliceDia c (Match attSize matchLoops _) = (hcat slivers) # center
     where
         slivers = B.toList $ missVec B.// matchPairs
         missVec = B.replicate attSize missSliver

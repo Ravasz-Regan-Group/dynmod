@@ -505,8 +505,14 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
 
 mkIBBCFilter :: ModelMapping -> BarcodeFilter
               -> Validation [VEXInvestigationInvalid] BarcodeFilter
-mkIBBCFilter mM (OnlyBCF phs) = OnlyBCF <$> phValidate mM phs
-mkIBBCFilter mM (ExcludeBCF phs) = ExcludeBCF <$> phValidate mM phs
+mkIBBCFilter mM (OnlyBarCodesWithAny phs) =
+    OnlyBarCodesWithAny <$> phValidate mM phs
+mkIBBCFilter mM (OnlyBarCodesWithAll phs) =
+    OnlyBarCodesWithAll <$> phValidate mM phs
+mkIBBCFilter mM (ExcludeBarCodesWithAny phs) =
+    ExcludeBarCodesWithAny <$> phValidate mM phs
+mkIBBCFilter mM (ExcludeBarCodesWithAll phs) =
+    ExcludeBarCodesWithAll <$> phValidate mM phs
 
 phValidate :: ModelMapping -> [(NodeName, PhenotypeName)]
            -> Validation [VEXInvestigationInvalid] [(NodeName, PhenotypeName)]

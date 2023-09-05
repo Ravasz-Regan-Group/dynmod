@@ -25,12 +25,31 @@ data AttractorsInvalid =
     deriving (Show, Eq)
 
 
+-- Starting from every attractor, alter each environment, one at a time, to
+-- every other option, and see where the network goes from this attractor. Test
+-- if the resulting attractor is new. This happens a lot when a phenotype is
+-- relatively stable in one environment, but gets overshadowed by a large basin,
+-- say apoptosis, in another env. The procedure helps complete the picture. If
+-- you find new attractors this way, repeat until you don't.
+-- largeBasinAtts :: ModelEnv
+--                -> HS.HashSet Attractor
+--                -> Simulation (HS.HashSet Attractor)
+-- largeBasinAtts mEnv = do
+-- 
+-- [FixedVec] -> HS.HashSet Attractor -> HS.HashSet Attractor
+-- largeBasinAtts fixedVecs atts = go folder HS.empty
+--     where
+--         foldl' (g1 fixedVecs) HS.empty atts
+--         g1 fVecs att newAtts = (filter filterF rundowns) `HS.union` newAtts
+--         rundown = 
+--         filterF = not . flip elem atts
+
 -- Return just the attractors of the ModelLayer. This is slower, but uses less
 -- memory. We cannot check if we are runing down a chain of states we have
 -- encountered before, but we also do not have to carry around a HashMap of all
 -- the states we have ever encountered. 
 attractors :: ModelEnv -> Simulation (HS.HashSet Attractor)
-attractors = topStates attFolders
+attractors mEnv = (topStates attFolders mEnv) -- >>= (largeBasinAtts mEnv)
 
 attFolders :: Folder (HS.HashSet Attractor)
 attFolders = Folder attRandFold attNoisyFold attRunDown
