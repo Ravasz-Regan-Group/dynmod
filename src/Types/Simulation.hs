@@ -29,6 +29,7 @@ module Types.Simulation
     , attractorMMReorder
     , inputs
     , inputCombos
+    , inputSolos
     , inputLevels
     , isAtt
     , lNISwitchThread
@@ -51,7 +52,6 @@ import qualified Data.List.Unique as Uniq
 import Data.Maybe (fromJust)
 import qualified Data.Sequence as S
 import qualified Data.List as L
-import GHC.Stack (HasCallStack)
 
 
 type Simulation = State StdGen
@@ -299,13 +299,12 @@ otherStates lVec lniBMap nName rangeTop = vecs
         nodeIndex = lniBMap BM.! nName
 
 
-tableGateEval :: HasCallStack => LayerVec -> IndexVec -> TruthTable -> NodeState
+tableGateEval :: LayerVec -> IndexVec -> TruthTable -> NodeState
 tableGateEval lVec iVec tTable =
     let n = tTable M.! (U.backpermute lVec iVec) in n
 
 -- Synchronous, deterministic network update
-synchStep :: HasCallStack =>
-            IndexVecList -> TruthTableList -> LayerVec -> LayerVec
+synchStep :: IndexVecList -> TruthTableList -> LayerVec -> LayerVec
 synchStep ivs tts lVec = newVec
     where
         newVec = U.fromList $ L.zipWith (tableGateEval lVec) ivs tts 
@@ -413,14 +412,19 @@ inputs mG = (fromJust . Gr.lab mG) <<$>> ((fstOf3 . Uniq.complex) <$> reps)
 -- randomly in these areas of the state space. Remove those inputs that are in
 -- constrainedInputs. This is a hack, because we need to be able to share
 -- networks with software that can't do integer-valued nodes. 
-inputCombos :: [[DMNode]]
-            -> [NodeName]
-            -> LayerNameIndexBimap
-            -> [FixedVec]
+inputCombos :: [[DMNode]] -> [NodeName] -> LayerNameIndexBimap -> [FixedVec]
 inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
     where
         iLevels :: [[FixedVec]]
         iLevels = inputLevels lniBMap <$> strippedNLs
+        strippedNLs = filter stripper nodeLists
+        stripper = not . (flip elem nos) . nodeName . nodeMeta . head
+
+-- Prepare a [FixedVec] for the levels of each input, alone. Remove those inputs
+-- that are in constrainedInputs. 
+inputSolos :: [[DMNode]] -> [NodeName] -> LayerNameIndexBimap -> [[FixedVec]]
+inputSolos nodeLists nos lniBMap = inputLevels lniBMap <$> strippedNLs
+    where
         strippedNLs = filter stripper nodeLists
         stripper = not . (flip elem nos) . nodeName . nodeMeta . head
 
@@ -430,9 +434,7 @@ inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
 -- input that represent the zeroth through third levels. In this way, an n-level
 -- input will be represented by n-1 nodes. Single-node inputs MAY be integer-
 -- valued, so take that into account. 
-inputLevels :: LayerNameIndexBimap
-            -> [DMNode]
-            -> [FixedVec]
+inputLevels :: LayerNameIndexBimap -> [DMNode] -> [FixedVec]
 inputLevels _ [] = []
 inputLevels lniBMap [n] = vecs
     where

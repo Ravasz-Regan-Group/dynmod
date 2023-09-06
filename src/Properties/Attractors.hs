@@ -16,6 +16,7 @@ import qualified Data.Vector as B
 import Data.Validation
 import Data.Tuple (swap)
 import qualified Data.List as L
+import Control.Applicative (liftA2)
 
 data AttractorsInvalid =
       SwitcheNamesDifferent ([NodeName], [NodeName])
@@ -31,25 +32,36 @@ data AttractorsInvalid =
 -- relatively stable in one environment, but gets overshadowed by a large basin,
 -- say apoptosis, in another env. The procedure helps complete the picture. If
 -- you find new attractors this way, repeat until you don't.
--- largeBasinAtts :: ModelEnv
---                -> HS.HashSet Attractor
---                -> Simulation (HS.HashSet Attractor)
--- largeBasinAtts mEnv = do
--- 
--- [FixedVec] -> HS.HashSet Attractor -> HS.HashSet Attractor
--- largeBasinAtts fixedVecs atts = go folder HS.empty
---     where
---         foldl' (g1 fixedVecs) HS.empty atts
---         g1 fVecs att newAtts = (filter filterF rundowns) `HS.union` newAtts
---         rundown = 
---         filterF = not . flip elem atts
+largeBasinAtts :: ModelEnv
+               -> HS.HashSet Attractor
+               -> Simulation (HS.HashSet Attractor)
+largeBasinAtts mEnv atts = do 
+    let updatedAtts = largeBasinAtts' mEnv atts
+    return updatedAtts
+
+largeBasinAtts' :: ModelEnv -> HS.HashSet Attractor -> HS.HashSet Attractor
+largeBasinAtts' (ModelEnv mL _ _ _ _ constInps) atts = atts <> go atts atts
+    where
+        go checkAtts accumAtts
+            | HS.null excessAtts = HS.empty
+            | otherwise = excessAtts <> go (excessAtts <> checkAtts) excessAtts
+            where
+                excessAtts = HS.fromList $ filter attFilterF rundowns
+                attFilterF = not . flip elem checkAtts
+                rundowns = attRunDownSimple stepper <$> fixedVecs
+                fixedVecs = liftA2 U.update attVecs iLevels
+                attVecs = (mconcat . fmap B.toList . HS.toList) accumAtts
+        iLevels = mconcat $ inputSolos iPts constInps lniBMap
+        iPts = (inputs . modelGraph) mL
+        stepper = synchStep ivList ttList
+        LayerSpecs lniBMap _ ttList ivList = layerPrep mL
 
 -- Return just the attractors of the ModelLayer. This is slower, but uses less
 -- memory. We cannot check if we are runing down a chain of states we have
 -- encountered before, but we also do not have to carry around a HashMap of all
 -- the states we have ever encountered. 
 attractors :: ModelEnv -> Simulation (HS.HashSet Attractor)
-attractors mEnv = (topStates attFolders mEnv) -- >>= (largeBasinAtts mEnv)
+attractors mEnv = topStates attFolders mEnv >>= largeBasinAtts mEnv
 
 attFolders :: Folder (HS.HashSet Attractor)
 attFolders = Folder attRandFold attNoisyFold attRunDown
@@ -61,9 +73,9 @@ attNoisyFold :: (HS.HashSet Attractor) -> LayerVec -> (HS.HashSet Attractor)
 attNoisyFold attHS _ = attHS
 
 attRunDown :: PSStepper
-           -> (HS.HashSet Attractor)
+           -> HS.HashSet Attractor
            -> LayerVec
-           -> (HS.HashSet Attractor)
+           -> HS.HashSet Attractor
 attRunDown stepper attHS lV = runDown' lV M.empty 0 attHS
     where
         runDown' lVec sMap i rAttHS
@@ -80,6 +92,23 @@ attRunDown stepper attHS lV = runDown' lV M.empty 0 attHS
                     orderedVec = B.update emptyVec updateVec
                     att = mkAttractor $ B.drop partitionIndex orderedVec
                 in HS.insert att rAttHS
+
+attRunDownSimple :: PSStepper -> LayerVec -> Attractor
+attRunDownSimple stepper lV = runDown'' lV M.empty 0
+    where
+        runDown'' lVec sMap i
+            | not $ M.member lVec sMap =
+                let nextVec = stepper lVec
+                    newMap = M.insert lVec i sMap
+                    newI = i + 1
+                in runDown'' nextVec newMap newI
+            | otherwise =
+                let partitionIndex = sMap M.! lVec
+                    updateVec = (B.fromList . (swap <$>) . M.toList) sMap
+                    vLength = B.length updateVec
+                    emptyVec = B.replicate vLength U.empty
+                    orderedVec = B.update emptyVec updateVec
+                in mkAttractor $ B.drop partitionIndex orderedVec
 
 type ASetTracker = (AttractorSet, M.HashMap LayerVec Attractor)
 
