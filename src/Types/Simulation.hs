@@ -35,7 +35,6 @@ module Types.Simulation
     , lNISwitchThread
     ) where
 
--- import Debug.Trace
 import Types.DMModel
 import Utilities
 import Data.Validation
@@ -397,12 +396,14 @@ inputs :: ModelGraph -> [[DMNode]]
 inputs mG = (fromJust . Gr.lab mG) <<$>> ((fstOf3 . Uniq.complex) <$> reps)
   where
     reps = (uncurry go) <$> goStart
+    goStart :: [([Gr.Node], Gr.Node)]
     goStart = (\n -> ([], n)) <$> startGRInts
     startGRInts = soleSelfLoops mG
     go :: [Gr.Node] -> Gr.Node -> [Gr.Node]
     go ns n
-        | n `elem` inList && (L.delete n inList) == ns =
-            concatMap (go (ns ++ [n])) outList
+        | n `elem` inList && (L.delete n inList) == ns = case outList of
+            [] -> ns ++ [n]
+            _  ->  concatMap (go (ns ++ [n])) outList
         | otherwise = ns
         where
             inList = Gr.pre mG n

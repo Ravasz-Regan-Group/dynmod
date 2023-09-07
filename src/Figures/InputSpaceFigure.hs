@@ -132,6 +132,10 @@ attractorESpaceFigure cMap mMap lniBMap atts iBundle =
     eSpaceRenderText $ frame 3.0 $ figureDia === legendDia
     where
         figureDia
+            | L.null dimList =
+                let bcCluster = mkBCCluster atts
+                    fBCCl = filter (bcFilterF (ibBCFilter iBundle)) bcCluster
+                in eSpacePointDia fBCCl
             | L.length dimList <= 3 = allLines5DFigure dimList 
                                                        eSpacePointDias
                                                        $ eSpaceNames freeINodes
@@ -155,7 +159,7 @@ attractorESpaceFigure cMap mMap lniBMap atts iBundle =
         naiveLevels = inputLevels lniBMap <$> freeINodes
         legendDia = attESpaceFigLegend cMap mMap
         fixedINodeFixVec = ibFixedVec iBundle
-        freeINodes = ibInputs iBundle
+        freeINodes = ibInputs iBundle        
 
 allLines5DFigure :: [Int] -> [Diagram B] -> [[NodeName]] -> Diagram B
 allLines5DFigure dimList clusters iNames = dFigure <> axisLabels
@@ -209,8 +213,8 @@ threeChunkS ds = (product . fmap (+1) . take 3) ds
 
 
 -- Consume a HS.HashSet Attractor and a FixedVec that represents a point in the
--- environmental space, and produce a [Attractor] of all the attractors which
--- exist there. 
+-- environmental space, and produce a HS.HashSet Attractor of all the attractors
+-- which exist there. 
 attPartition ::  HS.HashSet Attractor -> FixedVec -> HS.HashSet Attractor
 attPartition atts fVec = HS.filter (attMatch fVec) atts
 
