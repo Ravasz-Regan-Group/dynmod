@@ -123,7 +123,12 @@ preamble =
   <> setCounter "LTchunksize" 200 <> "\n"
   <> comm2 "setlength" (commS "LTcapwidth")
     ((texy (1.15 :: Float)) <> commS "textwidth") <> "\n"
-  <> usepackage ["font=bf", "labelfont=bf"] captionp <> "\n"
+  <> usepackage [ "font=bf"
+                , "labelfont=bf"
+                , "justification=justified"
+                , "singlelinecheck=false"
+                ]
+                captionp <> "\n"
   <> usepackage [] subfloatp <> "\n"
   <> usepackage [] booktabs <> "\n"
   <> usepackage [] makecellp <> "\n"
@@ -300,7 +305,7 @@ mkLaTeXGate s n
     | otherwise =
         let combine x l = (math (displayStyle <>
                 lLet <> lLeft <> relax <> lLet <> lRight <> relax
-                <> " " <> x)) <> "\n" <> l
+                <> " " <> x)) <> "\n\n" <> l
             texAssigns = zipWith ((<>) . (<> "=")) texStates texExprs
             texStates = (mathbf . (((texy nName) !:) . texy . fst)) <$> assigns
             texExprs = (exprTex s . snd) <$> assigns

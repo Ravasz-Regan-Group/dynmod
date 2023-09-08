@@ -99,13 +99,17 @@ dmmsMapCompare dmmsML dmmsMR = let
     rSwitchNames = [x | x <- dmmsMR, notElem (fst x) (fst <$> dmmsML)]
     fcSwitchNsL = L.sortOn fst [x | x <- dmmsML, elem (fst x) (fst <$> dmmsMR)]
     fcSwitchNsR = L.sortOn fst [x | x <- dmmsMR, elem (fst x) (fst <$> dmmsML)]
+    fcSwitchNsSortedL = L.sort <<$>> fcSwitchNsL
+    fcSwitchNsSortedR = L.sort <<$>> fcSwitchNsR
     lSwitchContent = filter (not . L.null . snd) $
         uncurry (zipWith stripCommonSwitchC)
-        (fcSwitchNsL L.\\ fcSwitchNsR, fcSwitchNsR L.\\ fcSwitchNsL)
+        (fcSwitchNsSortedL L.\\ fcSwitchNsSortedR
+        , fcSwitchNsSortedR L.\\ fcSwitchNsSortedL)
     rSwitchContent = filter (not . L.null . snd) $
         uncurry (zipWith stripCommonSwitchC)
-        (fcSwitchNsR L.\\ fcSwitchNsL, fcSwitchNsL L.\\ fcSwitchNsR)
-    fcSwitchContent = fcSwitchNsL `L.intersect` fcSwitchNsR
+        (fcSwitchNsSortedR L.\\ fcSwitchNsSortedL
+        , fcSwitchNsSortedL L.\\ fcSwitchNsSortedR)
+    fcSwitchContent = fcSwitchNsSortedL `L.intersect` fcSwitchNsSortedR
   in SD (LD lSwitchNames) (RD rSwitchNames) (FC (SD (LD lSwitchContent)
                                                     (RD rSwitchContent)
                                                     (FC fcSwitchContent)))
