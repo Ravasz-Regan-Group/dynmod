@@ -160,6 +160,14 @@ renderGate lr n = dmmsWrap "NodeGate" entries
             Both -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
         nGate = nodeGate n
 
+renderGate' :: LayerRange -> NodeGate -> T.Text
+renderGate' lr nGate = dmmsWrap "NodeGate" entries
+    where
+        entries = case gateOrigin nGate of
+            DMMSTruthTable -> renderTableG nGate
+            LogicalExpression -> renderDiscreteG lr nGate
+            Both -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
+
 renderDiscreteG :: LayerRange -> NodeGate -> T.Text
 renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries
     where
@@ -196,39 +204,6 @@ parRenderExpr s ex = case ex of
     (GateLit _)     -> renderExpr s ex
     (GateConst _ _) -> renderExpr s ex
     _               -> "(" <> renderExpr s ex <> ")"
-
-
--- For when we want to render a gate but do not have the LayerRange available.  
-renderDiscreteGBlind :: NodeGate -> T.Text
-renderDiscreteGBlind ng
-    | length assigns == 1 = "\t" <> nName <> " *= " <> 
-                                        (renderExprBlind $ last exprs)
-    | otherwise = T.intercalate "\n" rExprs
-        where
-            rExprs = ("\t" <>) <$> (zipWith ((<> ) . (<> " *= ")) gStates $
-                renderExprBlind <$> exprs)
-            gStates = ((assignName <>) . T.pack . show . fst) <$> assigns
-            exprs = snd <$> assigns
-           -- We never write out the zeroth state in a dmms,
-           -- so only take the tail of the gate assignments.
-            assigns = (tail . gateAssigns) ng
-            assignName = nName <> ":"
-            nName = gNodeName ng
-
-renderExprBlind :: NodeExpr -> T.Text
-renderExprBlind (GateLit b) = (T.pack . show) b
-renderExprBlind (GateConst n st) = n <> ":" <> (T.pack . show) st
-renderExprBlind (Not expr) = "not " <> parRenderExprBlind expr
-renderExprBlind (Binary And expr1 expr2) =
-    (parRenderExprBlind expr1) <> " and " <> (parRenderExprBlind expr2)
-renderExprBlind (Binary Or expr1 expr2) =
-    (parRenderExprBlind expr1) <> " or " <> (parRenderExprBlind expr2)
-
-parRenderExprBlind :: NodeExpr -> T.Text
-parRenderExprBlind ex = case ex of
-    (GateLit _)     -> renderExprBlind ex
-    (GateConst _ _) -> renderExprBlind ex
-    _               -> "(" <> renderExprBlind ex <> ")"
 
 renderTableG :: NodeGate -> T.Text
 renderTableG ng = dmmsWrap "TruthTable" entries
@@ -284,7 +259,7 @@ renderDMMSDiff dmms1 dmms2 dmMDiff =
     dmms1 <> " vs " <> dmms2 <> "\n\n" <> renderDMModelDiff dmMDiff
 
 renderDMModelDiff :: DMModelDiff -> T.Text
-renderDMModelDiff (CoarseDiff (mmD, spD) ((lN1, lN2), lD) dmD) =
+renderDMModelDiff (CoarseDiff (mmD, spD) (((lN1, lR1), (lN2, lR2)), lD) dmD) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
     dmmsMMDRenderWrapped <>
     spDRenderWrapped <>
@@ -303,10 +278,10 @@ renderDMModelDiff (CoarseDiff (mmD, spD) ((lN1, lN2), lD) dmD) =
         mlDRenderWrapped
             | T.null mlDRender = ""
             | otherwise = "ModelLayer diff:\n" <> mlDRender <> "\n"
-        mlDRender = renderLayerDiff lD
-renderDMModelDiff (FineDiff ((lN1, lN2), lD)) =
+        mlDRender = renderLayerDiff (lR1, lR2) lD
+renderDMModelDiff (FineDiff (((lN1, lR1), (lN2, lR2)), lD)) =
     "Layers " <> lN1 <> " and " <> lN2 <> ":\n" <>
-    "ModelLayer diff:\n" <> renderLayerDiff lD <> "\n"
+    "ModelLayer diff:\n" <> renderLayerDiff (lR1, lR2) lD <> "\n"
 
 renderDMMSMappingDiff :: DMMSMappingDiff -> T.Text
 renderDMMSMappingDiff (SD (LD ldSwitchNames)
@@ -390,8 +365,10 @@ renderPDiff (PDiff pDN (Just lSwitchSDiff) (Just _)) acc =
         "), but differing SwitchNodeStates(" <> ((T.pack . show) lSwitchSDiff)<>
          ") and differing Fingerprints\n" <> acc
 
-renderLayerDiff :: SplitDiff [NodeName] [NodeDiff] -> T.Text
-renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
+renderLayerDiff :: (LayerRange, LayerRange)
+                -> SplitDiff [NodeName] [NodeDiff]
+                -> T.Text
+renderLayerDiff lRs (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
     lUNs <> rUNs <> sharedNodeDiffRenders
     where
         lUNs
@@ -406,10 +383,10 @@ renderLayerDiff (SD (LD lNNames) (RD rNNames) (FC nDiffs)) =
             | all T.null nDiffRenders = ""
             | otherwise = "Shared DMNode diffs:\n" <> T.concat nDiffRenders
                 where
-                    nDiffRenders = renderNodeDiff <$> nDiffs
+                    nDiffRenders = renderNodeDiff lRs <$> nDiffs
 
-renderNodeDiff :: NodeDiff -> T.Text
-renderNodeDiff (NodeDiff nN nTD lDs tD)
+renderNodeDiff :: (LayerRange, LayerRange) -> NodeDiff -> T.Text
+renderNodeDiff (lRangeL, lRangeR) (NodeDiff nN nTD lDs tD)
     | (T.null typesMaybe) && (T.null rLinkDiffs) && (T.null tablesMaybe) = ""
     | otherwise =
         "Node: " <> nN <>
@@ -431,10 +408,10 @@ renderNodeDiff (NodeDiff nN nTD lDs tD)
                 where
                     maybeLeftGate
                         | (gateOrigin . fst) gates == DMMSTruthTable = ""
-                        | otherwise = "\n" <> (renderDiscreteGBlind $ fst gates)
+                        | otherwise = "\n" <> (renderGate' lRangeL (fst gates))
                     maybeRightGate
                         | (gateOrigin . snd) gates == DMMSTruthTable = ""
-                        | otherwise = "\n" <> (renderDiscreteGBlind $ snd gates)
+                        | otherwise = "\n" <> (renderGate' lRangeR (snd gates))
         Right tDiff -> case renderedTD of
             ""  -> ""
             _ -> "\nGate diff:\n" <> renderedTD

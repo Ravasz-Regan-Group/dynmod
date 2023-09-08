@@ -723,14 +723,14 @@ data CiteDictionaryInvalid = RepeatedKeys RepeatedKeys
     deriving (Show, Eq)
 type RepeatedKeys = [BibTeXKey]
 
-data PubInvalid =   PubMissingDesc MissingDescription
+data PubInvalid =   UndefinedNodeType UndefinedNodeType
+                  | UndefinedLinkType UndefinedLinkType
+                  | UndefinedEffectType UndefinedEffectType
+                  | PubMissingDesc MissingDescription
                   | DescUnescapedUnderScores DescText
-                  | UndefinedNodeType UndefinedNodeType
                   | UnspecifiedNodeColor UnspecifiedNodeColor
                   | MissingCoord MissingCoord
                   | CoordWrongDimension CoordWrongDimension
-                  | UndefinedLinkType UndefinedLinkType
-                  | UndefinedEffectType UndefinedEffectType
                   | OrphanedModelCites OrphanedModelCites
                   | ExcessDictCites ExcessDictCites
                   | GateFromTable GateFromTable

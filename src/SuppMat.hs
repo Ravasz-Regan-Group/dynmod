@@ -191,7 +191,7 @@ body = do
     tables <- mkSMSections
     let biblio = comm1 "bibliographystyle" "unsrt" <> "\n"
               <> comm1 "bibliography" "references.bib"
-    return $ "\n" <> tables <> "\n" <> legend <> "\n" <> biblio <> "\n\n"
+    return $ tables <> newpage <> legend <> newpage <> biblio <> "\n\n"
 
 mkSMSections :: Reader DMModel LaTeX
 mkSMSections = do
@@ -219,7 +219,7 @@ mkSMSections = do
     (LayerBinding _ _ _) ->
       foldr (grouper gmap) TeXEmpty info
         where
-          grouper gm (mName, adjPList) y =
+          grouper gm (mName, adjPList) y = newpage <>
             (section ("Description " <> commS "&" <> " experimental support for\
               \ the modules of " <> (texy mName) <> ". \n")) <> "\n" <>
             (subtables (mkSMSubtables gm adjPList)) <> "\n" <> y
@@ -531,9 +531,9 @@ lEffectLegend = legendScafold lCap legendRows
 
 -- 
 legendScafold :: LaTeX -> LaTeX -> LaTeX
-legendScafold lCaption rows = "\n" <>
+legendScafold lCaption rows =
     ("\n" <> (longtable (Just Center) legendTSpec $ "\n" <>
-    caption "Key to " <> lCaption <> " Symbols" <> "\n" <>
+    caption ("Key to " <> lCaption <> " Symbols") <> "\n" <>
     endhead <> lnbk <> "\n" <>
     toprule Nothing <> "\n" <>
     "Symbol" & lCaption & "Description" <>lnbk <> "\n" <>

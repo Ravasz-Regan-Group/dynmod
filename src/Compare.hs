@@ -58,7 +58,8 @@ data PDiff = PDiff { pDiffName :: PhenotypeName
                    , fPrintDiff :: Maybe ([SubSpace], [SubSpace])
                    } deriving (Show, Eq)
 
-type LayerDiff = ((ModelName, ModelName), SplitDiff [NodeName] [NodeDiff])
+type LayerDiff = ( ((ModelName, LayerRange), (ModelName, LayerRange))
+                 , SplitDiff [NodeName] [NodeDiff])
 data NodeDiff = NodeDiff { nDiffName :: NodeName
                          , nTypeDiff :: Maybe (NodeType, NodeType)
                          , linkDiff :: LinkDiff
@@ -72,9 +73,9 @@ data LTEDiff = LTEDiff { inNodeName :: NodeName
 type TableDiff = ((DMNode, DMNode), SplitDiff TruthTable TruthTable)
                      
 dmMCompare :: DMModel -> DMModel -> Validation InvalidCompare DMModelDiff
-dmMCompare mL mR = case mrDepth == mlDepth of
-    False -> Failure DifferentLayerDepth
-    True  -> Success $ dmMCompare' mL mR
+dmMCompare mL mR
+    | mrDepth /= mlDepth = Failure DifferentLayerDepth
+    | otherwise = Success $ dmMCompare' mL mR
     where
         mrDepth = length $ modelLayers mR
         mlDepth = length $ modelLayers mL
@@ -96,14 +97,23 @@ dmmsMapCompare :: DMMSModelMapping -> DMMSModelMapping -> DMMSMappingDiff
 dmmsMapCompare dmmsML dmmsMR = let 
     lSwitchNames = [x | x <- dmmsML, notElem (fst x) (fst <$> dmmsMR)]
     rSwitchNames = [x | x <- dmmsMR, notElem (fst x) (fst <$> dmmsML)]
-    fcSwitchNamesL = [x | x <- dmmsML, elem (fst x) (fst <$> dmmsMR)]
-    fcSwitchNamesR = [x | x <- dmmsMR, elem (fst x) (fst <$> dmmsML)]
-    lSwitchContent = fcSwitchNamesL L.\\ fcSwitchNamesR
-    rSwitchContent = fcSwitchNamesR L.\\ fcSwitchNamesL
-    fcSwitchContent = lSwitchContent `L.intersect` rSwitchContent
+    fcSwitchNsL = L.sortOn fst [x | x <- dmmsML, elem (fst x) (fst <$> dmmsMR)]
+    fcSwitchNsR = L.sortOn fst [x | x <- dmmsMR, elem (fst x) (fst <$> dmmsML)]
+    lSwitchContent = filter (not . L.null . snd) $
+        uncurry (zipWith stripCommonSwitchC)
+        (fcSwitchNsL L.\\ fcSwitchNsR, fcSwitchNsR L.\\ fcSwitchNsL)
+    rSwitchContent = filter (not . L.null . snd) $
+        uncurry (zipWith stripCommonSwitchC)
+        (fcSwitchNsR L.\\ fcSwitchNsL, fcSwitchNsL L.\\ fcSwitchNsR)
+    fcSwitchContent = fcSwitchNsL `L.intersect` fcSwitchNsR
   in SD (LD lSwitchNames) (RD rSwitchNames) (FC (SD (LD lSwitchContent)
                                                     (RD rSwitchContent)
                                                     (FC fcSwitchContent)))
+
+stripCommonSwitchC :: (NodeName, [NodeName])
+                   -> (NodeName, [NodeName])
+                   -> (NodeName, [NodeName])
+stripCommonSwitchC (xNN, xNNs) (_, yNNs) = (xNN, xNNs L.\\ yNNs)
 
 switchesCompare :: [SwitchProfile] -> [SwitchProfile] -> SwitchProfilesDiff
 switchesCompare spsL spsR = let
@@ -154,6 +164,9 @@ layerCompare mlL mlR = let
     layerMetas = isoBimap modelMeta (mlL, mlR)
     layerGraphs = isoBimap modelGraph (mlL, mlR)
     layerNames = isoBimap modelName layerMetas
+    layerRngs = isoBimap layerRanges (mlL, mlR)
+    layerNsandRs = (\(x1, x2) (y1, y2) -> ((x1, y1), (x2, y2)))
+                        layerNames layerRngs
     (nodesWLinksL, nodesWLinksR) = isoBimap inAdjs layerGraphs
     lNodes = [x | x <- nodesWLinksL, notElem (nN x) (nN <$> nodesWLinksR)]
     lNodeNames = nN <$> lNodes
@@ -162,7 +175,7 @@ layerCompare mlL mlR = let
     fcNodesWLinksL = [x | x <- nodesWLinksL, elem (nN x) (nN <$> nodesWLinksR)]
     fcNodesWLinksR = [x | x <- nodesWLinksR, elem (nN x) (nN <$> nodesWLinksL)]
     nDiff = nodesCompare fcNodesWLinksL fcNodesWLinksR
-  in (layerNames, SD (LD lNodeNames) (RD rNodeNames) (FC nDiff))
+  in (layerNsandRs, SD (LD lNodeNames) (RD rNodeNames) (FC nDiff))
 
 nodesCompare :: [InAdj] -> [InAdj] -> [NodeDiff]
 nodesCompare inAdjsL inAdjsR = nodeCompare <$> (zip sortedL sortedR)

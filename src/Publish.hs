@@ -18,9 +18,9 @@ import qualified Data.List as L
 prettyPublish :: Validation [PubInvalid] (DMModel, CitationDictionary)
               -> T.Text
 prettyPublish (Success _)    = "Ready to Publish"
-prettyPublish (Failure errs) = stripped
+prettyPublish (Failure errs) = preppedErrors
                              <> "\n\n"
-                             <> preppedErrors
+                             <> stripped
     where
         preppedErrors = T.intercalate "\n\n" $ sequenceA
             [ nTypePrep
