@@ -170,7 +170,6 @@ runDia cMap mM mL bc pulseSps tmLn =
              (timeAxisDia stripHt $ B.length reordTmLn)
         pulseLineFig = alignL $ switchSpacer ||| pulselines
         switchSpacer = strutX ((width . head) switchFigs)
---         switchW = (width . head) switchFigs
         pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
         figBlock = alignL $ vsep stripHt chunkedFigBlocks
         chunkedFigBlocks = zipWith (|||) switchFigs nodeStripBlocks
@@ -180,7 +179,7 @@ runDia cMap mM mL bc pulseSps tmLn =
         -- started in, if such exists, so we pair them before passing to
         -- runSwitchDia
         switchPHPairs = findBar bc <$> mM
-        nodeStripBlocks = (alignY (0) . vcat) <$>
+        nodeStripBlocks = (alignY 0 . vcat) <$>
             (splitPlaces switchLs nodeStrips)
         nnBlocks = nodeNameBlockDia switchLs stripHt switchNodeOrder
         nodeStrips = nodeStripDia reordLNIBMap reordRTs stripHt <$> annTStrips
@@ -204,7 +203,7 @@ runDia cMap mM mL bc pulseSps tmLn =
 
 -- Mark where each new pulse begins. 
 pulseLine :: Double -> Int -> Diagram B
-pulseLine lHeight pIndex = lBlock # alignY (1) # alignL
+pulseLine lHeight pIndex = lBlock # alignY 0.975  # alignL
     where 
         lBlock = strutX strutWidth ||| vLine
         vLine = vrule lHeight # lc red # lw ultraThin
@@ -293,12 +292,12 @@ timeAxisDia strpHght runLength = axisArrow === tLabel
 
 -- Make the vertical blocks of NodeName labels, grouped by switch. 
 nodeNameBlockDia :: [Int] -> Double -> [NodeName] -> [Diagram B]
-nodeNameBlockDia switchLs stripHt switchNodeOrder = alignY (0) <$>  dia
+nodeNameBlockDia switchLs stripHt switchNodeOrder = alignY 0 <$>  dia
     where
         dia = fmap vcat chunkedPaddednLabels
         chunkedPaddednLabels = splitPlaces switchLs paddedLabels
         paddedLabels = padder maxW <$> nLabels
-        padder m d = padX (m / (width d)) d
+        padder m d = extrudeLeft 1.0 $ padX (m / (width d)) d
         maxW = maximum $ width <$> nLabels
         nLabels = nodeStripLabelDia stripHt <$> switchNodeOrder
 
