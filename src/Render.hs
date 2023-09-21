@@ -193,17 +193,13 @@ renderExpr s (GateConst n st) = case Set.member n s of
         0 -> "not " <> n
         _ -> n
     False -> n <> ":" <> (T.pack . show) st
-renderExpr s (Not expr) = "not " <> parRenderExpr s expr
+renderExpr s (Not expr) = "not " <> renderExpr s expr
+renderExpr s (Pars expr) = "(" <> renderExpr s expr <> ")"
 renderExpr s (Binary And expr1 expr2) =
-    (parRenderExpr s expr1) <> " and " <> (parRenderExpr s expr2)
+    (renderExpr s expr1) <> " and " <> (renderExpr s expr2)
 renderExpr s (Binary Or expr1 expr2) =
-    (parRenderExpr s expr1) <> " or " <> (parRenderExpr s expr2)
+    (renderExpr s expr1) <> " or " <> (renderExpr s expr2)
 
-parRenderExpr :: Set.HashSet NodeName -> NodeExpr -> T.Text
-parRenderExpr s ex = case ex of
-    (GateLit _)     -> renderExpr s ex
-    (GateConst _ _) -> renderExpr s ex
-    _               -> "(" <> renderExpr s ex <> ")"
 
 renderTableG :: NodeGate -> T.Text
 renderTableG ng = dmmsWrap "TruthTable" entries

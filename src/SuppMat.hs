@@ -322,20 +322,12 @@ exprTex _ (GateLit b) = mathbf $ texy b
 exprTex s (GateConst n st)
     | Set.member n s = mathbf $ (texy n)
     | otherwise      = mathbf $ (texy n) !: (texy st)
-exprTex s (Not expr) = (commS "notop") <> parTexy s expr
+exprTex s (Not expr) = (commS "notop") <> exprTex s expr
+exprTex s (Pars expr) = (autoParens . exprTex s) expr
 exprTex s (Binary And expr1 expr2) =
-    (parTexy s expr1) <> (commS "andop") <> (parTexy s expr2)
+    (exprTex s expr1) <> (commS "andop") <> (exprTex s expr2)
 exprTex s (Binary Or expr1 expr2) =
-    (parTexy s expr1) <> (commS "orop") <> (parTexy s expr2)
-
--- Put parentheses around and call exprTex on a compound NodeExpr, but only call
--- exprTex on a simple NodeExpr
-parTexy :: LaTeXC l => Set.HashSet NodeName -> NodeExpr -> l
-parTexy s ex@(GateLit _) = exprTex s ex
-parTexy s ex@(GateConst _ _) = exprTex s ex
-parTexy s ex@(Not _) = (autoParens . exprTex s) ex
-parTexy s ex@(Binary And _ _) = (autoParens . exprTex s) ex
-parTexy s ex@(Binary Or _ _) = (autoParens . exprTex s) ex
+    (exprTex s expr1) <> (commS "orop") <> (exprTex s expr2)
 
 -- Prep the 2 rows of a supplementary table that describe a node. 
 smNodePrep :: Map.HashMap NodeName LaTeX -> DMNode -> LaTeX
@@ -460,11 +452,12 @@ mkLEBNExpr (GateLit b) = (toStrict . PS.pShowNoColor) b
 mkLEBNExpr (GateConst n i)
     | i /= 0 = n
     | otherwise = "not " <> n
-mkLEBNExpr (Not expr) = "not " <> (exprPars mkLEBNExpr expr)
+mkLEBNExpr (Not expr) = "not " <> mkLEBNExpr expr
+mkLEBNExpr (Pars expr) = "(" <> mkLEBNExpr expr <> ")"
 mkLEBNExpr (Binary And expr1 expr2) =
-    (exprPars mkLEBNExpr expr1) <> " and " <> (exprPars mkLEBNExpr expr2)
+    mkLEBNExpr expr1 <> " and " <> mkLEBNExpr expr2
 mkLEBNExpr (Binary Or expr1 expr2) =
-    (exprPars mkLEBNExpr expr1) <> " or " <> (exprPars mkLEBNExpr expr2)
+    mkLEBNExpr expr1 <> " or " <> mkLEBNExpr expr2
 
 mkTTBNExpr :: NodeGate -> T.Text
 mkTTBNExpr nG = T.intercalate " or " ands

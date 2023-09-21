@@ -948,9 +948,10 @@ nOperators =
     , InfixL (Binary Or <$ rword "or")]
   ]
 
--- Parse out just a node name (w or w/o state) from a larger NodeExpr
+-- Parse out a Pars term, node name (w or w/o state), or a Bool literal from a
+-- larger NodeExpr. 
 nTerm :: Parser NodeExpr
-nTerm = parens parseNodeExpr
+nTerm = parens (Pars <$> parseNodeExpr)
     <|> (try integerNTerm)
     <|> (try booleanNTerm)
     <|> literalTerm

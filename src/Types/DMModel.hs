@@ -85,7 +85,6 @@ module Types.DMModel
     , layerRanges
     , nodeCombinations
     , nodeRange
-    , exprPars
     , mkLogicalGate
     , mkTableGate
     , tTableToAssigns
@@ -131,7 +130,6 @@ import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
 import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
-import Data.String (IsString(..))
 import qualified Data.Bifunctor as BF
 
 -- We need a Hashable version of Colour to put them into HashMaps, but this will
@@ -514,24 +512,18 @@ data NodeExpr
   | GateConst NodeName NodeState
   | Not NodeExpr
   | Binary BinOp NodeExpr NodeExpr
+  | Pars NodeExpr
   deriving (Eq)
 
 instance Show NodeExpr where
     show (GateLit b) = show b
-    show (GateConst n s) = (show n) ++ ":" ++ (show s)
-    show (Not expr) = "not " ++ (exprPars show expr)
+    show (GateConst n s) = show n ++ ":" ++ show s
+    show (Not expr) = "not " ++ show expr
     show (Binary And expr1 expr2) =
-        (exprPars show expr1) ++ " and " ++ (exprPars show expr2)
+        show expr1 ++ " and " ++ show expr2
     show (Binary Or expr1 expr2) =
-        (exprPars show expr1) ++ " or " ++ (exprPars show expr2)
-
--- NodeExpr should only be wrapped in parenthesis if they are compound terms. 
-exprPars :: (IsString a, Semigroup a) => (NodeExpr -> a) -> NodeExpr -> a
-exprPars f ex@(GateLit _) = f ex
-exprPars f ex@(GateConst _ _) = f ex
-exprPars f ex@(Not _) = "(" <> f ex <> ")"
-exprPars f ex@(Binary And _ _) = "(" <> f ex <> ")"
-exprPars f ex@(Binary Or _ _) = "(" <> f ex <> ")"
+        show expr1 ++ " or " ++ show expr2
+    show (Pars expr) = "(" <> show expr <> ")"
 
 data BinOp
   = And
@@ -540,7 +532,8 @@ data BinOp
 
 -- Evaluate a node expression
 eval :: NodeExpr -> ExprInput -> Maybe Bool
-eval (Not expr1) ns = not <$> (eval expr1 ns)
+eval (Not expr) ns = not <$> (eval expr ns)
+eval (Pars expr) ns = eval expr ns
 eval (Binary And expr1 expr2) ns =
     liftA2 (&&) (eval expr1 ns) (eval expr2 ns)
 eval (Binary Or expr1 expr2) ns =
@@ -1309,6 +1302,7 @@ exprNodes :: NodeExpr -> Map.HashMap NodeName NodeState
 exprNodes (GateLit _) = Map.empty
 exprNodes (GateConst nName nState) = Map.singleton nName nState
 exprNodes (Not expr) = exprNodes expr
+exprNodes (Pars expr) = exprNodes expr
 exprNodes (Binary And expr1 expr2) =
     Map.unionWith max (exprNodes expr1) (exprNodes expr2)
 exprNodes (Binary Or expr1 expr2) =
