@@ -71,10 +71,10 @@ experimentDMMS f experiment (Right parsed) = do
     case experiment of
         AttractorFind (EParams rN nN nProb) ->
             void $ attFindDMMS f dmmsMMap mEnv
-            where mEnv = ModelEnv fLayer rN nProb nN 0 []
+            where mEnv = (fLayer, SamplingParameters rN nN nProb [])
         GridSearch ((EParams rN nN nProb), mult) ->
             gridDMMS f dmmsMMap mult mEnv
-            where mEnv = ModelEnv fLayer rN nProb nN 0 []
+            where mEnv = (fLayer, SamplingParameters rN nN nProb [])
         VEX vexText -> do
             vexFilePath <- resolveFile' $ T.unpack $ vexText
             (_, vexFileExt) <- splitExtension vexFilePath
@@ -93,26 +93,28 @@ attFindDMMS :: Path Abs File
             -> DMMSModelMapping
             -> ModelEnv
             -> IO (HS.HashSet Attractor)
-attFindDMMS f mMap mEnv = do
+attFindDMMS f mMap (fLayer, sParams) = do
     gen <- initStdGen
-    let fLayer = mLayer mEnv
-        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
+    let LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         ins = (inputs . modelGraph) fLayer
         inComsSizeS = (show . length) $ inputCombos ins [] lniBMap
     putStrLn "Starting run. Input nodes:"
     PS.pPrint $ (nodeName . nodeMeta) <<$>> ins
     putStrLn $ "In " ++ inComsSizeS ++ " combinations"
     putStr "With settings: "
-    PS.pPrint (randomN mEnv, noisyP mEnv, noisyN mEnv)
-    let atts = evalState (attractors mEnv) gen
-    writeAttractorBundle f lniBMap mMap mEnv Nothing atts
+    PS.pPrint (randomN sParams, noisyP sParams, noisyN sParams)
+    when ((not . null . limitedInputs) sParams) $ do
+        putStr "With limited inputs: "
+        PS.pPrint $ limitedInputs sParams
+    let atts = evalState (attractors (fLayer, sParams)) gen
+        attPs = (randomN sParams, noisyN sParams, noisyP sParams)
+    writeAttractorBundle f lniBMap mMap attPs Nothing atts
     pure atts
 
 gridDMMS :: Path Abs File -> DMMSModelMapping -> Int -> ModelEnv -> IO ()
-gridDMMS f mMap mult mEnv = do
+gridDMMS f mMap mult mEnv@(fLayer, sParams) = do
     gen <- initStdGen
-    let fLayer = mLayer mEnv
-        LayerSpecs lniBMap _ _ _ = layerPrep fLayer
+    let LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         attGrid = evalState (attractorGrid mEnv mult) gen
         doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
         hMapSVGText = attractorHMSVG doublesGrid mult
@@ -120,25 +122,26 @@ gridDMMS f mMap mult mEnv = do
     (fName, _) <- splitExtension $ filename f
     let fNameString = fromRelFile fName
         hMapSVGFileName = fNameString ++
-                            "_att_HM_" ++
-                            (show (randomN mEnv)) ++ "_" ++
-                            (show (noisyN mEnv)) ++ "_" ++
-                            (show mult) ++ "_" ++
-                            (show $ ((round . (1000 *)) (noisyP mEnv) :: Int))
+                          "_att_HM_" ++
+                          (show (randomN sParams)) ++ "_" ++
+                          (show (noisyN sParams)) ++ "_" ++
+                          (show mult) ++ "_" ++
+                          (show $ ((round . (1000 *)) (noisyP sParams) :: Int))
     hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
     hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
     RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
-    writeAttractorBundle f lniBMap mMap mEnv (Just mult) allAtts
+    let (rN, nP, nN) = (randomN sParams, noisyN sParams, noisyP sParams)
+    writeAttractorBundle f lniBMap mMap (rN, nP, nN) (Just mult) allAtts
 
 -- Write out an AttractorBundle to disk. 
 writeAttractorBundle :: Path Abs File
                      -> LayerNameIndexBimap
                      -> DMMSModelMapping
-                     -> ModelEnv
+                     -> (Int, Int, Probability)
                      -> Maybe Int
                      -> (HS.HashSet Attractor)
                      -> IO ()
-writeAttractorBundle f lniBMap mapping (ModelEnv _ rN nP nN _ _) mMult atts = do
+writeAttractorBundle f lniBMap mapping (rN, nN, nP) mMult atts = do
     (fName, _) <- splitExtension $ filename f
     let attVecList = HS.toList atts
         attNumber = length attVecList
@@ -271,22 +274,30 @@ mkInvestigationAtts :: Path Abs File
                     -> IO (HS.HashSet Attractor)
 mkInvestigationAtts dmmsF dmModel vLExSpec = case layerMatch dmModel vLExSpec of
     Failure errs -> fail $ show errs
-    Success ((mM, mL), _) -> case sampling vLExSpec of
-        SampleOnly (SamplingParameters rN nN nProb) -> do
+    Success ((mM, mL), _) -> case samplingVal mL $ sampling vLExSpec of
+        Failure errs -> do
+            let errMessage = L.intercalate "/n" $
+                                    (T.unpack . vexErrorPrep) <$> errs
+            fail errMessage
+        Success (SampleOnly sParams) -> do
             gen <- initStdGen
-            let mEnv = ModelEnv mL rN nProb nN 0 []
+            let mEnv = (mL, sParams)
                 atts = evalState (attractors mEnv) gen
                 LayerSpecs lniBMap _ _ _ = layerPrep mL
-            writeAttractorBundle dmmsF lniBMap dmmsMM mEnv Nothing atts
+                attPs = (randomN sParams, noisyN sParams, noisyP sParams)
+            writeAttractorBundle dmmsF lniBMap dmmsMM attPs Nothing atts
             return atts
-        ReadOnly csvfileString -> do
+        Success (ReadOnly csvfileString) -> do
             (_, _, atts) <- loadAttCSV (dmmsMM, mL) csvfileString
             return atts
-        ReadAndSample (SamplingParameters rN nN nProb) csvfileString -> do
+        Success (ReadAndSample sParams csvfileString) -> do
             gen <- initStdGen
-            let mEnv = ModelEnv mL rN nProb nN 0 []
+            let mEnv = (mL, sParams)
                 generatedAtts = evalState (attractors mEnv) gen
+                LayerSpecs lniBMp _ _ _ = layerPrep mL
+                attPs = (randomN sParams, noisyN sParams, noisyP sParams)
             (_, _, loadedAtts) <- loadAttCSV (dmmsMM, mL) csvfileString
+            writeAttractorBundle dmmsF lniBMp dmmsMM attPs Nothing generatedAtts
             return $ generatedAtts <> loadedAtts
         where
             dmmsMM = (fst . modelMappingSplit) mM

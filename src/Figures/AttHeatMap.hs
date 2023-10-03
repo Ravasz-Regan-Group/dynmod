@@ -22,14 +22,14 @@ import qualified Data.HashSet as HS
 -- noisy step slots instead of a single run with those numbers, but the data is
 -- there and a ModelEnvs is a convenient package. 
 attractorGrid :: ModelEnv -> Int -> Simulation [[HS.HashSet Attractor]]
-attractorGrid (ModelEnv mL rN nProb nN _ _) multiplier =
+attractorGrid (mL, SamplingParameters rN nN nProb _) multiplier =
     (traverse . traverse) attractors (mEnvGrid rN nN multiplier nProb mL)
 
 mEnvGrid :: Int -> Int -> Int -> Double -> ModelLayer -> [[ModelEnv]]
 mEnvGrid rN nN multiplier nProb mL = mkRow <$> [1..rN]
     where
         mkRow m = ((mkMEnv (multiplier * m)) . (multiplier *)) <$> [1..nN]
-        mkMEnv i j = ModelEnv mL i nProb j 0 []
+        mkMEnv i j = (mL, SamplingParameters i j nProb [])
 
 
 heatMapAxis :: [[Double]] -> Int -> Axis B V2 Double

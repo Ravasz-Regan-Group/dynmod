@@ -27,21 +27,16 @@ sc = LE.space space1 lineCmnt blockCmnt
     lineCmnt  = LE.skipLineComment "//"
     blockCmnt = LE.skipBlockComment "/*" "*/"
 
-hsc :: Parser ()
-hsc = LE.space hspace1 lineCmnt blockCmnt
-  where
-    lineCmnt  = LE.skipLineComment "//"
-    blockCmnt = LE.skipBlockComment "/*" "*/"
-
 lexeme :: Parser a -> Parser a
 lexeme = LE.lexeme sc
 
-hlexeme :: Parser a -> Parser a
-hlexeme = LE.lexeme hsc
-
-
 symbol :: T.Text -> Parser T.Text
 symbol = LE.symbol sc
+
+-- | 'parens' parses something between parenthesis.
+
+parens :: Parser a -> Parser a
+parens = between (symbol "(") (symbol ")")
 
 -- | 'number' parses an number in scientific format.
 
@@ -90,10 +85,6 @@ variable = (lexeme . try) (p >>= check)
                 then fail $ "Keyword " ++ show x ++ " cannot be a variable. "
                 else return x
 
--- Parse a FilePath
-filePathParse :: Parser FilePath
-filePathParse = hlexeme $ ((:) <$> letterChar <*> manyTill printChar eol)
-
 -- Parse an identified FilePath
 identifiedFilePathParse :: T.Text -> Parser FilePath
 identifiedFilePathParse name = lexeme $ rword name >> colon >> p
@@ -133,22 +124,35 @@ layerParameterParse = between (symbol "LayerParameters{")
 
 -- Parse a Sampling
 samplingParse :: Parser Sampling
-samplingParse = lexeme $ rword "Sampling" >>
-    (try
-        (colon >>
-            (   sampleOnlyParser
-            <|> readOnlyParser
-            <|> readAndSampleParser)
-        )
-    )
+samplingParse = between (symbol "Sampling{")
+                        (symbol "Sampling}")
+    (runPermutation $
+        (,,) <$> toPermutationWithDefault Nothing (Just <$> readSParse)
+             <*> toPermutationWithDefault Nothing (Just <$> sampleSParse)
+             <*> toPermutationWithDefault [] limitedInputsSParse
+    ) >>= samplingParameterMerge
 
-sampleOnlyParser :: Parser Sampling
-sampleOnlyParser = do
-    rword "SampleOnly"
+samplingParameterMerge :: ( Maybe FilePath
+                          , Maybe (Int, Int, Probability)
+                          , [(NodeName, [Int])])
+                       -> Parser Sampling
+samplingParameterMerge (Nothing, Nothing, _) =
+    fail "A Sampling{} must have either Read:, or Sample:, or both. "
+samplingParameterMerge (Nothing, Just (rN, nN, nP), limitedIs) = return $
+    SampleOnly $ SamplingParameters rN nN nP limitedIs
+samplingParameterMerge (Just f, Nothing, _) = return $ ReadOnly f
+samplingParameterMerge (Just f, Just (rN, nN, nP), limitedIs) = return $
+    ReadAndSample (SamplingParameters rN nN nP limitedIs) f
+
+readSParse :: Parser FilePath
+readSParse = identifiedFilePathParse "Read"
+
+sampleSParse :: Parser (Int, Int, Probability)
+sampleSParse = (rword "Sample" >> colon) >> do
     rSts <- integer
     nSts <- integer
     nProb <- probParse
-    return $ SampleOnly (SamplingParameters rSts nSts nProb)
+    return (rSts, nSts, nProb)
 
 -- Parse a probability
 probParse :: Parser Probability
@@ -159,21 +163,16 @@ probParse = do
         Nothing -> fail $ show num ++ " is not between 0 and 1, and so \
             \cannot be a probability"
 
-readOnlyParser :: Parser Sampling
-readOnlyParser = do
-    rword "ReadOnly"
-    filePath <- filePathParse
-    return $ ReadOnly filePath
     
 
-readAndSampleParser :: Parser Sampling
-readAndSampleParser = do
-    rword "ReadAndSample"
-    rSts <- integer
-    nSts <- integer
-    nProb <- probParse
-    filePath <- filePathParse
-    return $ ReadAndSample (SamplingParameters rSts nSts nProb) filePath
+limitedInputsSParse :: Parser [(NodeName, [Int])]
+limitedInputsSParse = rword "LimitedInputs" >> colon >>
+                        (limitedParse `sepBy1` comma)
+    where
+        limitedParse :: Parser (NodeName, [Int])
+        limitedParse = (,) <$> variable <*> (colon >> intsParse)
+        intsParse = parens (integer `sepBy1` comma)
+            
 
 -- Parse an ISFSpec. InputSpaceDiagrams are optional, so if this parser
 -- succeeds, we wrap the result in a Just. 
@@ -343,7 +342,7 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
     )
 
 flipParse :: Parser (NodeName, RealNodeState)
-flipParse = rword "Flip" >> colon >> (,) <$> variable <*>
+flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
             (comma >> (toRealFloat <$> number))
 
 -- Parse a KDOE. t_0 and t_end are optional, so they are wrapped in a Maybe

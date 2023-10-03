@@ -40,7 +40,8 @@ largeBasinAtts mEnv atts = do
     return updatedAtts
 
 largeBasinAtts' :: ModelEnv -> HS.HashSet Attractor -> HS.HashSet Attractor
-largeBasinAtts' (ModelEnv mL _ _ _ _ constInps) atts = atts <> go atts atts
+largeBasinAtts' (mL, SamplingParameters _ _ _ limitedInps) atts =
+    atts <> go atts atts
     where
         go checkAtts accumAtts
             | HS.null excessAtts = HS.empty
@@ -51,7 +52,7 @@ largeBasinAtts' (ModelEnv mL _ _ _ _ constInps) atts = atts <> go atts atts
                 rundowns = attRunDownSimple stepper <$> fixedVecs
                 fixedVecs = liftA2 U.update attVecs iLevels
                 attVecs = (mconcat . fmap B.toList . HS.toList) accumAtts
-        iLevels = mconcat $ inputSolos iPts constInps lniBMap
+        iLevels = mconcat $ inputSolos iPts limitedInps lniBMap
         iPts = (inputs . modelGraph) mL
         stepper = synchStep ivList ttList
         LayerSpecs lniBMap _ ttList ivList = layerPrep mL

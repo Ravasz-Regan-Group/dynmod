@@ -2,6 +2,7 @@
 
 module Types.DMInvestigation
     ( mkDMInvestigation
+    , samplingVal
     , vexErrorPrep
     , layerMatch
     , inputOptions
@@ -197,6 +198,11 @@ data VEXInvestigationInvalid =
     | InputsInNodeAlts [NodeName]
     | InvalidNodeAltLocks [(NodeName, NodeState)] T.Text
     | AbsentSwitchProfiles
+    | LimitedInputNodesRepeat [NodeName]
+    | UnknownNodesInLimitedInputs [NodeName]
+    | LimitedInputsNotInputs [NodeName]
+    | LimitedInputsNotTopLevel [NodeName]
+    | InvalidInputLimits [(NodeName, [Int], [Int])]
     deriving (Eq, Show, Ord)
 
 vexErrorPrep :: VEXInvestigationInvalid -> T.Text
@@ -265,6 +271,26 @@ vexErrorPrep AbsentSwitchProfiles =
     "AbsentSwitchProfiles: " <>
         "There are no SwitchProfiles in the DMMS file, so we cannot make an \
             \environmental input figure. "
+vexErrorPrep (LimitedInputNodesRepeat limRepeats) = "LimitedInputNodesRepeat: "
+    <> "There are repeats in the LimitedTo nodes: " <>
+    T.intercalate ", " limRepeats
+vexErrorPrep (UnknownNodesInLimitedInputs nonPresLim) =
+    "UnknownNodesInLimitedInputs: " <> T.intercalate ", " nonPresLim
+vexErrorPrep (LimitedInputsNotInputs nonInput) = "LimitedInputsNotInputs: " <>
+    T.intercalate ", " nonInput
+vexErrorPrep (LimitedInputsNotTopLevel nonTopLevel) =
+    "LimitedInputsNotTopLevel; The following are part, but not the top level \
+    \of, their respective inputs:\n" <> T.intercalate ", " nonTopLevel
+vexErrorPrep (InvalidInputLimits oobLimitations) = "InvalidInputLimits; The \
+    \following are out-of-bounds for their inputs, together with the ranges \
+    \of those inputs: " <> oobText
+    where
+        oobText = T.intercalate "\n" oobTexts
+        oobTexts = oobPrep <$> oobLimitations
+        oobPrep :: (NodeName, [Int], [Int]) -> T.Text
+        oobPrep (x, y, z) = x <> ", " <> psh y <> ", " <> psh z
+            where
+                psh = T.pack . show
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
 
@@ -282,16 +308,6 @@ data Sampling = SampleOnly SamplingParameters
               | ReadOnly FilePath
               | ReadAndSample SamplingParameters FilePath
               deriving (Eq, Show)
-
-data SamplingParameters = SamplingParameters {
---  The number of random LayerVecs to generate for each combination of inputs.
-      nStates :: Int
---  Number of noisy steps to take when gathering attractors/statistics for each
---  combination of inputs.
-    , noisySteps :: Int
---  Probability that any given state slips on a noisy step.
-    , noisyProb :: Probability
-    } deriving (Eq, Show)
 
 -- In a 5D figure, the order of axes is: x, y, z, w, v. The first five elements
 -- of the [NodeName] will be so assigned. Any excess will be ignored and any
@@ -1018,4 +1034,51 @@ pickState iChoice@(inputName, _) ns = case L.length ns of
             choiceIndex = (fromJust . L.findIndex (== inputName)) stackNames
             stackNames = (nodeName . nodeMeta) <$> ns
 
+-- Check the validity of any LimitedTo inputs. 
+samplingVal :: ModelLayer -> Sampling
+            -> Validation [VEXInvestigationInvalid] Sampling
+samplingVal _ r@(ReadOnly _) = Success r
+samplingVal mL (SampleOnly sParams) =
+    SampleOnly <$> (SamplingParameters rN nN nP <$> limitedInputsV mL lims)
+    where
+        (rN, nN) = (randomN sParams, noisyN sParams)
+        (nP, lims) = (noisyP sParams, limitedInputs sParams)
+samplingVal mL (ReadAndSample sParams f) =
+    ReadAndSample
+        <$> (SamplingParameters rN nN nP <$> limitedInputsV mL lims)
+        <*> pure f
+    where
+        (rN, nN) = (randomN sParams, noisyN sParams)
+        (nP, lims) = (noisyP sParams, limitedInputs sParams)
+
+limitedInputsV :: ModelLayer -> [(NodeName, [Int])]
+               -> Validation [VEXInvestigationInvalid] [(NodeName, [Int])]
+limitedInputsV mL lims
+    | (not . null) limRepeats = Failure [LimitedInputNodesRepeat limRepeats]
+    | (not . null) nonPresLim = Failure [UnknownNodesInLimitedInputs nonPresLim]
+    | (not . null) nonInput = Failure [LimitedInputsNotInputs nonInput]
+    | (not . null) nonTopLevel = Failure [LimitedInputsNotTopLevel nonTopLevel]
+    | (not . null) oobLimitations = Failure [InvalidInputLimits oobLimitations]
+    | otherwise = Success lims
+    where
+        oobLimitations = foldr (oobF iDegs) [] lims
+        oobF degs (limN, limStates) oobs = case degs M.!? limN of
+            Nothing -> oobs
+            Just d -> case (filter (flip notElem [0..(d-1)]) limStates) of
+                [] -> oobs
+                xs -> (limN, xs, [0..(d-1)]):oobs
+        iDegs = M.fromList $ zip topLevelNames $ inputDegrees <$> inputStacks
+        nonTopLevel = filter (flip notElem topLevelNames) limNames
+        nonInput = filter (flip notElem inputStackNames) limNames
+        nonPresLim = filter (flip notElem layerNodeNames) limNames
+        limRepeats = Uniq.repeated limNames
+        limNames = fst <$> lims
+        topLevelNames = (nodeName . nodeMeta) <$> topLevels
+--      Here we take advantage of the fact that inputs calls soleSelfLoops on
+--      the LayerGraph as the seeds for finding the layer inputs, so they will
+--      always be the head of the input lists. 
+        topLevels = head <$> inputStacks
+        inputStackNames = concatMap (fmap (nodeName . nodeMeta)) inputStacks
+        inputStacks = (inputs . modelGraph) mL
+        layerNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
 

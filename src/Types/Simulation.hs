@@ -3,7 +3,8 @@
 
 module Types.Simulation
     ( Simulation
-    , ModelEnv (..)
+    , ModelEnv
+    , SamplingParameters (..)
     , Thread
     , Attractor
     , AttractorSet
@@ -31,6 +32,7 @@ module Types.Simulation
     , inputCombos
     , inputSolos
     , inputLevels
+    , inputDegrees
     , isAtt
     , lNISwitchThread
     ) where
@@ -55,32 +57,30 @@ import qualified Data.List as L
 
 type Simulation = State StdGen
 
-data ModelEnv = ModelEnv {
---  The ModelLayer to characterize
-      mLayer  :: ModelLayer
+type ModelEnv = (ModelLayer, SamplingParameters)
+
+data SamplingParameters = SamplingParameters {
 --  The number of random LayerVecs to generate for each combination of inputs.
-    , randomN :: Int
---  Probability that any given state slips on a noisy step.
-    , noisyP  :: Double
+      randomN :: Int
 --  Number of noisy steps to take when gathering attractors/statistics for each
 --  combination of inputs.
-    , noisyN  :: Int
---  Number of asynchronous steps to take when gathering attractors/statistics
---  for each combination of inputs.
-    , asynchN :: Int
+    , noisyN :: Int
+--  Probability that any given state slips on a noisy step.
+    , noisyP :: Probability
 --  Each Layer has inputs, which are nodes that do not listen to other nodes,
 --  and which represent external influence on whatever set of biological
---  functionality that the ModelLayer represent (e.g. gamma radiation, fixed,
---  expression leves of growth factor, etc…). We study how the ModelLayer
+--  functions that the ModelLayer represent (e.g. gamma radiation, fixed,
+--  expression levels of growth factor, etc…). We study how the ModelLayer
 --  behaves under the influence of these inputs by finding those attractors 
 --  of the whole network that are reached from each subset of the state space
 --  where initial states are chosen that reflect a set value (or combination of
 --  values) of each input. For example, which attractors do we reach from
 --  initial states chosen randomly except that gamma is on and growth factor is
 --  high? Many DMMS files will have a large number of inputs, some of which we
---  are not investigating. constrainedInputs tells us which inputs to so ignore.
-    , constrainedInputs :: [NodeName]
-    } deriving (Show, Eq)
+--  are not investigating. limitedInputs tells us which inputs are constrained
+--  to certain values.
+    , limitedInputs :: [(NodeName, [Int])]
+    } deriving (Eq, Show)
 
 -- foldl' functions that accumulate a network property at random, noisy, and
 -- neighbor steps. 
@@ -148,10 +148,10 @@ data InvalidLVReorder = NewOldOrderingMismatch
 -- collecting data on, when we follow the algorithm diagrammed below. 
 topStates :: (Monoid a, P.NFData a) => Folder a -> ModelEnv -> Simulation a
 topStates folders mEnv = do
-    let lInputs = inputs ((modelGraph . mLayer) mEnv)
-        lSpecs = (layerPrep . mLayer) mEnv
-        cons = constrainedInputs mEnv
-        inCombos = inputCombos lInputs cons (lNameIndexM lSpecs)
+    let lInputs = inputs ((modelGraph . fst) mEnv)
+        lSpecs = (layerPrep . fst) mEnv
+        limiteds = (limitedInputs . snd) mEnv
+        inCombos = inputCombos lInputs limiteds (lNameIndexM lSpecs)
     iGens <- state $ genGen $ length inCombos
     let seeds = zip iGens inCombos
     {- P.parMap P.rdeepseq -} 
@@ -176,11 +176,11 @@ inputStats :: (Monoid a, P.NFData a)
 inputStats mEnv (LayerSpecs lniMap lrVec ttList ivList) folders (gen, fixed)
     = L.foldl' rFold mempty $ L.unfoldr randomUnfold (0, randomGen)
     where
-        randN = randomN mEnv
-        noiseN = noisyN mEnv
-        noiseLevel = noisyP mEnv
+        randN = (randomN . snd) mEnv
+        noiseN = (noisyN . snd) mEnv
+        noiseLevel = (noisyP . snd) mEnv
         pSStepper = synchStep ivList ttList
-        inputNeighborF = neighbors ((layerRanges . mLayer) mEnv) lniMap
+        inputNeighborF = neighbors ((layerRanges . fst) mEnv) lniMap
         rFold = randomFold
             noisyGen noiseN noiseLevel pSStepper inputNeighborF lrVec folders
         (noisyGen, randomGen) = split gen
@@ -410,52 +410,76 @@ inputs mG = (fromJust . Gr.lab mG) <<$>> ((fstOf3 . Uniq.complex) <$> reps)
             outList = L.delete n $ Gr.suc mG n
 
 -- Prepare the combinations of the various inputs, so that we can sample
--- randomly in these areas of the state space. Remove those inputs that are in
--- constrainedInputs. This is a hack, because we need to be able to share
+-- randomly in these areas of the state space. Constrain those inputs that are
+-- in the limitedInputs. This is a hack, because we need to be able to share
 -- networks with software that can't do integer-valued nodes. 
-inputCombos :: [[DMNode]] -> [NodeName] -> LayerNameIndexBimap -> [FixedVec]
-inputCombos nodeLists nos lniBMap = U.concat <$> (sequenceA iLevels)
+inputCombos :: [[DMNode]]
+            -> [(NodeName, [Int])]
+            -> LayerNameIndexBimap
+            -> [FixedVec]
+inputCombos nodeLists limiteds lniBMap = U.concat <$> (sequenceA iLevels)
     where
-        iLevels :: [[FixedVec]]
-        iLevels = inputLevels lniBMap <$> strippedNLs
-        strippedNLs = filter stripper nodeLists
-        stripper = not . (flip elem nos) . nodeName . nodeMeta . head
+        iLevels = inputSolos nodeLists limiteds lniBMap
 
--- Prepare a [FixedVec] for the levels of each input, alone. Remove those inputs
--- that are in constrainedInputs. 
-inputSolos :: [[DMNode]] -> [NodeName] -> LayerNameIndexBimap -> [[FixedVec]]
-inputSolos nodeLists nos lniBMap = inputLevels lniBMap <$> strippedNLs
+-- Prepare a [FixedVec] for the levels of each input, alone. Constrain those
+-- inputs that are in the limitedInputs. The list of contraints have already
+-- been validated to contain only top-level nodes of real inputs, and only
+-- levels that do exist.  
+inputSolos :: [[DMNode]]
+           -> [(NodeName, [Int])]
+           -> LayerNameIndexBimap
+           -> [[FixedVec]]
+inputSolos nodeLists lims lniBMap = uncurry (inputLevels lniBMap) <$> pairedNLs
     where
-        strippedNLs = filter stripper nodeLists
-        stripper = not . (flip elem nos) . nodeName . nodeMeta . head
+        pairedNLs = foldr (findF lims) [] nodeLists
+        findF ls inPT annotatedDMNodes = (lim, inPT):annotatedDMNodes
+            where
+                lim = snd <$> (L.find ((flip elem dmNames) . fst) ls)
+                dmNames = (nodeName . nodeMeta) <$> inPT
 
--- We know that all the multi-node are binary from nonBinaryMultiInputNodesCheck
--- at parse. We assume they are wired such that, from first to last in the list,
--- for eg a 3-node input, 000, 001, 011, and 111 will be the attractors of the
--- input that represent the zeroth through third levels. In this way, an n-level
--- input will be represented by n-1 nodes. Single-node inputs MAY be integer-
--- valued, so take that into account. 
-inputLevels :: LayerNameIndexBimap -> [DMNode] -> [FixedVec]
-inputLevels _ [] = []
-inputLevels lniBMap [n] = vecs
+-- We know that all the multi-node inputs are binary from
+-- nonBinaryMultiInputNodesCheck at parse. We assume they are wired such that,
+-- from first to last in the list, for eg a 3-node input, 000, 001, 011, and 111
+-- will be the attractors of the input that represent the zeroth through third
+-- levels. In this way, an n-level input will be represented by n-1 nodes.
+-- Single-node inputs MAY be integer-valued, so take that into account. 
+inputLevels :: LayerNameIndexBimap -> Maybe [Int] -> [DMNode] -> [FixedVec]
+inputLevels _ _ [] = []
+inputLevels lniBMap mPerms [n] = vecs
     where
-        levels = fst <$> ((gateAssigns . nodeGate) n)
+        levels = case mPerms of
+            Nothing -> naiveLevels
+            Just permitteds -> filter (flip elem permitteds) naiveLevels
+        naiveLevels = fst <$> ((gateAssigns . nodeGate) n)
         nName = (nodeName . nodeMeta) n
         vecs = U.singleton <$> (zip (repeat $ lniBMap BM.! nName) levels)
-inputLevels lniBMap ns = 
+inputLevels lniBMap mPerms ns = 
     let pairsLists = (zip indices) <$> levelLists
         indices = ((lniBMap BM.!) . nodeName . nodeMeta) <$> ns
-        levelLists = mkLevels levels
-        levels = (length ns) + 1
+        levelLists = mkLevels mPerms levels
+        levels = (L.length ns) + 1
     in  U.fromList <$> pairsLists
 
-mkLevels :: Int -> [[Int]]
-mkLevels n
-    | n < 2 = []
-    | otherwise = mkLevels' <$> [0..(n - 1)]
+-- Generate [[Int]] that denotes the state each DMNode of an input must be in to
+-- specify each degree of input. 
+mkLevels :: Maybe [Int] -> Int -> [[Int]]
+mkLevels mPerms n
+    | n < 3 = [] -- levels must be at least 3, because ns must have at least 2
+    -- elements, because we already pattern-matched on [] and [n]. 
+    | otherwise = mkLevels' <$> lStates
         where
+            lStates = case mPerms of
+                Nothing -> [0..(n - 1)]
+                Just permitteds -> filter (flip elem permitteds) [0..(n - 1)]
             mkLevels' m = (replicate ((n - 1) - m) 0) ++ (replicate m 1)
-    
+
+-- How many states does an input have? Not the state of the component DMNodes, 
+-- but the input itself. NOT ZERO INDEXED! Think `length`, not (!!).
+inputDegrees :: [DMNode] -> Int
+inputDegrees [] = 0
+inputDegrees [n] = (L.length . gateAssigns . nodeGate) n
+inputDegrees ns = (L.length ns) + 1
+
 -- Find those Nodes whose only incoming link is themselves. 
 soleSelfLoops :: ModelGraph -> [Gr.Node]
 soleSelfLoops mG = onlys
