@@ -47,12 +47,12 @@ renderDMMS ver dmm cDict =
                          ]
 
 renderDMModel :: DMModel -> T.Text
-renderDMModel (Fine (ModelLayer mg mmd)) = dmmsWrap "Model" entries
+renderDMModel (Fine (ModelLayer mg mmd)) = dmmsWrap "Model" entries Nothing
     where
         entries = renderMMeta mmd <> "\n\n"
                <> renderMGraph mg
 renderDMModel (LayerBinding mm (ModelLayer mg mmd) dmm) =
-    dmmsWrap "Model" entries
+    dmmsWrap "Model" entries Nothing
         where
             entries = renderMMeta mmd <> "\n\n"
                    <> renderMMaping mm <> "\n\n"
@@ -62,7 +62,7 @@ renderDMModel (LayerBinding mm (ModelLayer mg mmd) dmm) =
 
 renderMMeta :: ModelMeta -> T.Text
 renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
-    dmmsWrap "ModelMetaData" entries
+    dmmsWrap "ModelMetaData" entries Nothing
         where
             entries = T.intercalate "\n"
                 [rMName, rMVer, rPaper, rMDesc, rMNotes, rBOF, rBOL]
@@ -76,11 +76,13 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             pairShow (n, i) = "(" <> n <> ", " <> (T.pack . show) i <> ")" 
 
 renderMMaping :: ModelMapping -> T.Text
-renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries) <> switchProfilesText
+renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries Nothing) <>
+    switchProfilesText
     where
         switchProfilesText
             | L.null switchProfiles = ""
-            | otherwise = "\n\n" <> (dmmsWrap "SwitchProfiles" spEntries)
+            | otherwise = "\n\n" <>
+                            (dmmsWrap "SwitchProfiles" spEntries Nothing)
         (dmmsMMaping, switchProfiles) = modelMappingSplit mm
         dmmsMMEntries = T.intercalate "\n" $ renderDMMSSwitch <$> dmmsMMaping
         spEntries = T.intercalate "\n" $ renderSwitchProfile <$> switchProfiles
@@ -90,7 +92,7 @@ renderDMMSSwitch (s, ns) =
     "Switch: " <> s <> " (" <> (T.intercalate ", " ns) <> ")"
 
 renderSwitchProfile :: SwitchProfile -> T.Text
-renderSwitchProfile (nN, phs) = dmmsWrap "SwitchPhenotypes" entry
+renderSwitchProfile (nN, phs) = dmmsWrap "SwitchPhenotypes" entry (Just nN)
     where
         entry = "SwitchName: " <> nN <> "\n" <> entries
         entries = T.intercalate "\n" $ renderPhenotype <$> phs
@@ -111,7 +113,7 @@ renderSubSpace sSp = "(" <> entries <> ")"
         renderSSElem (nN, nS) = nN <> ":" <> ((T.pack . show) nS)
 
 renderMGraph :: ModelGraph -> T.Text
-renderMGraph mg = dmmsWrap "ModelGraph" entries
+renderMGraph mg = dmmsWrap "ModelGraph" entries Nothing
     where
         entries = T.intercalate "\n\n" nodes
         nodes = renderDMMSNode ranges <$> dmmsNS
@@ -119,7 +121,7 @@ renderMGraph mg = dmmsWrap "ModelGraph" entries
         dmmsNS = dmmsNodes mg
 
 renderDMMSNode :: LayerRange -> DMMSNode -> T.Text
-renderDMMSNode r (n, ls) = dmmsWrap "Node" entries <> " //" <> nName
+renderDMMSNode r (n, ls) = dmmsWrap "Node" entries (Just nName)
     where
         entries = T.intercalate "\n\n" $ [meta, gate] <> links
         meta = renderNMeta $ nodeMeta n
@@ -128,7 +130,7 @@ renderDMMSNode r (n, ls) = dmmsWrap "Node" entries <> " //" <> nName
         nName = (nodeName . nodeMeta) n
 
 renderNMeta :: NodeMeta -> T.Text
-renderNMeta nm = dmmsWrap "NodeMetaData" entries
+renderNMeta nm = dmmsWrap "NodeMetaData" entries Nothing
     where
         entries = T.intercalate "\n"
             [rName, rGene, rType, rColor, rCoord, rDesc, rNotes]
@@ -152,7 +154,7 @@ renderColor c = case L.lookup c cPairs of
         cPairs = zip svgLocalColors svgColors
 
 renderGate :: LayerRange -> DMNode -> T.Text
-renderGate lr n = dmmsWrap "NodeGate" entries
+renderGate lr n = dmmsWrap "NodeGate" entries Nothing
     where
         entries = case gateOrigin nGate of
             DMMSTruthTable -> renderTableG nGate
@@ -161,7 +163,7 @@ renderGate lr n = dmmsWrap "NodeGate" entries
         nGate = nodeGate n
 
 renderGate' :: LayerRange -> NodeGate -> T.Text
-renderGate' lr nGate = dmmsWrap "NodeGate" entries
+renderGate' lr nGate = dmmsWrap "NodeGate" entries Nothing
     where
         entries = case gateOrigin nGate of
             DMMSTruthTable -> renderTableG nGate
@@ -169,7 +171,7 @@ renderGate' lr nGate = dmmsWrap "NodeGate" entries
             Both -> renderDiscreteG lr nGate <> "\n" <> renderTableG nGate
 
 renderDiscreteG :: LayerRange -> NodeGate -> T.Text
-renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries
+renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries Nothing
     where
         entries
             | length assigns == 1
@@ -202,7 +204,7 @@ renderExpr s (Binary Or expr1 expr2) =
 
 
 renderTableG :: NodeGate -> T.Text
-renderTableG ng = dmmsWrap "TruthTable" entries
+renderTableG ng = dmmsWrap "TruthTable" entries Nothing
     where
         entries = topLine <> "\n" <> (T.intercalate "\n" rows)
         topLine = T.intercalate "\t" $ gateOrder ng <> [gNodeName ng]
@@ -214,7 +216,8 @@ renderTableG ng = dmmsWrap "TruthTable" entries
 
 renderNamedLink :: (NodeName, DMLink) -> T.Text
 renderNamedLink (inName, dmL) =
-    dmmsWrap "InLink" (renderNamedLinkContent (dmL, inName)) <> " //" <> inName
+    dmmsWrap "InLink" (renderNamedLinkContent (dmL, inName)) Nothing <>
+        " //" <> inName
 
 renderNamedLinkContent :: (DMLink, NodeName) -> T.Text
 renderNamedLinkContent (dmL, inName) = entries
@@ -229,12 +232,15 @@ renderNamedLinkContent (dmL, inName) = entries
         lInfo = linkInfo dmL
 
 -- Consume a dmms keyword, the content for that keyword, and properly wrap the
--- second in the first
-dmmsWrap :: T.Text -> T.Text -> T.Text
-dmmsWrap keyword body = keyword <> "{\n" <> body <> "\n" <> keyword <> "}"
+-- second in the first. Optionally add a commented note at the end. 
+dmmsWrap :: T.Text -> T.Text -> Maybe T.Text -> T.Text
+dmmsWrap keyword body Nothing =
+    keyword <> "{\n" <> body <> "\n" <> keyword <> "}"
+dmmsWrap keyword body (Just cNote) = 
+    keyword <> "{\n" <> body <> "\n" <> keyword <> "}"  <> " // " <> cNote
 
 renderCDict :: CitationDictionary -> T.Text
-renderCDict dict = dmmsWrap "CitationDictionary" entries
+renderCDict dict = dmmsWrap "CitationDictionary" entries Nothing
     where
         entries = T.intercalate "\n\n" $ renderCitation <$> (Map.toList dict)
 
@@ -480,12 +486,13 @@ purgeTableRenderDMMS ver dmm cDict =
                          ]
 
 purgeTableRenderDMModel :: DMModel -> T.Text
-purgeTableRenderDMModel (Fine (ModelLayer mg mmd)) = dmmsWrap "Model" entries
+purgeTableRenderDMModel (Fine (ModelLayer mg mmd)) =
+    dmmsWrap "Model" entries Nothing
     where
         entries = renderMMeta mmd <> "\n\n"
                <> purgeTableRenderMGraph mg
 purgeTableRenderDMModel (LayerBinding mm (ModelLayer mg mmd) dmm) =
-    dmmsWrap "Model" entries
+    dmmsWrap "Model" entries Nothing
         where
             entries = renderMMeta mmd <> "\n\n"
                    <> renderMMaping mm <> "\n\n"
@@ -493,7 +500,7 @@ purgeTableRenderDMModel (LayerBinding mm (ModelLayer mg mmd) dmm) =
                    <> purgeTableRenderDMModel dmm
 
 purgeTableRenderMGraph :: ModelGraph -> T.Text
-purgeTableRenderMGraph mg = dmmsWrap "ModelGraph" entries
+purgeTableRenderMGraph mg = dmmsWrap "ModelGraph" entries Nothing
     where
         entries = T.intercalate "\n\n" nodes
         nodes = purgeTableRenderDMMSNode ranges <$> dmmsNS
@@ -501,7 +508,7 @@ purgeTableRenderMGraph mg = dmmsWrap "ModelGraph" entries
         dmmsNS = dmmsNodes mg
 
 purgeTableRenderDMMSNode :: LayerRange -> DMMSNode -> T.Text
-purgeTableRenderDMMSNode r (n, ls) = dmmsWrap "Node" entries <> " //" <> nName
+purgeTableRenderDMMSNode r (n, ls) = dmmsWrap "Node" entries (Just nName)
     where
         entries = T.intercalate "\n\n" $ [meta, gate] <> links
         meta = renderNMeta $ nodeMeta n
@@ -510,7 +517,7 @@ purgeTableRenderDMMSNode r (n, ls) = dmmsWrap "Node" entries <> " //" <> nName
         nName = (nodeName . nodeMeta) n
 
 purgeTableRenderGate :: LayerRange -> DMNode -> T.Text
-purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries
+purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
     where
         entries = case gateOrigin nGate of
             DMMSTruthTable -> renderTableG nGate

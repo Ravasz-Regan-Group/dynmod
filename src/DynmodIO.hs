@@ -276,7 +276,7 @@ mkInvestigationAtts dmmsF dmModel vLExSpec = case layerMatch dmModel vLExSpec of
     Failure errs -> fail $ show errs
     Success ((mM, mL), _) -> case samplingVal mL $ sampling vLExSpec of
         Failure errs -> do
-            let errMessage = L.intercalate "/n" $
+            let errMessage = L.intercalate "\n" $
                                     (T.unpack . vexErrorPrep) <$> errs
             fail errMessage
         Success (SampleOnly sParams) -> do
@@ -329,6 +329,7 @@ updateDMMS f dmmsContent u = updateDMMS' u where
               (Left dErr) -> PS.pPrint (M.errorBundlePretty dErr)
               (Right (dmmsVer, (dmm, cd))) -> do
                 putStrLn "Good parse"
+                inputPP dmm
                 case updateDMModel dmm vGML of
                   Failure updateErrs -> fail $ "Failed Update:\n" <>
                     (LT.unpack . PS.pShowNoColor) updateErrs
@@ -369,8 +370,8 @@ procedureDMMS f options (Right parsed) = do
     putStrLn "Good parse"
     when (pubWarn options)
         (pubWWrite f (dmModel, citeDict))
-    when (coordColors options)
-        (graphDetailWrite f dmModel)
+    when (layerILevels options)
+        (inputPP dmModel)
     when (suppPDF options)
         (writeSupp f (snd parsed))
     when (gmlWrite options)
@@ -392,6 +393,8 @@ procedureDMMS f options (Right parsed) = do
                        mNs = (modelName . modelMeta) <$> modelLayers dmModel
                    in zip mNs mMs)
         )
+    when (coordColors options)
+        (graphDetailWrite f dmModel)
 
 
 -- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
@@ -652,3 +655,20 @@ writeFiveDFig f fiveDFigSVG = do
     fiveDFigFileNameRelWExt <- (addExtension ".svg") fiveDFigFileNameRel
     RW.writeFile fiveDFigFileNameRelWExt fiveDFigSVG
 
+-- Pretty print the layers and input levels of a DMModel to terminal. 
+inputPP :: DMModel -> IO ()
+inputPP dMM = do
+    let layers = modelLayers dMM
+        layerNames = (modelName . modelMeta) <$> layers
+        layerLevels = (textInputOptions . inputs . modelGraph) <$> layers
+        merger nN ls = nN <> ": \n" <> ls <> "\n"
+        layerTs = zipWith merger layerNames layerLevels
+        layerT = (T.unpack . T.intercalate "\n") layerTs
+    putStrLn "Model layers and their inputs:"
+    putStrLn layerT
+        
+        
+        
+        
+        
+        

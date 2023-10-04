@@ -68,8 +68,7 @@ rword w = (lexeme . try) (chunk w *> notFollowedBy alphaNumChar)
 identifier :: T.Text -> Parser T.Text
 identifier name = lexeme $ rword name >> colon >> (p >>= check)
   where
-    p       = T.pack <$> ((:) <$> letterChar <*> 
-        (many (alphaNumChar <|> char '_')))
+    p = T.pack <$> ((:) <$> letterChar <*> (many (alphaNumChar <|> char '_')))
     check x = if x `elem` vexRWS
                 then fail $ "Keyword " ++ show x ++ " cannot be a "
                     ++ (T.unpack name)
@@ -79,8 +78,7 @@ identifier name = lexeme $ rword name >> colon >> (p >>= check)
 variable :: Parser T.Text
 variable = (lexeme . try) (p >>= check)
   where
-    p       = T.pack <$> ((:) <$> letterChar <*> 
-        (many (alphaNumChar <|> char '_')))
+    p = T.pack <$> ((:) <$> letterChar <*> (many (alphaNumChar <|> char '_')))
     check x = if x `elem` vexRWS
                 then fail $ "Keyword " ++ show x ++ " cannot be a variable. "
                 else return x
@@ -89,7 +87,7 @@ variable = (lexeme . try) (p >>= check)
 identifiedFilePathParse :: T.Text -> Parser FilePath
 identifiedFilePathParse name = lexeme $ rword name >> colon >> p
     where
-        p = ((:) <$> letterChar <*> manyTill printChar eol)
+        p = (:) <$> letterChar <*> manyTill printChar eol
 
 
 -- Parse a VEX file. 
@@ -196,7 +194,7 @@ axesOrderParse = lexeme $ rword "AxesOrder" >>
         )
     )
 
--- Parse a BarcodeFile. BarcodeFiles are optional, so if this parser succeeds,
+-- Parse a BarcodeFilter. BarcodeFilters are optional, so if this parser succeeds,
 -- we wrap the result in a Just. 
 barCodeFilterParse :: Parser BarcodeFilter
 barCodeFilterParse =  onlyBCwAnyParse

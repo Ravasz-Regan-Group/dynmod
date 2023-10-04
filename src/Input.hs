@@ -34,12 +34,13 @@ type PurgeTables = Bool
 type CompareDMMS = T.Text
 
 data Procedures = Procedures {
-      pubWarn     :: Bool
+      pubWarn :: Bool
+    , layerILevels :: Bool
+    , suppPDF :: Bool
+    , gmlWrite :: Bool
+    , ttWrite :: Bool
     , coordColors :: Bool
-    , suppPDF     :: Bool
-    , gmlWrite    :: Bool
-    , ttWrite     :: Bool
-    , parseTest   :: Bool
+    , parseTest :: Bool
     } deriving (Eq, Show)
 
 data Experiments = GridSearch (EParams, GParam)
@@ -126,15 +127,17 @@ procedureParser = Procedure <$> (Procedures
        <> O.short 'w'
        <> O.help "Whether to write publication warnings to <FILE>_warnings.txt")
     <*> O.switch
-        ( O.long "coord_colors"
+        ( O.long "model_inputs"
        <> O.short 'i'
-       <> O.help "Whether to write node coordinates & colors to \
-            \<FILE>_graph_details.txt")
+       <> O.help "Whether to write the layers names and associated input \
+            \levels to stdout"
+        )
     <*> O.switch
         ( O.long "supplementary"
        <> O.short 's'
        <> O.help "Whether to write a supplementary publication of the dmms file\
-            \ to PDF. ")
+            \ to PDF. "
+        )
     <*> O.switch
         ( O.long "gml"
        <> O.short 'g'
@@ -144,6 +147,11 @@ procedureParser = Procedure <$> (Procedures
         ( O.long "ttwrite"
        <> O.short 't'
        <> O.help "Whether to write out tt files. "
+        )
+    <*> O.switch
+        ( O.long "coord_colors"
+       <> O.help "Whether to write node coordinates & colors to \
+            \<FILE>_graph_details.txt"
         )
     -- Whether to write a pShowNoColor of the DMMS we've parsed.
     <*> O.switch
