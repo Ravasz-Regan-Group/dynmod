@@ -24,14 +24,12 @@ import Types.Figures
 import Utilities
 import Data.Hashable
 import Diagrams.Prelude
-import Diagrams.Backend.SVG
-import Graphics.Svg.Core (renderText, Element)
+import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
 import qualified Data.List.Split as Split
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
@@ -127,9 +125,9 @@ attractorESpaceFigure :: ColorMap
                       -> LayerNameIndexBimap
                       -> HS.HashSet Attractor
                       -> InputBundle
-                      -> SVGText
+                      -> Diagram B
 attractorESpaceFigure cMap mMap lniBMap atts iBundle =
-    eSpaceRenderText $ frame 3.0 $ figureDia === legendDia
+    frame 3.0 $ figureDia === legendDia
     where
         figureDia
             | L.null dimList =
@@ -558,18 +556,6 @@ sliceDia c (Match attSize matchLoops _) = (hcat slivers) # center
         sliverWidth = slicewidth / (fromIntegral attSize)
         slicewidth = (2.0 :: Double) * (fromIntegral attSize)**alpha
         sliceHeight = 1.0 :: Double
-
-eSpaceRenderDia :: Diagram B -> Element
-eSpaceRenderDia = renderDia  SVG
-                            (SVGOptions (mkWidth 1600)
-                             Nothing
-                             ""
-                             []
-                             True
-                             )
-
-eSpaceRenderText :: Diagram B -> SVGText
-eSpaceRenderText = LT.toStrict . renderText . eSpaceRenderDia
 
 mkGridEdges :: [Int] -> [([Int], [Int])]
 mkGridEdges dimList = concat $ mkEdges <$> vertices

@@ -1,11 +1,11 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.1.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           dynmod
-version:        0.7.0.0
+version:        0.7.1.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -68,8 +68,8 @@ library
     , colour
     , containers
     , deepseq
+    , diagrams-cairo
     , diagrams-lib
-    , diagrams-svg
     , extra
     , fgl
     , hashable
@@ -86,7 +86,6 @@ library
     , safe-exceptions
     , scientific
     , split
-    , svg-builder
     , text
     , unordered-containers
     , validation

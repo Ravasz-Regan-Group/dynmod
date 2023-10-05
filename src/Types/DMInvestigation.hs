@@ -173,7 +173,7 @@ data VEXInvestigationInvalid =
     | MatchedModelIsCoarsest T.Text
     | AxesOrderHasRepeats [NodeName]
     | UnknownNodesInAxesOrder [NodeName]
-    | NonInputNodesInAxesOrder [NodeName]
+    | NonInputOrPinnedNodesInAxesOrder [NodeName]
     | MultipleAxesNodesFromSingleInput [[NodeName]]
     | ISDPinnedInputsHaveRepeats [NodeName]
     | UnknownNodesInISDPinnedInputs [NodeName]
@@ -215,8 +215,8 @@ vexErrorPrep (AxesOrderHasRepeats nNms) = "AxesOrderHasRepeats: " <>
     T.intercalate ", " nNms
 vexErrorPrep (UnknownNodesInAxesOrder nNms) = "UnknownNodesInAxesOrder: " <>
     T.intercalate ", " nNms
-vexErrorPrep (NonInputNodesInAxesOrder nNms) = "NonInputNodesInAxesOrder: " <>
-    T.intercalate ", " nNms
+vexErrorPrep (NonInputOrPinnedNodesInAxesOrder nNms) =
+    "NonInputOrPinnedNodesInAxesOrder: " <> T.intercalate ", " nNms
 vexErrorPrep (MultipleAxesNodesFromSingleInput nNmss) =
     "MultipleAxesNodesFromSingleInput: " <>
         (T.intercalate "\n" . fmap (T.intercalate ", ")) nNmss
@@ -414,7 +414,7 @@ mkInputNodes mL axesOrd inputChoices
     | (not . null) nonPresentAxes =
         Failure [UnknownNodesInAxesOrder nonPresentAxes]
     | (not . null) nonInputAxes =
-        Failure [NonInputNodesInAxesOrder nonInputAxes]
+        Failure [NonInputOrPinnedNodesInAxesOrder nonInputAxes]
     | (not . null) axesMultiplyInStacks =
         Failure [MultipleAxesNodesFromSingleInput axesMultiplyInStacks]
     | otherwise = Success orderedInputs
@@ -426,7 +426,7 @@ mkInputNodes mL axesOrd inputChoices
         moreThanOne xs = L.length xs > 1
         nonPresentAxes = axesOrd L.\\ mlInputNames
         axesRepeats = Uniq.repeated axesOrd
-        nonInputAxes = axesOrd L.\\ inputNodeNamesFlat
+        nonInputAxes = filter (flip notElem inputNodeNamesFlat) axesOrd
         inputNodeNamesFlat = mconcat inputNodeNames
         inputNodeNames = (nodeName . nodeMeta) <<$>> nonPinnedIs
         nonPinnedIs = L.filter (pinnedIF inputChoices) initialInputs

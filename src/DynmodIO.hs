@@ -37,6 +37,8 @@ import Path
 import Path.IO
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import Diagrams.Prelude (mkWidth, Diagram)
+import Diagrams.Backend.Cairo (B, renderCairo)
 import qualified Data.Graph.Inductive as Gr
 import qualified Text.Pretty.Simple as PS
 import qualified Data.HashSet as HS
@@ -117,19 +119,20 @@ gridDMMS f mMap mult mEnv@(fLayer, sParams) = do
     let LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         attGrid = evalState (attractorGrid mEnv mult) gen
         doublesGrid = (fromIntegral . HS.size) <<$>> attGrid
-        hMapSVGText = attractorHMSVG doublesGrid mult
+        hMapDia = attractorHeatMapDia doublesGrid mult
         allAtts = mconcat $ mconcat <$> attGrid
     (fName, _) <- splitExtension $ filename f
     let fNameString = fromRelFile fName
-        hMapSVGFileName = fNameString ++
+        hMapFileName = fNameString ++
                           "_att_HM_" ++
                           (show (randomN sParams)) ++ "_" ++
                           (show (noisyN sParams)) ++ "_" ++
                           (show mult) ++ "_" ++
                           (show $ ((round . (1000 *)) (noisyP sParams) :: Int))
-    hMapSVGFileNameRel <- parseRelFile hMapSVGFileName
-    hMapSVGFileNameRelWExt <- addExtension ".svg" hMapSVGFileNameRel
-    RW.writeFile hMapSVGFileNameRelWExt hMapSVGText
+    hMapFileNameRel <- parseRelFile hMapFileName
+    hMapFileNameRelWExt <- addExtension ".pdf" hMapFileNameRel
+    let heatMapFPath = toFilePath hMapFileNameRelWExt
+    renderCairo heatMapFPath (mkWidth 1600) hMapDia
     let (rN, nP, nN) = (randomN sParams, noisyN sParams, noisyP sParams)
     writeAttractorBundle f lniBMap mMap (rN, nP, nN) (Just mult) allAtts
 
@@ -223,19 +226,19 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 writeVexFigs dmmsPath lRFigs
 
 writeVexFigs :: Path Abs File
-             -> [([(ExpContext, [(Barcode, SVGText)])], Maybe SVGText)]
+             -> [([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))]
              -> IO ()
 writeVexFigs f layerFigs = mapM_ (writeLayerFig f) layerFigs
 
 writeLayerFig :: Path Abs File
-              -> ([(ExpContext, [(Barcode, SVGText)])], Maybe SVGText)
+              -> ([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))
               -> IO ()
-writeLayerFig f (expPairs, m5DSVGText) = do
+writeLayerFig f (expPairs, m5DDia) = do
     mapM_ (writeExpFig f) expPairs
-    mapM_ (writeFiveDFig f) m5DSVGText
+    mapM_ (writeFiveDFig f) m5DDia
 
-writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, SVGText)]) -> IO ()
-writeExpFig f ((ExpCon expName expDetails expType), svgPairs) = do
+writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, Diagram B)]) -> IO ()
+writeExpFig f ((ExpCon expName expDetails expType), diaPairs) = do
     let dirStem = parent f
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
@@ -245,16 +248,17 @@ writeExpFig f ((ExpCon expName expDetails expType), svgPairs) = do
     dirExpName <- parseRelDir (T.unpack expName)
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
     ensureDir dirFull
-    mapM_ (writeExpBCFig dirFull expDetails) svgPairs
+    mapM_ (writeExpBCFig dirFull expDetails) diaPairs
 
-writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, SVGText) -> IO ()
-writeExpBCFig dirFull expDetails (bc, svgT) = do
+writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, Diagram B) -> IO ()
+writeExpBCFig dirFull expDetails (bc, expDia) = do
     let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
         rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
     relFileName <- parseRelFile rFString
-    relFileNameWExt <- addExtension ".svg" relFileName
+    relFileNameWExt <- addExtension ".pdf" relFileName
     let absFileNameWExt = dirFull </> relFileNameWExt
-    RW.writeFile absFileNameWExt svgT
+        fPath = toFilePath absFileNameWExt
+    renderCairo fPath (mkWidth 1600) expDia
 
 -- Make the part of the filename for the time series figures associated with a
 -- particular Bar in a particular Barcode. If the Bar has matched to a
@@ -550,7 +554,7 @@ figureDMMS f attFileName (Right parsed) = do
     (_, _, atts) <- loadAttCSV (dmmsMMap, fLayer) $ T.unpack attFileName
     putStrLn "Generating Figure"
     fiveDFig <- mkFiveDFigure cMap (mMap, fLayer) atts
-    putStrLn "Writing SVG File"
+    putStrLn "Writing PDF File"
     writeFiveDFig f fiveDFig
 
 -- Read and validate an attractor csv file.
@@ -572,11 +576,11 @@ loadAttCSV (dmmsMMap, mL) csvAttFStr = do
 
 
 -- Interact with the user to determine which, if any, inputs are pinned in the
--- 5-D figure, then generate the SVG. 
+-- 5-D figure, then generate the PDF. 
 mkFiveDFigure :: ColorMap
               -> (ModelMapping, ModelLayer)
               -> HS.HashSet Attractor
-              -> IO (SVGText)
+              -> IO (Diagram B)
 mkFiveDFigure cMap (mMap, fLayer) atts = do
     let LayerSpecs lniBMap _ _ _ = layerPrep fLayer
         ipPtNodes = (inputs . modelGraph) fLayer
@@ -646,14 +650,15 @@ twoLayerModelMapping mMaps = do
     let mm = last mMaps
     return mm
 
-writeFiveDFig :: Path Abs File -> SVGText -> IO ()
-writeFiveDFig f fiveDFigSVG = do
+writeFiveDFig :: Path Abs File -> Diagram B -> IO ()
+writeFiveDFig f fiveDDia = do
     (fName, _) <- splitExtension $ filename f
     let fNameString = fromRelFile fName
         fiveDFigFileName = fNameString ++ "_Attrs_Env_Space"
     fiveDFigFileNameRel <- parseRelFile fiveDFigFileName
-    fiveDFigFileNameRelWExt <- (addExtension ".svg") fiveDFigFileNameRel
-    RW.writeFile fiveDFigFileNameRelWExt fiveDFigSVG
+    fiveDFigFileNameRelWExt <- (addExtension ".pdf") fiveDFigFileNameRel
+    let fPath = toFilePath fiveDFigFileNameRelWExt
+    renderCairo fPath (mkWidth 1600) fiveDDia
 
 -- Pretty print the layers and input levels of a DMModel to terminal. 
 inputPP :: DMModel -> IO ()

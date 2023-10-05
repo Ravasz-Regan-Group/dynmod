@@ -17,20 +17,18 @@ import Figures.InputSpaceFigure
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import Data.List.Split (splitPlaces)
 import Diagrams.Prelude
-import Diagrams.Backend.SVG
-import Graphics.Svg.Core (renderText, Element)
+import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
--- ine SVG file. 
+-- ine PDF file. 
 type BarcodeResult = (Barcode, [([Timeline], [PulseSpacing])])
 
 attResCombine :: [AttractorResult] -> [BarcodeResult]
@@ -51,7 +49,7 @@ trimmedRocketCM = (B.reverse . B.drop trimSize . B.reverse) rocketCM
 layerRunFigure :: ColorMap
                -> HS.HashSet Attractor
                -> LayerResult
-               -> ([(ExpContext, [(Barcode, SVGText)])], Maybe SVGText)
+               -> ([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))
 layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) =
     ( expRunFigure cMap lrfMM lrfML <$> eResults
     , attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB)
@@ -59,30 +57,18 @@ layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) =
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
 
 -- Create run figures for an individual experiment. Each AttractorResult is
--- turned into a single SVG, no matter how many Threads it has. This is in
+-- turned into a single PDF, no matter how many Threads it has. This is in
 -- addition to the fact that AttractorResults were combined if their Barcodes
 -- were identical. 
 expRunFigure :: ColorMap
              -> ModelMapping
              -> ModelLayer
              -> ExperimentResult
-             -> (ExpContext, [(Barcode, SVGText)])
-expRunFigure cMap mM mL (exCon, attResults) = (exCon, bcSVGsWBCs)
+             -> (ExpContext, [(Barcode, Diagram B)])
+expRunFigure cMap mM mL (exCon, attResults) = (exCon, bcDiasWBCs)
     where
-        bcSVGsWBCs = expRunRenderText <<$>> bcDiasWBCs
         bcDiasWBCs = bcRunDia cMap mM mL <$> (attResCombine attResults)
 
-expRunRenderText :: Diagram B -> SVGText
-expRunRenderText = LT.toStrict . renderText . expRunRenderDia
-
-expRunRenderDia :: Diagram B -> Element
-expRunRenderDia = renderDia  SVG
-                            (SVGOptions (mkWidth 1600)
-                             Nothing
-                             ""
-                             []
-                             True
-                             )
 
 
 bcRunDia :: ColorMap

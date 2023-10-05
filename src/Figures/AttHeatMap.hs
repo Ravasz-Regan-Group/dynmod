@@ -4,7 +4,7 @@
 module Figures.AttHeatMap
     ( attractorGrid
     , rnGrid
-    , attractorHMSVG
+    , attractorHeatMapDia
     ) where
 
 import Types.DMModel
@@ -13,9 +13,7 @@ import Types.Figures
 import Properties.Attractors
 import Plots
 import Diagrams.Prelude
-import Diagrams.Backend.SVG
-import Graphics.Svg.Core (renderText, Element)
-import qualified Data.Text.Lazy as LT
+import Diagrams.Backend.Cairo
 import qualified Data.HashSet as HS
 
 -- Here we actively misinterpret a ModelEnv as specifying random state slots and
@@ -41,23 +39,8 @@ heatMapAxis atts mult = r2Axis &~ do
   yLabel .= "r_States"
   heatMap atts $ heatMapSize .= V2 (fromIntegral mult) (fromIntegral mult)
 
-heatMapDia :: [[Double]] -> Int -> QDiagram B V2 Double Any
-heatMapDia ass mult = renderAxis $ heatMapAxis ass mult
-
-attractorHMElement :: [[Double]] -> Int -> Element
-attractorHMElement ass mult = renderDia SVG
-                                   (SVGOptions (mkWidth 1600)
-                                   Nothing
-                                   ""
-                                   []
-                                   True
-                                   )
-                                   (heatMapDia ass mult)
-
-attractorHMSVG :: [[Double]] -> Int -> SVGText
-attractorHMSVG ass mult = LT.toStrict $ renderText $
-    attractorHMElement ass mult
-
+attractorHeatMapDia :: [[Double]] -> Int -> QDiagram B V2 Double Any
+attractorHeatMapDia ass mult = renderAxis $ heatMapAxis ass mult
 
 rnGrid :: Int -> Int -> Int -> [[(Double, Double)]]
 rnGrid r n mult = mkRow <$> [1..rD]
