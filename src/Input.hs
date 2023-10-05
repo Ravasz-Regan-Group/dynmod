@@ -219,7 +219,7 @@ fiveDFigParser :: O.Parser Figures
 fiveDFigParser = O.strOption
                     ( O.long "figure"
                    <> O.short 'f'
-                   <> O.metavar "FILE"
+                   <> O.metavar "ATT_FILE"
                    <> O.help "Create a 5-D figure illustrating which attractors\
                         \ exist at which environmental input values, and which \
                         \ phenotypes map best onto those attractors. "

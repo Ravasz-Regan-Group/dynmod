@@ -50,10 +50,10 @@ layerRunFigure :: ColorMap
                -> HS.HashSet Attractor
                -> LayerResult
                -> ([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))
-layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) =
-    ( expRunFigure cMap lrfMM lrfML <$> eResults
-    , attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB)
+layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
     where
+        expF = expRunFigure cMap lrfMM lrfML <$> eResults
+        fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
 
 -- Create run figures for an individual experiment. Each AttractorResult is
@@ -85,15 +85,14 @@ bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 (legendDia:bcFigs))
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
 bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
     where
-        evenedBlocks = zipWith (switchLegend' cMap) phHeights bc
+        evenedBlocks = zipWith (switchLegend cMap) phHeights bc
         phHeights = ((maxBlockHeight * lScale) / ) <$> phSizes
         maxBlockHeight = maximum phSizes
-        phSizes :: [Double]
-        phSizes = (fromIntegral . length . phenotypeNames) <$> bc
+        phSizes = ((fromIntegral . length . phenotypeNames) <$> bc) :: [Double]
         lScale = 5.0 :: Double
 
-switchLegend' :: ColorMap -> Double -> Bar -> Diagram B
-switchLegend' cMap slHeight br = vcat $ (tText'' swName):slices
+switchLegend :: ColorMap -> Double -> Bar -> Diagram B
+switchLegend cMap slHeight br = vcat $ (tText'' swName):slices
     where
         slices = (sliceRect <>) <$> coloredLabels
         coloredLabels = swLColorer <$> paddedPhLabels
@@ -101,7 +100,7 @@ switchLegend' cMap slHeight br = vcat $ (tText'' swName):slices
             | isPh = (center . (dottedColorRect |||)) bareLb
             | otherwise = (center . (colorRect |||)) bareLb
         dottedColorRect = cDot `atop` colorRect
-        cDot = circle (lScale * 0.5 * 0.6) # fc black
+        cDot = circle (lScale * 0.5 * 0.6) # fc black # lw none
         colorRect = rect lScale slHeight # fc (cMap M.! swName) # lw none
         sliceRect = (rect (slwidth + lScale) slHeight) # lw 0.1
         paddedPhLabels = lLabelPad' slwidth <<$>> phLabels

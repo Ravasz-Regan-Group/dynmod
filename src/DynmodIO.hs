@@ -333,7 +333,6 @@ updateDMMS f dmmsContent u = updateDMMS' u where
               (Left dErr) -> PS.pPrint (M.errorBundlePretty dErr)
               (Right (dmmsVer, (dmm, cd))) -> do
                 putStrLn "Good parse"
-                inputPP dmm
                 case updateDMModel dmm vGML of
                   Failure updateErrs -> fail $ "Failed Update:\n" <>
                     (LT.unpack . PS.pShowNoColor) updateErrs
