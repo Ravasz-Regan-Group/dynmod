@@ -61,6 +61,7 @@ library:
   - vector
   - vector-instances
   - colour
+  - palette
   - text
   - scientific
   - unordered-containers

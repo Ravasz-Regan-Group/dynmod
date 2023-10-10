@@ -399,6 +399,8 @@ data LinkType =   Undefined_LT
                 | Transcription_Conflict
                 | Secretion
                 | RNAi
+                | Acetylation
+                | Deacetylation
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
@@ -432,6 +434,8 @@ instance Texy LinkType where
                               = (footnotesize . fromLaTeX . TeXRaw) "TrConf"
     texy Secretion            = (footnotesize . fromLaTeX . TeXRaw) "Secr"
     texy RNAi                 = (footnotesize . fromLaTeX . TeXRaw) "RNAi"
+    texy Acetylation          = (footnotesize . fromLaTeX . TeXRaw) "Acet"
+    texy Deacetylation        = (footnotesize . fromLaTeX . TeXRaw) "Deacet"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

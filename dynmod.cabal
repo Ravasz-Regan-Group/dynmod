@@ -76,6 +76,7 @@ library
     , megaparsec
     , mtl
     , optparse-applicative
+    , palette
     , parallel
     , parser-combinators
     , path

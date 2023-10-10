@@ -154,7 +154,6 @@ topStates folders mEnv = do
         inCombos = inputCombos lInputs limiteds (lNameIndexM lSpecs)
     iGens <- state $ genGen $ length inCombos
     let seeds = zip iGens inCombos
-    {- P.parMap P.rdeepseq -} 
     let batches = P.parMap P.rdeepseq (inputStats mEnv lSpecs folders) seeds
     return $ L.foldl' (<>) mempty batches
 

@@ -9,7 +9,6 @@ module Figures.AttHeatMap
 
 import Types.DMModel
 import Types.Simulation
-import Types.Figures
 import Properties.Attractors
 import Plots
 import Diagrams.Prelude
