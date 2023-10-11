@@ -372,7 +372,7 @@ type PUCGradient = B.Vector LocalColor
 -- distance, which is the key requirement here. 
 alteredNodeCM :: PUCGradient
 alteredNodeCM = B.fromList $    
-                        colorRamp 256 [sRGB24 221 221 221, sRGB24 240 115 90]
+                        colorRamp 256 [sRGB24 160 160 160, sRGB24 240 115 90]
 
 plasmaCM :: PUCGradient
 plasmaCM = B.fromList
