@@ -235,6 +235,7 @@ experimentParse :: Parser VEXExperiment
 experimentParse =  generalExpParse
                <|> pulse1Parse
                <|> kdoeParse
+               <|> kdoeAtTransitionParse
 
 -- Parse a general experiment. 
 generalExpParse :: Parser VEXExperiment
@@ -284,7 +285,7 @@ pulseParse = between (symbol "Pulse{") (symbol "Pulse}")
     (runPermutation $
         (VEXInPt <$> toPermutation (realCoordParse "InputFix")
                  <*> toPermutation nodeAlterationsParse
-                 <*> (Right <$> toPermutation (durationParse "Duration"))
+                 <*> (toPermutation (durationParse "Duration"))
         )
     )
 
@@ -322,16 +323,17 @@ nDirectionParse :: Parser NudgeDirection
 nDirectionParse = (try (NudgeUp <$ rword "Up")) <|> (NudgeDown <$ rword "Down")
 
 durationParse :: T.Text -> Parser Duration
-durationParse tag = (rword tag) >> colon >> integer
+durationParse tag = UserD <$> ((rword tag) >> colon >> integer)
 
--- Parse a Pulse1. t_0 and t_end are optional, so they are wrapped in a Maybe
+-- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
+-- of: t_0 = 50, t_end = 50
 pulse1Parse :: Parser VEXExperiment
 pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
     (runPermutation $
-        (Pulse1 <$> ((,) <$> toPermutationWithDefault Nothing
-                                (Just <$> (durationParse "t_0"))
-                         <*> toPermutationWithDefault Nothing
-                                (Just <$> (durationParse "t_end"))
+        (Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
+                                (durationParse "t_0")
+                         <*> toPermutationWithDefault (DefaultD 50)
+                                (durationParse "t_end")
                     )
                 <*> toPermutation startingModelStateParse
                 <*> toPermutation (durationParse "Duration")
@@ -343,18 +345,38 @@ flipParse :: Parser (NodeName, RealNodeState)
 flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
             (comma >> (toRealFloat <$> number))
 
--- Parse a KDOE. t_0 and t_end are optional, so they are wrapped in a Maybe
+-- Parse a KDOE. t_0 and t_end are optional, so they get the default values
+-- of: t_0 = 50, t_end = 50
 kdoeParse :: Parser VEXExperiment
 kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
     (runPermutation $
         (KnockDOverE <$>
-                  ((,) <$> toPermutationWithDefault Nothing
-                            (Just <$> (durationParse "t_0"))
-                       <*> toPermutationWithDefault Nothing
-                            (Just <$> (durationParse "t_end"))
+                  ((,) <$> toPermutationWithDefault (DefaultD 50)
+                            (durationParse "t_0")
+                       <*> toPermutationWithDefault (DefaultD 50)
+                            (durationParse "t_end")
                             )
                         <*> toPermutation startingModelStateParse
                         <*> toPermutation (durationParse "Duration")
+                        <*> toPermutation nodeAlterationsParse
+        )
+    )
+
+-- Parse a KDOEAtTransition. t_0 and t_end are optional, so they get the default
+-- values of: t_0 = 50, t_end = 50
+kdoeAtTransitionParse :: Parser VEXExperiment
+kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
+                                (symbol "KDOEAtTransition}")
+    (runPermutation $
+        (KDOEAtTransition <$>
+                  ((,) <$> toPermutationWithDefault (DefaultD 50)
+                            (durationParse "t_0")
+                       <*> toPermutationWithDefault (DefaultD 50)
+                            (durationParse "t_end")
+                            )
+                        <*> toPermutation startingModelStateParse
+                        <*> toPermutation (durationParse "Duration")
+                        <*> toPermutation flipParse
                         <*> toPermutation nodeAlterationsParse
         )
     )
@@ -385,6 +407,10 @@ insertBCF bc (Pulse1 ts inEnv d f)
     where newInEnv = inEnv {showHidden = Right bc}
 insertBCF bc (KnockDOverE ts inEnv d alts)
     | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts
+    | otherwise = KnockDOverE ts inEnv d alts
+    where newInEnv = inEnv {showHidden = Right bc}
+insertBCF bc (KDOEAtTransition ts inEnv d f alts)
+    | showHidden inEnv == Left False = KDOEAtTransition ts newInEnv d f alts
     | otherwise = KnockDOverE ts inEnv d alts
     where newInEnv = inEnv {showHidden = Right bc}
 

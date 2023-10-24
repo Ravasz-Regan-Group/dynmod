@@ -29,7 +29,7 @@ import qualified Data.List as L
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
 -- ine PDF file. 
-type BarcodeResult = (Barcode, [([Timeline], [PulseSpacing])])
+type BarcodeResult = (Barcode, [[([Timeline], [PulseSpacing])]])
 
 attResCombine :: [AttractorResult] -> [BarcodeResult]
 attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
@@ -39,36 +39,38 @@ attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
 layerRunFigure :: ColorMap
                -> HS.HashSet Attractor
                -> LayerResult
-               -> ([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))
+               -> ([(ExpContext, [(Barcode, [Diagram B])])], Maybe (Diagram B))
 layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
     where
         expF = expRunFigure cMap lrfMM lrfML <$> eResults
         fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
 
--- Create run figures for an individual experiment. Each AttractorResult is
--- turned into a single PDF, no matter how many Threads it has. This is in
+-- Create run figures for an individual experiment. Each element in the
+-- [([Timeline], [PulseSpacing])] in the AttractorResult is
+-- turned into a single PDF, no matter how many Timelines it has. 
+-- As of 10/24/23, only KDOEAtTransition experiments will have more than one, 
+-- because only they alter the experiment as a function of the size of the
+-- Attractor they start in, but this will change in the future. This is in
 -- addition to the fact that AttractorResults were combined if their Barcodes
 -- were identical. 
 expRunFigure :: ColorMap
              -> ModelMapping
              -> ModelLayer
              -> ExperimentResult
-             -> (ExpContext, [(Barcode, Diagram B)])
+             -> (ExpContext, [(Barcode, [Diagram B])])
 expRunFigure cMap mM mL (exCon, attResults) = (exCon, bcDiasWBCs)
     where
         bcDiasWBCs = bcRunDia cMap mM mL <$> (attResCombine attResults)
-
-
 
 bcRunDia :: ColorMap
          -> ModelMapping
          -> ModelLayer
          -> BarcodeResult
-         -> (Barcode, Diagram B)
-bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 (legendDia:bcFigs))
+         -> (Barcode, [Diagram B])
+bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 ((legendDia :) <$> bcFigss))
     where
-        bcFigs = mconcat $ attRunDia <$> tmLnPIs
+        bcFigss = fmap (mconcat . fmap attRunDia) tmLnPIs
         attRunDia (tmLns, pIs) = runDia cMap mM mL bc pIs <$> tmLns
         legendDia = bcRunFigLegendDia cMap bc
 

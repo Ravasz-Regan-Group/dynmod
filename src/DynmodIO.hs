@@ -214,46 +214,64 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 let cMap = mkColorMap dmModel
                 gen <- initStdGen
                 putStrLn "Running experiments..."
-                let iResults = runInvestigation cMap gen $ zip attSets lExpSpecs
-                    numExp = sum $ (length . layerResultERs) <$> iResults
+                let invRs = runInvestigation cMap gen $ zip attSets lExpSpecs
+                    numExp = sum $ (length . layerResultERs) <$> invRs
                     expTense
                         | numExp == 1 = " experiment. "
                         | otherwise = " experiments. "
                 putStrLn $ "Ran " <> show numExp <> expTense
                 putStrLn "Generating figures..."
-                let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets)
-                                                                iResults
+                let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets) invRs
                 writeVexFigs dmmsPath lRFigs
 
 writeVexFigs :: Path Abs File
-             -> [([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))]
+             -> [([(ExpContext, [(Barcode, [Diagram B])])], Maybe (Diagram B))]
              -> IO ()
-writeVexFigs f layerFigs = mapM_ (writeLayerFig f) layerFigs
+writeVexFigs fP layerFigs = mapM_ (writeLayerFig fP) layerFigs
+    where
+        writeLayerFig f (expPairs, m5DDia) = do
+            mapM_ (writeExpFig f) expPairs
+            mapM_ (writeFiveDFig f) m5DDia
 
-writeLayerFig :: Path Abs File
-              -> ([(ExpContext, [(Barcode, Diagram B)])], Maybe (Diagram B))
-              -> IO ()
-writeLayerFig f (expPairs, m5DDia) = do
-    mapM_ (writeExpFig f) expPairs
-    mapM_ (writeFiveDFig f) m5DDia
-
-writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, Diagram B)]) -> IO ()
+writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, [Diagram B])]) -> IO ()
 writeExpFig f ((ExpCon expName expDetails expType), diaPairs) = do
     let dirStem = parent f
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
         P1 -> parseRelDir "Pulse1"
         KDOE -> parseRelDir "KD_OE"
+        KDOEAtTr -> parseRelDir "KD_OE_At_Transition"
         GenExp -> parseRelDir "General_Time_Series"
     dirExpName <- parseRelDir (T.unpack expName)
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
     ensureDir dirFull
     mapM_ (writeExpBCFig dirFull expDetails) diaPairs
 
-writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, Diagram B) -> IO ()
-writeExpBCFig dirFull expDetails (bc, expDia) = do
-    let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-        rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
+writeExpBCFig dirFull expDetails (bc, expDias) = case expDias of
+    [] -> do 
+        putStrLn "No figures for Barcode: "
+        PS.pPrint bc
+    [expDia] -> do
+        let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+            rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+        relFileName <- parseRelFile rFString
+        relFileNameWExt <- addExtension ".pdf" relFileName
+        let absFileNameWExt = dirFull </> relFileNameWExt
+            fPath = toFilePath absFileNameWExt
+        renderCairo fPath (mkWidth 1600) expDia
+    expDs -> do
+        let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+            rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+            dNum = L.length expDs -- this will always be of the form
+            intBase = (-(dNum `quot` 2) +) <$> [0..(dNum - 1)]
+            intBStrs = (("_" <>) . show) <$> intBase
+            rFStrings = (rFString <>) <$> intBStrs
+            fStrDiaPairs = zip rFStrings expDs
+        mapM_ (writeAttAlteredExpBCFig dirFull) fStrDiaPairs
+
+writeAttAlteredExpBCFig :: Path Abs Dir -> (String, Diagram B) -> IO ()
+writeAttAlteredExpBCFig dirFull (rFString, expDia) = do
     relFileName <- parseRelFile rFString
     relFileNameWExt <- addExtension ".pdf" relFileName
     let absFileNameWExt = dirFull </> relFileNameWExt
