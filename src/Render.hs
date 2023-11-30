@@ -290,10 +290,10 @@ renderDMMSMappingDiff (SD (LD ldSwitchNames)
                       (RD rdSwitchNames)
                       (FC (SD (LD ldSwitchContent)
                               (RD rdSwitchContent)
-                              (FC fcNameContent)
+                              _
                           )
                       )
-                  ) = ldSN <> rdSN <> ldSC <> rdSC <> fcSC
+                  ) = ldSN <> rdSN <> ldSC <> rdSC -- <> fcSC
     where
         ldSN | null ldSwitchNames = ""
              | otherwise = "Left unique Switch names:\n" <>
@@ -305,14 +305,14 @@ renderDMMSMappingDiff (SD (LD ldSwitchNames)
              | otherwise = "Left shared Switch names but unique content:\n" <>
                  T.intercalate "\n" (renderDMMSSwitch <$> ldSwitchContent) <>
                     "\n"
-        rdSC | null ldSwitchContent = ""
+        rdSC | null rdSwitchContent = ""
              | otherwise = "Right shared Switch names but unique content:\n" <>
                  T.intercalate "\n" (renderDMMSSwitch <$> rdSwitchContent) <>
                     "\n"
-        fcSC | null fcNameContent = ""
-             | otherwise = "Identical Switches:\n" <>
-                 T.intercalate "\n" (renderDMMSSwitch <$> fcNameContent) <>
-                    "\n"
+--         fcSC | null fcNameContent = ""
+--              | otherwise = "Identical Switches:\n" <>
+--                  T.intercalate "\n" (renderDMMSSwitch <$> fcNameContent) <>
+--                     "\n"
 
 renderSPDiff :: SwitchProfilesDiff -> T.Text
 renderSPDiff (SD (LD lSProfiles) (RD rSProfiles) (FC switchDiffs)) =
