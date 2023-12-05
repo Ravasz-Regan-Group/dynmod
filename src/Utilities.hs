@@ -194,7 +194,7 @@ genGen i gen = go 0 [] gen
     where 
         go k gs g
             | k >= i = (gs, g)
-            | otherwise = let (newG, seed) = split gen
+            | otherwise = let (newG, seed) = split g
                           in go (k + 1) (newG:gs) seed        
 
 

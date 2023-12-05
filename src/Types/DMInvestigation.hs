@@ -52,7 +52,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Text as T
--- import qualified Control.Parallel.Strategies as P
+import qualified Control.Parallel.Strategies as P
 import qualified Data.List.Unique as Uniq
 import System.Random
 -- import Path
@@ -1007,14 +1007,8 @@ runAttractor ex gen (bc, att) = (newGen, (bc, zip averagedIplResults pSpacess))
     where
         averagedIplResults = averagedAttResults reps iplResultReps
         iplResultReps :: [[[Timeline]]]
---         iplResultReps = P.parMap P.rdeepseq unpacker seeds
---         unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
-        iplResultReps= L.unfoldr repeater (aGen, reps)
-        repeater (bGen, i)
-            | i > 0 = Just (iplRRs, (nGen, i - 1))
-            | otherwise = Nothing
-                where
-                    (nGen, iplRRs) = L.mapAccumL rIPLF bGen iPulsess
+        iplResultReps = P.parMap P.rdeepseq unpacker seeds
+        unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
         rIPLF = runInputPulseList att pulseF
         -- We drop the last spacing because we do not need to put a pulse line
         -- at the end of the figure. 
@@ -1023,14 +1017,13 @@ runAttractor ex gen (bc, att) = (newGen, (bc, zip averagedIplResults pSpacess))
             where pSpace (DefaultD dur) = max dur attL
                   pSpace (UserD dur) = dur
         pDurss = inputDuration <<$>> iPulsess
---         seeds = zip gens $ L.repeat iPulsess
+        seeds = zip gens $ L.repeat iPulsess
+        (gens, newGen) = genGen (expReps ex) gen
         iPulsess :: [[InputPulse]]
         iPulsess = inputPulseF ex $ att
         pulseF = pulseFold attL (expStepper ex)
         reps = (fromIntegral . expReps) ex
         attL = length att
---         (gens, newGen) = genGen (expReps ex) gen
-        (aGen, newGen) = split gen
 
 -- Average Timelines into RealTimeLines. 
 averagedAttResults :: Double -> [[[Timeline]]] -> [[RealTimeline]]
