@@ -23,6 +23,7 @@ module Types.DMInvestigation
     , NudgeDirection(..)
     , GeneralDuration(..)
     , Duration
+    , ExperimentReps
     , VEXInvestigationInvalid(..)
     , LayerResult(..)
     , ExperimentResult
@@ -30,7 +31,9 @@ module Types.DMInvestigation
     , ExpKind(..)
     , AttractorResult
     , Timeline
+    , RealTimeline
     , WasForced
+    , AvgWasForced
     , PulseSpacing
     , runInvestigation
     , pickStates
@@ -49,6 +52,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Text as T
+-- import qualified Control.Parallel.Strategies as P
 import qualified Data.List.Unique as Uniq
 import System.Random
 -- import Path
@@ -93,6 +97,7 @@ data DMExperiment = DMExperiment {
 -- There will be more of these sorts of experiments in the future. 
     , inputPulseF :: InputPulseF -- Attractor -> [[InputPulse]]
     , expKind :: ExpKind -- Was the parsed VEXExperiment general or preset?
+    , expReps :: ExperimentReps -- Times to repeat this experiment.
     }
 
 data ExpKind = P1
@@ -100,6 +105,8 @@ data ExpKind = P1
              | KDOEAtTr
              | GenExp
              deriving (Eq, Show)
+
+type ExperimentReps = Int
 
 data InitialEnvironment = InEnv
     { initCoord :: [(NodeName, NodeState)] -- Every input, pinned
@@ -167,20 +174,27 @@ data LayerResult = LayerResult
     , layerResultML :: ModelLayer
     , layerResultERs :: [ExperimentResult]
     , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
-    }
+    } deriving (Eq, Show)
 type ExperimentResult = (ExpContext, [AttractorResult])
 
 data ExpContext = ExpCon ExpName ExpDetails ExpKind deriving (Eq, Show)
 type ExpName = T.Text
 type ExpDetails = T.Text
 
-type AttractorResult = (Barcode, [([Timeline], [PulseSpacing])])
+type AttractorResult = (Barcode, [([RealTimeline], [PulseSpacing])])
 
 type PulseSpacing = Int -- The spacing between pulses
 type Timeline = B.Vector AnnotatedLayerVec
+type RealTimeline = B.Vector RealAnnotatedLayerVec
+
 type AnnotatedLayerVec = U.Vector (NodeState, WasForced)
+-- RealAnnotatedLayerVec represents the average NodeState of a series of
+-- repeated experiments, paired with the "average" amount of forcing, using a
+-- simple average over the sum of False(not forced) = 0.0 and True(forced) = 1.0
+type RealAnnotatedLayerVec = U.Vector (RealNodeState, AvgWasForced)
 
 type WasForced = Bool -- Was the NodeState in question forced to this state?
+type AvgWasForced = Double -- Average "forcedness". 0 <= awf <= 1
 
 data ExpStepper = SD PSStepper
                 | SN PNStepper'
@@ -346,23 +360,27 @@ data VEXExperiment =
     GeneralExp T.Text -- Experiment name
                InitialEnvironment
                ExperimentStep
-               [VEXInputPulse]
+              [VEXInputPulse]
+               ExperimentReps
 -- A parsed Pulse1{}.
     | Pulse1 (Duration, Duration) -- t_0 and t_end
               InitialEnvironment
               Duration -- pulse duration
              (NodeName, RealNodeState)
+              ExperimentReps
 -- A parsed KDOE{}.
     | KnockDOverE (Duration, Duration) -- t_0 and t_end
                    InitialEnvironment
                    Duration -- pulse duration
                   [NodeAlteration]
+                   ExperimentReps
 -- A parsed KDOEAtTransition
     | KDOEAtTransition (Duration, Duration) -- t_0 and t_end
                         InitialEnvironment
                         Duration -- pulse duration
                        (NodeName, RealNodeState)
                        [NodeAlteration]
+                        ExperimentReps
     deriving (Eq, Show)
 
 
@@ -579,16 +597,17 @@ phValidate mM phs
 
 mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
-mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss) =
+mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps) =
     DMExperiment <$> pure exName
                  <*> pure exName
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper expStep (layerPrep mL))
                  <*> (const <$> listedPulses)
                  <*> pure GenExp
+                 <*> pure exReps
         where
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
-mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
+mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
@@ -598,6 +617,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> (const <$> listedPulses)
                      <*> pure P1
+                     <*> pure exReps
         where
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
@@ -614,13 +634,14 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState))
                 "-" <> ((T.pack . show) dur) <> "_wInputs_" <> textInputs
             textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
             tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
-mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts) =
+mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps) =
     DMExperiment <$> pure expName
                  <*> pure expDetails
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                  <*> (const <$> listedPulses)
                  <*> pure KDOE
+                 <*> pure exReps
     where
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
@@ -633,7 +654,8 @@ mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts) =
         expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
         textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
         tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
-mkDMExperiment mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts)
+mkDMExperiment mM mL
+   (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
         Failure [KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)]
     | otherwise =
@@ -643,6 +665,7 @@ mkDMExperiment mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts)
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
                      <*> pure KDOEAtTr
+                     <*> pure exReps
         where
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
@@ -980,9 +1003,18 @@ runAttractor :: DMExperiment
              -> StdGen
              -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
-runAttractor ex gen (bc, att) = (newGen, (bc, zip iplResults pSpacess))
+runAttractor ex gen (bc, att) = (newGen, (bc, zip averagedIplResults pSpacess))
     where
-        (newGen, iplResults) = L.mapAccumL rIPLF gen iPulsess
+        averagedIplResults = averagedAttResults reps iplResultReps
+        iplResultReps :: [[[Timeline]]]
+--         iplResultReps = P.parMap P.rdeepseq unpacker seeds
+--         unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
+        iplResultReps= L.unfoldr repeater (aGen, reps)
+        repeater (bGen, i)
+            | i > 0 = Just (iplRRs, (nGen, i - 1))
+            | otherwise = Nothing
+                where
+                    (nGen, iplRRs) = L.mapAccumL rIPLF bGen iPulsess
         rIPLF = runInputPulseList att pulseF
         -- We drop the last spacing because we do not need to put a pulse line
         -- at the end of the figure. 
@@ -991,10 +1023,46 @@ runAttractor ex gen (bc, att) = (newGen, (bc, zip iplResults pSpacess))
             where pSpace (DefaultD dur) = max dur attL
                   pSpace (UserD dur) = dur
         pDurss = inputDuration <<$>> iPulsess
+--         seeds = zip gens $ L.repeat iPulsess
         iPulsess :: [[InputPulse]]
         iPulsess = inputPulseF ex $ att
         pulseF = pulseFold attL (expStepper ex)
+        reps = (fromIntegral . expReps) ex
         attL = length att
+--         (gens, newGen) = genGen (expReps ex) gen
+        (aGen, newGen) = split gen
+
+-- Average Timelines into RealTimeLines. 
+averagedAttResults :: Double -> [[[Timeline]]] -> [[RealTimeline]]
+averagedAttResults reps tlss = (fmap . fmap . B.map . U.map) divider summedVecs
+    where
+        divider :: (Int, AvgWasForced) -> (RealNodeState, AvgWasForced)
+        divider (s, av) = (fromIntegral s / reps, av/reps)
+        summedVecs :: [[B.Vector (U.Vector (Int, AvgWasForced))]]
+        summedVecs = L.foldr deepZip tlssAccum (tail tlss)
+        tlssAccum = (annoLVAccum' . head) tlss
+
+-- These are all kept as top-level functions to be very clear in the type
+-- signatures what structures are being transformed. In particular, we make the
+-- accumulator out of the head of the [[[Timeline]]] because we don't know its
+-- structure beforehand, just that it will be identical accros the list. 
+deepZip :: [[Timeline]]
+        -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
+        -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
+deepZip = (L.zipWith . L.zipWith . B.zipWith . U.zipWith) annoLVAccum
+
+annoLVAccum' :: [[B.Vector (U.Vector (NodeState, WasForced))]]
+             -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
+annoLVAccum' = (fmap . fmap . B.map . U.map) (\(i, b) -> (i, bConv b))
+
+annoLVAccum :: (NodeState, WasForced)
+            -> (Int, AvgWasForced)
+            -> (Int, AvgWasForced)
+annoLVAccum (i, b) (j, l) = (i + j, bConv b + l)
+
+bConv :: Bool -> Double
+bConv False = 0.0
+bConv True = 1.0
 
 -- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
 -- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline

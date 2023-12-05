@@ -2,12 +2,7 @@
 
 module Utilities where
 
--- All of the following is just to make initStdGen, and will go away when we
--- move to GHC 9.2.1. Done: Jan 25, 2023
--- import System.Random
--- import System.Random.Internal
--- import qualified System.Random.SplitMix as SM
-
+import System.Random.Stateful
 import qualified Data.Sequence as Seq
 import qualified Data.List as L
 import Data.Foldable (foldl', toList)
@@ -193,6 +188,15 @@ seqToVec = UVec.fromList . toList
 -- The following should go away when we move to GHC 9.2.1. Done: Jan 25, 2023
 -- initStdGen :: IO StdGen
 -- initStdGen = StdGen <$> SM.initSMGen
+
+genGen :: Int -> StdGen -> ([StdGen], StdGen)
+genGen i gen = go 0 [] gen
+    where 
+        go k gs g
+            | k >= i = (gs, g)
+            | otherwise = let (newG, seed) = split gen
+                          in go (k + 1) (newG:gs) seed        
+
 
 quadUncurry :: (a -> b -> c -> d -> e) -> ((a, b), (c, d)) -> e
 quadUncurry f ((a, b), (c, d)) = f a b c d

@@ -157,14 +157,6 @@ topStates folders mEnv = do
     let batches = P.parMap P.rdeepseq (inputStats mEnv lSpecs folders) seeds
     return $ L.foldl' (<>) mempty batches
 
-genGen :: Int -> StdGen -> ([StdGen], StdGen)
-genGen i gen = go 0 [] gen
-    where 
-        go k gs g
-            | k >= i = (gs, g)
-            | otherwise = let (newG, seed) = split gen
-                          in go (k + 1) (newG:gs) seed        
-
 -- Collect property statistics in the region of a given input combination. 
 inputStats :: (Monoid a, P.NFData a)
            => ModelEnv

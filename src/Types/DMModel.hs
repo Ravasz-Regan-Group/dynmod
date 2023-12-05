@@ -401,6 +401,7 @@ data LinkType =   Undefined_LT
                 | RNAi
                 | Acetylation
                 | Deacetylation
+                | Hydroxylation
                   deriving (Show, Eq, Ord, Bounded, Enum)
 
 instance Texy LinkType where
@@ -436,6 +437,7 @@ instance Texy LinkType where
     texy RNAi                 = (footnotesize . fromLaTeX . TeXRaw) "RNAi"
     texy Acetylation          = (footnotesize . fromLaTeX . TeXRaw) "Acet"
     texy Deacetylation        = (footnotesize . fromLaTeX . TeXRaw) "Deacet"
+    texy Hydroxylation        = (footnotesize . fromLaTeX . TeXRaw) "-OH"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

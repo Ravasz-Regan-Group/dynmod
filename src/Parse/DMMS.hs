@@ -812,6 +812,7 @@ linkTypeParse = lexeme $ rword "LinkType" >>
             <|> RNAi                 <$ rword "RNAi"
             <|> Acetylation          <$ rword "Acetylation"
             <|> Deacetylation        <$ rword "Deacetylation"
+            <|> Hydroxylation        <$ rword "Hydroxylation"
             )
         )
     <|>

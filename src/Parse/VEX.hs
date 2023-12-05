@@ -194,8 +194,8 @@ axesOrderParse = lexeme $ rword "AxesOrder" >>
         )
     )
 
--- Parse a BarcodeFilter. BarcodeFilters are optional, so if this parser succeeds,
--- we wrap the result in a Just. 
+-- Parse a BarcodeFilter. BarcodeFilters are optional, so if this parser
+-- succeeds, we wrap the result in a Just. 
 barCodeFilterParse :: Parser BarcodeFilter
 barCodeFilterParse =  onlyBCwAnyParse
                   <|> onlyBCWAllParse
@@ -246,6 +246,7 @@ generalExpParse = between (symbol "GeneralExperiment{")
                     <*> toPermutation startingModelStateParse
                     <*> toPermutation modelStepTypeParse
                     <*> toPermutation (some pulseParse)
+                    <*> toPermutationWithDefault 1 expRepsParse
         )
     )
 
@@ -325,6 +326,9 @@ nDirectionParse = (try (NudgeUp <$ rword "Up")) <|> (NudgeDown <$ rword "Down")
 durationParse :: T.Text -> Parser Duration
 durationParse tag = UserD <$> ((rword tag) >> colon >> integer)
 
+expRepsParse :: Parser ExperimentReps
+expRepsParse = rword "SampleSize" >> colon >> integer
+
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
 pulse1Parse :: Parser VEXExperiment
@@ -338,6 +342,7 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
                 <*> toPermutation startingModelStateParse
                 <*> toPermutation (durationParse "Duration")
                 <*> toPermutation flipParse
+                <*> toPermutationWithDefault 1 expRepsParse
         )
     )
 
@@ -359,6 +364,7 @@ kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
                         <*> toPermutation startingModelStateParse
                         <*> toPermutation (durationParse "Duration")
                         <*> toPermutation nodeAlterationsParse
+                        <*> toPermutationWithDefault 1 expRepsParse
         )
     )
 
@@ -378,6 +384,7 @@ kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                         <*> toPermutation (durationParse "Duration")
                         <*> toPermutation flipParse
                         <*> toPermutation nodeAlterationsParse
+                        <*> toPermutationWithDefault 1 expRepsParse
         )
     )
 
@@ -397,20 +404,20 @@ showHiddenCheck vexLExpSpec = case vexISpaceSpec vexLExpSpec of
                 newVexExps = insertBCF bcF <$> (vexExperiments vexLExpSpec)
 
 insertBCF :: BarcodeFilter -> VEXExperiment -> VEXExperiment
-insertBCF bc (GeneralExp n inEnv es ps)
-    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps 
-    | otherwise = GeneralExp n inEnv es ps
+insertBCF bc (GeneralExp n inEnv es ps reps)
+    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps reps
+    | otherwise = GeneralExp n inEnv es ps reps
     where newInEnv = inEnv {showHidden = Right bc} 
-insertBCF bc (Pulse1 ts inEnv d f)
-    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f
-    | otherwise = Pulse1 ts inEnv d f
+insertBCF bc (Pulse1 ts inEnv d f rs)
+    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f rs
+    | otherwise = Pulse1 ts inEnv d f rs
     where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KnockDOverE ts inEnv d alts)
-    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts
-    | otherwise = KnockDOverE ts inEnv d alts
+insertBCF bc (KnockDOverE ts inEnv d alts reps)
+    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts reps
+    | otherwise = KnockDOverE ts inEnv d alts reps
     where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KDOEAtTransition ts inEnv d f alts)
-    | showHidden inEnv == Left False = KDOEAtTransition ts newInEnv d f alts
-    | otherwise = KnockDOverE ts inEnv d alts
+insertBCF bc (KDOEAtTransition ts inEnv d f alts rs)
+    | showHidden inEnv == Left False = KDOEAtTransition ts newInEnv d f alts rs
+    | otherwise = KnockDOverE ts inEnv d alts rs
     where newInEnv = inEnv {showHidden = Right bc}
 

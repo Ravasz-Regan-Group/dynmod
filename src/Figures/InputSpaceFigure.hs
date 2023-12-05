@@ -712,12 +712,12 @@ cubeVector :: V2 Double
 cubeVector = 0.32 ^& 0.44
 
 
-tText' :: T.Text -> Diagram B
-tText' t = F.svgText def (T.unpack t) # F.fit_height 4
-                                      # F.set_envelope
-                                      # fillColor black
-                                      # lineWidth none
-                                      # center
+-- tText' :: T.Text -> Diagram B
+-- tText' t = F.svgText def (T.unpack t) # F.fit_height 4
+--                                       # F.set_envelope
+--                                       # fillColor black
+--                                       # lineWidth none
+--                                       # center
 
 variableText :: Double -> T.Text -> Diagram B
 variableText h t = F.svgText def (T.unpack t) # F.fit_height h

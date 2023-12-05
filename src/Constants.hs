@@ -1304,6 +1304,7 @@ lTDesc Secretion = "Secretion or shedding of a protein or other regulatory molec
 lTDesc RNAi = "This process represents inhibitory binding of cytoplasmic mRNAs by RISC-bound microRNAs that block translation and/or enhance mRNA degradation."
 lTDesc Acetylation = "Acetylation"
 lTDesc Deacetylation = "Deacetylation"
+lTDesc Hydroxylation = "Hydroxylation"
 
 -- Official descriptions of the various LinkEffects
 lEDesc :: LinkEffect -> T.Text
@@ -1339,6 +1340,7 @@ vexKeyword = [ "DMMSFile"
              , "T_0"
              , "T_end"
              , "FlipTo"
+             , "SampleSize"
              ]
 
 vexPredefined ::[T.Text]

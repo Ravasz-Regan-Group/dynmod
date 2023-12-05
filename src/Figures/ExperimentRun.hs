@@ -29,7 +29,7 @@ import qualified Data.List as L
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
 -- ine PDF file. 
-type BarcodeResult = (Barcode, [[([Timeline], [PulseSpacing])]])
+type BarcodeResult = (Barcode, [[([RealTimeline], [PulseSpacing])]])
 
 attResCombine :: [AttractorResult] -> [BarcodeResult]
 attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
@@ -138,7 +138,7 @@ runDia :: ColorMap
        -> ModelLayer
        -> Barcode
        -> [PulseSpacing]
-       -> Timeline
+       -> RealTimeline
        -> Diagram B
 runDia cMap mM mL bc pulseSps tmLn =
             (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
@@ -191,9 +191,9 @@ pulseLine lHeight pIndex = lBlock # alignY 0.975  # alignL
 timelineMMReorder :: U.Unbox a
                   => DMMSModelMapping
                   -> LayerNameIndexBimap
-                  -> B.Vector (U.Vector (NodeState, a))
+                  -> B.Vector (U.Vector (RealNodeState, a))
                   -> Either InvalidLVReorder
-                           (B.Vector (U.Vector (NodeState, a)))
+                           (B.Vector (U.Vector (RealNodeState, a)))
 timelineMMReorder dmmsMM lniBMap tmLn =
     traverse (annotatedLayerVecReorder lniBMap switchNodeOrder) tmLn
     where
@@ -202,10 +202,10 @@ timelineMMReorder dmmsMM lniBMap tmLn =
 -- Re-order an AnnotatedLayerVec according to a new List of NodeNames. Basic
 -- error checking, but use at your own risk. 
 annotatedLayerVecReorder :: U.Unbox a
-                         => LayerNameIndexBimap
-                         -> [NodeName]
-                         -> U.Vector (NodeState, a)
-                         -> Either InvalidLVReorder (U.Vector (NodeState, a))
+                     => LayerNameIndexBimap
+                     -> [NodeName]
+                     -> U.Vector (RealNodeState, a)
+                     -> Either InvalidLVReorder (U.Vector (RealNodeState, a))
 annotatedLayerVecReorder lniBMap newOrder annLVec
     | (L.sort . BM.keys) lniBMap /= L.sort newOrder =
         Left NewOldOrderingMismatch
@@ -224,23 +224,34 @@ findBar bc sw = (sw, phN)
 nodeStripDia :: LayerNameIndexBimap
              -> LayerRangeVec
              -> Double
-             -> (NodeName, [(NodeState, WasForced)])
+             -> (NodeName, [(RealNodeState, AvgWasForced)])
              -> Diagram B
 nodeStripDia reordLNIBMap reordRTs stripHt (nName, annTLine) = timeStrip
     where
         timeStrip = hcat $ nodeStateDia nRange stripHt <$> annTLine
         nRange = reordRTs U.! (reordLNIBMap BM.! nName)
 
-nodeStateDia :: (Int, Int) -> Double -> (NodeState, WasForced) -> Diagram B
-nodeStateDia (rangeB, rangeT) stripHt (nState, wForced) = dia
+nodeStateDia :: (Int, Int)
+             -> Double
+             -> (RealNodeState, AvgWasForced)
+             -> Diagram B
+nodeStateDia (rangeB, rangeT) stripHt (realNState, avgWForced) = dia
     where
-        dia = rect 1 stripHt # theFillColor # lineWidth none
-        theFillColor = case cPick of
+--        0 <= avgWForced <= 1 by construction, see averagedAttResults
+        dia
+            | avgWForced < 0.1 = rect 1 stripHt # plainCPick # lineWidth none
+            | avgWForced >= 0.9 = rect 1 stripHt # alteredCPick # lineWidth none
+            | otherwise = center (plainRect === alteredRect)
+        plainRect = rect 1 plainStripHt # plainCPick # lineWidth none
+        alteredRect = rect 1 alteredStripHt # alteredCPick # lineWidth none 
+        plainStripHt = stripHt * (1 - avgWForced)
+        alteredStripHt = stripHt * avgWForced
+        plainCPick = case gradientPick plasmaCM fracRange realNState of
             Nothing -> fcA transparent
-            Just c -> fillColor c
-        cPick | not wForced = gradientPick plasmaCM fracRange realNState
-              | otherwise   = gradientPick alteredNodeCM fracRange realNState
-        realNState = fromIntegral nState
+            Just cp -> fillColor cp
+        alteredCPick = case gradientPick alteredNodeCM fracRange realNState of
+            Nothing -> fcA transparent
+            Just ca -> fillColor ca
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
 runSwitchDia :: ColorMap
