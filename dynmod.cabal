@@ -48,7 +48,7 @@ library
       Properties.Attractors
       Figures.AttHeatMap
       Figures.InputSpaceFigure
-      Figures.ExperimentRun
+      Figures.NodeTimeCourse
   other-modules:
       Parse.Attractor
       Parse.VEX

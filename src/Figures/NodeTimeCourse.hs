@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE FlexibleContexts          #-}
 
-module Figures.ExperimentRun
+module Figures.NodeTimeCourse
     ( layerRunFigure
     ) where
 
@@ -28,7 +28,7 @@ import qualified Data.List as L
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
--- ine PDF file. 
+-- one PDF file. 
 type BarcodeResult = (Barcode, [[([RealTimeline], [PulseSpacing])]])
 
 attResCombine :: [AttractorResult] -> [BarcodeResult]
@@ -46,8 +46,8 @@ layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
         fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
 
--- Create run figures for an individual experiment. Each element in the
--- [([Timeline], [PulseSpacing])] in the AttractorResult is
+-- Create NodeTimeCourse figures for an individual experiment. Each element in
+-- the [([Timeline], [PulseSpacing])] in the AttractorResult is
 -- turned into a single PDF, no matter how many Timelines it has. 
 -- As of 10/24/23, only KDOEAtTransition experiments will have more than one, 
 -- because only they alter the experiment as a function of the size of the
@@ -68,8 +68,9 @@ bcRunDia :: ColorMap
          -> ModelLayer
          -> BarcodeResult
          -> (Barcode, [Diagram B])
-bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 ((legendDia :) <$> bcFigss))
+bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 <$> captionedBCFigss)
     where
+        captionedBCFigss = (legendDia :) <$> bcFigss
         bcFigss = fmap (mconcat . fmap attRunDia) tmLnPIs
         attRunDia (tmLns, pIs) = runDia cMap mM mL bc pIs <$> tmLns
         legendDia = bcRunFigLegendDia cMap bc
@@ -140,7 +141,7 @@ runDia :: ColorMap
        -> [PulseSpacing]
        -> RealTimeline
        -> Diagram B
-runDia cMap mM mL bc pulseSps tmLn =
+runDia cMap mM mL bc pulseSps phTmLn =
             (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
     where
         timeAxis = alignL $ switchSpacer |||
@@ -174,9 +175,10 @@ runDia cMap mM mL bc pulseSps tmLn =
         reordTmLn = case timelineMMReorder (fst <<$>> mM) lniBMap tmLn of
             Right r -> r
             Left errs ->
-                error $ "reordTmLn in ExperimentRun.hs has: " <> show errs
+                error $ "reordTmLn in NodeTimeCourse.hs has: " <> show errs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
         switchNodeOrder = concatMap (fst . snd) mM
+        tmLn = B.map fst phTmLn
 
 -- Mark where each new pulse begins. 
 pulseLine :: Double -> Int -> Diagram B
@@ -299,6 +301,3 @@ tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
                                       # fillColor black
                                       # lineWidth none
                                       # center
-
-
-

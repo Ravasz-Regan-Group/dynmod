@@ -37,8 +37,6 @@ import GHC.Generics (Generic)
 import qualified Data.List as L
 import Data.Maybe (isNothing, catMaybes)
 
-type AttractorIndex = Int
-
 -- Types to construct 5D diagrams with BarCodeClusters.
 -- The 1-5 Environments that will form the axes of environmental diagrams,
 -- possibly in an order specified in an ISFSpec, any remaining inputs fixed to
@@ -333,7 +331,7 @@ mkSliceCandidate lniBMap att ph
     | otherwise  = case anyMatchReorder intPh att of
         Nothing -> MissCandidate attSize
         Just (ordIntPh, ordAtt, attOffset)
-            | not $ isStrictlyIncreasing matchInts -> MissCandidate attSize
+            | not $ isStepIncreasing matchInts -> MissCandidate attSize
             | any isNothing matches ->
                 RedLineCandidate rlcCount fPrintSize phName
             | otherwise ->
@@ -357,7 +355,7 @@ mkSliceCandidate lniBMap att ph
         attSize = B.length att
 
 -- Do any of the Int-converted SubSpaces in the Phenotype match to any
--- state in theAttractor? If so, reorder both Phenotype and Attractor at the
+-- state in the Attractor? If so, reorder both Phenotype and Attractor at the
 -- first Phenotype SubSpace that matches any Attractor state. Return them along
 -- with the index offset for the Attractor, so as to be able to construct a
 -- properly indexed Match. 
@@ -375,38 +373,6 @@ anyMatchReorder intPh att
         attOffset = B.length backThread
         (backSS, frontSS) = L.break (isSSMatch (B.head frontThread)) intPh
 
--- Do the states in the Int-converted Subspace match the equivalent states in
--- the LayerVec?
-isSSMatch :: LayerVec -> IntSubSpace -> Bool
-isSSMatch lV sS = all (isStateMatch lV) sS
-    where
-        isStateMatch lVec (nodeNameInt, nState) = nState == lVec U.! nodeNameInt
-
-
--- Find the location of the first place in the Attractor, if any, that the Int-
--- converted SubSpace matches.
-matchLocation :: Attractor -> IntSubSpace -> Maybe AttractorIndex
-matchLocation att sS = B.findIndex (flip isSSMatch sS) att
-
--- Given an [IntSubSpace] that we know matches completely onto the given
--- Attractor, does that [IntSubSpace] completely match an integer number of
--- additional times? Returns lists of NodeIndices of the Attractor. 
-loopCheck :: [IntSubSpace] -> Attractor -> AttractorIndex -> [[AttractorIndex]]
-loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
-    where
-        croppedAtt = B.drop (lastIndex + 1) att
-        go anAtt matches indexOffset
-            | length sSs > B.length anAtt = matches
-            | not $ isStrictlyIncreasing oMatchInts = matches
-            | any isNothing otherMatches = matches
-            | otherwise = go newCroppedAtt newMatches newIndexOffset
-            where
-                newCroppedAtt = B.drop (newLastIndex + 1) anAtt 
-                newMatches = matches <> [((indexOffset +) <$> oMatchInts)]
-                newIndexOffset = indexOffset + newLastIndex + 1
-                newLastIndex = last oMatchInts
-                oMatchInts = catMaybes otherMatches
-                otherMatches = matchLocation anAtt <$> sSs
 
 bcFilterF :: Maybe BarcodeFilter -> Barcode -> Bool
 bcFilterF Nothing _ = True

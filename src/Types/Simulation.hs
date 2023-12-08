@@ -6,6 +6,9 @@ module Types.Simulation
     , ModelEnv
     , SamplingParameters (..)
     , Thread
+    , isSSMatch
+    , matchLocation
+    , loopCheck
     , Attractor
     , AttractorSet
     , AttractorBundle
@@ -53,6 +56,7 @@ import qualified Data.List.Unique as Uniq
 import Data.Maybe (fromJust)
 import qualified Data.Sequence as S
 import qualified Data.List as L
+import Data.Maybe (isNothing, catMaybes)
 
 
 type Simulation = State StdGen
@@ -115,6 +119,42 @@ data LayerSpecs = LayerSpecs {
 type FixedVec = U.Vector (NodeIndex, NodeState)
 type RangeTop = Int
 type Thread = B.Vector LayerVec
+
+-- These functions are needed in both DMInvestigation.hs and
+-- InputSpaceFigure.hs, so here they go. 
+-- Do the states in the Int-converted Subspace match the equivalent states in
+-- the LayerVec?
+isSSMatch :: LayerVec -> IntSubSpace -> Bool
+isSSMatch lV sS = all (isStateMatch lV) sS
+    where
+        isStateMatch lVec (nodeNameInt, nState) = nState == lVec U.! nodeNameInt
+
+-- Find the location of the first place in the Thread, if any, that the Int-
+-- converted SubSpace matches.
+matchLocation :: Thread -> IntSubSpace -> Maybe Int
+matchLocation att sS = B.findIndex (flip isSSMatch sS) att
+
+-- Given an [IntSubSpace] that we know matches completely onto the given
+-- Thread, does that [IntSubSpace] completely match an integer number of
+-- additional times? Returns lists of indices of the Thread. 
+loopCheck :: [IntSubSpace] -> Thread -> Int -> [[Int]]
+loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
+    where
+        croppedAtt = B.drop (lastIndex + 1) att
+        go anAtt matches indexOffset
+            | length sSs > B.length anAtt = matches
+            | not $ isStepIncreasing oMatchInts = matches
+            | any isNothing otherMatches = matches
+            | otherwise = go newCroppedAtt newMatches newIndexOffset
+            where
+                newCroppedAtt = B.drop (newLastIndex + 1) anAtt 
+                newMatches = matches <> [((indexOffset +) <$> oMatchInts)]
+                newIndexOffset = indexOffset + newLastIndex + 1
+                newLastIndex = last oMatchInts
+                oMatchInts = catMaybes otherMatches
+                otherMatches = matchLocation anAtt <$> sSs
+
+
 -- Attractors are loops of LayerVecs (whose size may be 1). ONLY create
 -- Attractors with mkAttractor, which guarantees that the attractor will begin
 -- with its "smallest" member. Otherwise every time we find the same Attractor,

@@ -49,7 +49,7 @@ library:
   - Properties.Attractors
   - Figures.AttHeatMap
   - Figures.InputSpaceFigure
-  - Figures.ExperimentRun
+  - Figures.NodeTimeCourse
   ghc-options:
   - -Wall
   - -O2

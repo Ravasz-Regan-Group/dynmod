@@ -29,7 +29,7 @@ import Text.LaTeX.Base.Render (render)
 import Publish
 import Figures.AttHeatMap
 import Figures.InputSpaceFigure
-import Figures.ExperimentRun
+import Figures.NodeTimeCourse
 import Types.GML
 import qualified ReadWrite as RW
 import qualified Data.List.Split as Split

@@ -58,7 +58,7 @@ import System.Random
 -- import Path
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
-import Data.Maybe (mapMaybe, fromJust)
+import Data.Maybe (mapMaybe, fromJust, isNothing, catMaybes)
 import Data.Bitraversable (bitraverse)
 
 -- Defining the types that comprise sampling preferences, input space diagram
@@ -184,17 +184,26 @@ type ExpDetails = T.Text
 type AttractorResult = (Barcode, [([RealTimeline], [PulseSpacing])])
 
 type PulseSpacing = Int -- The spacing between pulses
-type Timeline = B.Vector AnnotatedLayerVec
-type RealTimeline = B.Vector RealAnnotatedLayerVec
 
+type Timeline = B.Vector (AnnotatedLayerVec, [PhenotypeName])
 type AnnotatedLayerVec = U.Vector (NodeState, WasForced)
--- RealAnnotatedLayerVec represents the average NodeState of a series of
--- repeated experiments, paired with the "average" amount of forcing, using a
--- simple average over the sum of False(not forced) = 0.0 and True(forced) = 1.0
-type RealAnnotatedLayerVec = U.Vector (RealNodeState, AvgWasForced)
+-- Was the NodeState in question forced to this state?
+type WasForced = Bool
+-- slices of a timeline, of the form (a, b) | b >= a >= 0
+type TLSlice = (Int, Int)
+-- Partial Timeline. This comes up often enough that it saves space
+type PTimeLine = B.Vector (U.Vector (NodeState, WasForced))
 
-type WasForced = Bool -- Was the NodeState in question forced to this state?
-type AvgWasForced = Double -- Average "forcedness". 0 <= awf <= 1
+type RealTimeline = B.Vector (RealAnnotatedLayerVec, PhenotypeWeights)
+-- RealAnnotatedLayerVec represents the average NodeState of a series of
+-- repeated experiments, associated with various properties.
+type RealAnnotatedLayerVec = U.Vector (RealNodeState, AvgWasForced)
+-- the "average" amount of forcing, using a simple average over the sum of
+-- False(not forced) = 0.0 and True(forced) = 1.0. 0 <= awf <= 1
+type AvgWasForced = Double
+-- Represents the distribution of present Phenotypes at this time-step. It is
+-- weighted over all runs, NOT over the present Phenotypes. 
+type PhenotypeWeights = M.HashMap PhenotypeName Double
 
 data ExpStepper = SD PSStepper
                 | SN PNStepper'
@@ -606,6 +615,7 @@ mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps) =
                  <*> pure GenExp
                  <*> pure exReps
         where
+            listedPulses :: Validation [VEXInvestigationInvalid] [[InputPulse]]
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
 mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
@@ -775,7 +785,7 @@ mkStepper AsynchronousExpStepper lSpecs = AD stepper
         ivMap = M.fromList $ zip [0..] $ iVecList lSpecs
 
 -- Make the Attractor -> [[InputPulse]] function for the
--- Knockdown/Over-Expression experiment
+-- Knockdown/Over-Expression At Transition experiment
 mkKDOEAtTrF :: ModelLayer
             -> [(NodeName, RealNodeState)]
             -> [(NodeName, RealNodeState)]
@@ -973,9 +983,13 @@ runLayerExperiments :: ColorMap
 runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
     where
         lResult = LayerResult mMap mL eResults $ invesIBundle lExpSpec
-        (newGen, eResults) = L.mapAccumL (runExperiment layerBCG atts) gen exps
+        (newGen, eResults) =
+            L.mapAccumL (runExperiment phData layerBCG atts) gen exps
         layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
         exps = experiments lExpSpec
+        phData = (lniBMap, phs)
+        phs :: [Phenotype]
+        phs = concatMap (snd . snd) mMap
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mL = layerExpMLayer lExpSpec
         mMap = layerExpMMapping lExpSpec
@@ -986,27 +1000,31 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- each attractor in the set, where n is the length of the attractor, starting
 -- at the next in the loop each time. AttractorResults are then combined if
 -- their Barcodes are identical. 
-runExperiment :: (Attractor -> (Barcode, Attractor))
+runExperiment :: (LayerNameIndexBimap, [Phenotype])
+              -> (Attractor -> (Barcode, Attractor))
               -> HS.HashSet Attractor
               -> StdGen
               -> DMExperiment
               -> (StdGen, ExperimentResult)
-runExperiment layerBCG attSet gen ex = (newGen, (exCon, attResults))
+runExperiment phData layerBCG attSet gen ex = (newGen, (exCon, attResults))
     where
-        (newGen, attResults) = L.mapAccumL (runAttractor ex) gen filteredAtts
+        (newGen, attResults) =
+            L.mapAccumL (runAttractor phData ex) gen filteredAtts
         filteredAtts = attFilter ex $ layerBCG <$> attList
         attList = HS.toList attSet
         exCon = ExpCon (experimentName ex) (experimentDetails ex) (expKind ex)
 
 
-runAttractor :: DMExperiment
+runAttractor :: (LayerNameIndexBimap, [Phenotype])
+             -> DMExperiment
              -> StdGen
              -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
-runAttractor ex gen (bc, att) = (newGen, (bc, zip averagedIplResults pSpacess))
+runAttractor phData ex gen (bc, att) = (newGen, (bc, zip avgIplRes pSpacess))
     where
-        averagedIplResults = averagedAttResults reps iplResultReps
-        iplResultReps :: [[[Timeline]]]
+        avgIplRes = averagedAttResults reps annIplResultReps
+        annIplResultReps = (fmap . fmap . fmap) (phMatch phData) iplResultReps
+        iplResultReps :: [[[PTimeLine]]]
         iplResultReps = P.parMap P.rdeepseq unpacker seeds
         unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
         rIPLF = runInputPulseList att pulseF
@@ -1027,44 +1045,129 @@ runAttractor ex gen (bc, att) = (newGen, (bc, zip averagedIplResults pSpacess))
 
 -- Average Timelines into RealTimeLines. 
 averagedAttResults :: Double -> [[[Timeline]]] -> [[RealTimeline]]
-averagedAttResults reps tlss = (fmap . fmap . B.map . U.map) divider summedVecs
+averagedAttResults reps tlss = (fmap . fmap . B.map) (divider reps) summedVecs
     where
-        divider :: (Int, AvgWasForced) -> (RealNodeState, AvgWasForced)
-        divider (s, av) = (fromIntegral s / reps, av/reps)
-        summedVecs :: [[B.Vector (U.Vector (Int, AvgWasForced))]]
+        summedVecs ::
+            [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
         summedVecs = L.foldr deepZip tlssAccum (tail tlss)
-        tlssAccum = (annoLVAccum' . head) tlss
+        tlssAccum = (mkAnnoLVAcc . head) tlss
 
 -- These are all kept as top-level functions to be very clear in the type
 -- signatures what structures are being transformed. In particular, we make the
 -- accumulator out of the head of the [[[Timeline]]] because we don't know its
 -- structure beforehand, just that it will be identical accros the list. 
+divider :: Double
+        -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
+        -> (RealAnnotatedLayerVec, PhenotypeWeights)
+divider reps (accVec, phHM) = (U.map uVecDivider accVec, M.map hmDivider phHM)
+    where
+        hmDivider x = fromIntegral x / reps
+        uVecDivider (stSum, sFSum) = (fromIntegral stSum / reps, sFSum / reps)
+
 deepZip :: [[Timeline]]
-        -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
-        -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
-deepZip = (L.zipWith . L.zipWith . B.zipWith . U.zipWith) annoLVAccum
+   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
+   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
+deepZip = (L.zipWith . L.zipWith . B.zipWith) annoLVAccum
 
-annoLVAccum' :: [[B.Vector (U.Vector (NodeState, WasForced))]]
-             -> [[B.Vector (U.Vector (Int, AvgWasForced))]]
-annoLVAccum' = (fmap . fmap . B.map . U.map) (\(i, b) -> (i, bConv b))
+mkAnnoLVAcc :: [[B.Vector (AnnotatedLayerVec, [PhenotypeName])]]
+   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
+mkAnnoLVAcc = (fmap . fmap . B.map) prepAcc
+    where
+        prepAcc (uVec, phNs) = (U.map prepUVec uVec, mkPhNameMap phNs)        
+        prepUVec (nSt, wF) = (nSt, bConv wF)
+        mkPhNameMap phN = M.fromList $ (\x -> (x, 1)) <$> phN
 
-annoLVAccum :: (NodeState, WasForced)
-            -> (Int, AvgWasForced)
-            -> (Int, AvgWasForced)
-annoLVAccum (i, b) (j, l) = (i + j, bConv b + l)
+annoLVAccum :: (AnnotatedLayerVec, [PhenotypeName])
+            -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
+            -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
+annoLVAccum (uVec, phNs) (accVec, phHM) = (newVec, newPhHM)
+    where
+        newPhHM = foldr hFold phHM phNs
+        hFold phN phMap = M.insertWith (+) phN 1 phMap
+        newVec = U.zipWith uZip uVec accVec
+        uZip (nSt, wF) (stSum, sFSum) = (nSt + stSum, bConv wF + sFSum)
 
 bConv :: Bool -> Double
 bConv False = 0.0
 bConv True = 1.0
 
+-- Find which Phenotypes are present in the given Timeline, and where.
+phMatch :: (LayerNameIndexBimap, [Phenotype]) -> PTimeLine -> Timeline
+phMatch (lniBMap, phs) partialTmln = phMatchIntegrate partialTmln phSlices
+    where
+        phSlices = mapMaybe phMatch' phs
+        phMatch' :: Phenotype -> Maybe (PhenotypeName, [TLSlice])
+        phMatch' ph
+            | fPrintSize > tmLnSize = Nothing
+            | otherwise = case phMatchReorder intPh tThread of
+                Nothing -> Nothing
+                Just ordIntPh
+                    | not $ isStepIncreasing matchInts -> Nothing
+                    | any isNothing matches -> Nothing
+                    | otherwise -> Just (phenotypeName ph, allSlices)
+                    where
+                        allSlices = mkRange <$> (matchInts:extraSlices)
+                        extraSlices =
+                            loopCheck ordIntPh tThread lastMatchIndex
+                        lastMatchIndex = last matchInts
+                        matchInts = catMaybes matches
+                        matches = matchLocation tThread <$> ordIntPh
+                        mkRange nSts = (head nSts, last nSts)
+            where
+                tThread :: Thread
+                tThread = B.map (fst . U.unzip) partialTmln
+                intPh = f <<$>> fPrint
+                    where f (x, y) = (lniBMap BM.! x, y)
+                tmLnSize = B.length partialTmln
+                fPrintSize = L.length fPrint
+                fPrint = fingerprint ph
+
+-- transform our list of PhenotypeNames with associated [TLSlice] into a Vector
+-- of lists of matching Phenotypes for each timestep in the partial Timeline, 
+-- Then zip them together into an actual Timeline. 
+phMatchIntegrate :: PTimeLine -> [(PhenotypeName, [TLSlice])] -> Timeline
+phMatchIntegrate partialTmln phSlices = B.zip partialTmln phenotypesVec
+    where
+        phenotypesVec = B.generate (B.length partialTmln) lookuper
+        lookuper i = M.findWithDefault [] i indexMap
+        indexMap = foldr integrator M.empty phSlices
+        integrator :: (PhenotypeName, [TLSlice])
+                   -> M.HashMap Int [PhenotypeName]
+                   -> M.HashMap Int [PhenotypeName]
+        integrator (phName, tlSls) indexM = foldr integ indexM tlSls
+            where
+                integ :: (Int, Int)
+                      -> M.HashMap Int [PhenotypeName]
+                      -> M.HashMap Int [PhenotypeName]
+                integ (start, end) iM = foldr itg iM [start..end]
+                    where
+                        itg :: Int
+                            -> M.HashMap Int [PhenotypeName]
+                            -> M.HashMap Int [PhenotypeName]
+                        itg j aM = M.insertWith (<>) j [phName] aM
+
+
+-- Do any of the Int-converted SubSpaces in the Phenotype match to any
+-- state in the Timeline? If so, reorder the Phenotype at the first Phenotype
+-- SubSpace that matches any Attractor state and return it. 
+phMatchReorder :: [IntSubSpace] -> Thread -> Maybe [IntSubSpace]
+phMatchReorder intPh tThread = case attOffset of
+    Nothing -> Nothing
+    Just i -> Just (frontSS <> backSS)
+        where
+            (backSS, frontSS) = L.break (isSSMatch (tThread B.! i)) intPh
+    where
+        attOffset = B.findIndex (isAttMatch intPh) tThread
+        isAttMatch iph attLVec = any (isSSMatch attLVec) iph
+
 -- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
 -- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline
 -- in its own unfoldr step. 
 runInputPulseList :: Attractor
-                  -> ((StdGen, Timeline) -> InputPulse -> (StdGen, Timeline))
+                  -> ((StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine))
                   -> StdGen
                   -> [InputPulse]
-                  -> (StdGen, [Timeline])
+                  -> (StdGen, [PTimeLine])
 runInputPulseList att pulseF gen iPulses =
     L.mapAccumL (runLayerVec iPulses pulseF) gen lVecList
     where
@@ -1075,11 +1178,8 @@ runInputPulseList att pulseF gen iPulses =
 
 -- L.foldl' function to consume an InputPulse and add to a Timeline, with
 -- various types of steppers. 
-pulseFold :: Int
-          -> ExpStepper
-          -> (StdGen, Timeline)
-          -> InputPulse
-          -> (StdGen, Timeline)
+pulseFold :: Int -> ExpStepper
+          -> (StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine)
 pulseFold attL sTPR (gen, tmLn) iPulse = case sTPR of
     (SD stepper) -> (newGen, tmLn <> newTmLn)
         where
