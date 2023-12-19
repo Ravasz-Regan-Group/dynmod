@@ -177,11 +177,11 @@ limitedInputsSParse = rword "LimitedInputs" >> colon >>
 inputSpaceDiagramParse :: Parser ISFSpec
 inputSpaceDiagramParse = between (symbol "InputSpaceDiagram{")
                                  (symbol "InputSpaceDiagram}")
-    (runPermutation $ (ISFSpec
+    (runPermutation $ ISFSpec
          <$> toPermutationWithDefault [] axesOrderParse
          <*> toPermutationWithDefault Nothing (Just <$> barCodeFilterParse)
          <*> toPermutationWithDefault [] (coordParse "PinnedInputs")
-                  )
+                  
     )
 
 -- Parser the order of axes for the input space diagram. 
@@ -242,12 +242,13 @@ generalExpParse :: Parser VEXExperiment
 generalExpParse = between (symbol "GeneralExperiment{")
                           (symbol "GeneralExperiment}")
     (runPermutation $
-        (GeneralExp <$> toPermutation (identifier "ExperimentName")
-                    <*> toPermutation startingModelStateParse
-                    <*> toPermutation modelStepTypeParse
-                    <*> toPermutation (some pulseParse)
-                    <*> toPermutationWithDefault 1 expRepsParse
-        )
+        GeneralExp <$> toPermutation (identifier "ExperimentName")
+                   <*> toPermutation startingModelStateParse
+                   <*> toPermutation modelStepTypeParse
+                   <*> toPermutation (some pulseParse)
+                   <*> toPermutationWithDefault 1 expRepsParse
+                   <*> toPermutation figKindsParse
+        
     )
 
 -- Parse an InitialEnvironment. When we go to run the actual experiment, this
@@ -256,11 +257,11 @@ startingModelStateParse :: Parser InitialEnvironment
 startingModelStateParse = between (symbol "StartingModelState{")
                                   (symbol "StartingModelState}")
     (runPermutation $
-        (InEnv <$> toPermutation (coordParse "InputCoordinate")
-               <*> toPermutationWithDefault Nothing
-                                    (Just <$> barCodeFilterParse)
-               <*> toPermutation showHiddenParse
-        )
+        InEnv <$> toPermutation (coordParse "InputCoordinate")
+              <*> toPermutationWithDefault Nothing
+                                   (Just <$> barCodeFilterParse)
+              <*> toPermutation showHiddenParse
+        
     )
 
 modelStepTypeParse :: Parser ExperimentStep
@@ -284,10 +285,10 @@ boolParse = (try (True <$ rword "True")) <|> (False <$ rword "False")
 pulseParse :: Parser VEXInputPulse
 pulseParse = between (symbol "Pulse{") (symbol "Pulse}")
     (runPermutation $
-        (VEXInPt <$> toPermutation (realCoordParse "InputFix")
-                 <*> toPermutation nodeAlterationsParse
-                 <*> (toPermutation (durationParse "Duration"))
-        )
+        VEXInPt <$> toPermutation (realCoordParse "InputFix")
+                <*> toPermutation nodeAlterationsParse
+                <*> (toPermutation (durationParse "Duration"))
+        
     )
 
 coordParse :: T.Text -> Parser [(NodeName, NodeState)]
@@ -326,24 +327,42 @@ nDirectionParse = (try (NudgeUp <$ rword "Up")) <|> (NudgeDown <$ rword "Down")
 durationParse :: T.Text -> Parser Duration
 durationParse tag = UserD <$> ((rword tag) >> colon >> integer)
 
+-- How many times do we run this experiment?
 expRepsParse :: Parser ExperimentReps
 expRepsParse = rword "SampleSize" >> colon >> integer
+
+-- What kinds of figures do we produce? This parses the kinds of figures
+-- that will be made from single experiments, as opposed to a 5-D figure, which
+-- you only make one of per ModelMapping. 
+figKindsParse :: Parser FigKinds
+figKindsParse = runPermutation $
+    FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
+             <*> toPermutationWithDefault False phTimeCourseParse
+
+-- Do we produce a NOde time course figure? Default to True. 
+nodeTimeCourseParse :: Parser DoNodeTimeCourse
+nodeTimeCourseParse = rword "NodeTimeCourse" >> colon >> boolParse
+
+-- Do we produce a Phenotype time course figure? Default to False. 
+phTimeCourseParse :: Parser DoPhenotypeTimeCourse
+phTimeCourseParse = rword "PhenotypeTimeCourse" >> colon >> boolParse
 
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
 pulse1Parse :: Parser VEXExperiment
 pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
     (runPermutation $
-        (Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
-                                (durationParse "t_0")
-                         <*> toPermutationWithDefault (DefaultD 50)
-                                (durationParse "t_end")
-                    )
-                <*> toPermutation startingModelStateParse
-                <*> toPermutation (durationParse "Duration")
-                <*> toPermutation flipParse
-                <*> toPermutationWithDefault 1 expRepsParse
-        )
+        Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
+                               (durationParse "t_0")
+                        <*> toPermutationWithDefault (DefaultD 50)
+                               (durationParse "t_end")
+                   )
+               <*> toPermutation startingModelStateParse
+               <*> toPermutation (durationParse "Duration")
+               <*> toPermutation flipParse
+               <*> toPermutationWithDefault 1 expRepsParse
+               <*> toPermutation figKindsParse
+        
     )
 
 flipParse :: Parser (NodeName, RealNodeState)
@@ -355,17 +374,18 @@ flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
 kdoeParse :: Parser VEXExperiment
 kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
     (runPermutation $
-        (KnockDOverE <$>
-                  ((,) <$> toPermutationWithDefault (DefaultD 50)
-                            (durationParse "t_0")
-                       <*> toPermutationWithDefault (DefaultD 50)
-                            (durationParse "t_end")
-                            )
-                        <*> toPermutation startingModelStateParse
-                        <*> toPermutation (durationParse "Duration")
-                        <*> toPermutation nodeAlterationsParse
-                        <*> toPermutationWithDefault 1 expRepsParse
-        )
+        KnockDOverE <$>
+                 ((,) <$> toPermutationWithDefault (DefaultD 50)
+                           (durationParse "t_0")
+                      <*> toPermutationWithDefault (DefaultD 50)
+                           (durationParse "t_end")
+                           )
+                       <*> toPermutation startingModelStateParse
+                       <*> toPermutation (durationParse "Duration")
+                       <*> toPermutation nodeAlterationsParse
+                       <*> toPermutationWithDefault 1 expRepsParse
+                       <*> toPermutation figKindsParse
+        
     )
 
 -- Parse a KDOEAtTransition. t_0 and t_end are optional, so they get the default
@@ -374,18 +394,19 @@ kdoeAtTransitionParse :: Parser VEXExperiment
 kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                                 (symbol "KDOEAtTransition}")
     (runPermutation $
-        (KDOEAtTransition <$>
-                  ((,) <$> toPermutationWithDefault (DefaultD 50)
-                            (durationParse "t_0")
-                       <*> toPermutationWithDefault (DefaultD 50)
-                            (durationParse "t_end")
-                            )
-                        <*> toPermutation startingModelStateParse
-                        <*> toPermutation (durationParse "Duration")
-                        <*> toPermutation flipParse
-                        <*> toPermutation nodeAlterationsParse
-                        <*> toPermutationWithDefault 1 expRepsParse
-        )
+        KDOEAtTransition <$>
+                 ((,) <$> toPermutationWithDefault (DefaultD 50)
+                           (durationParse "t_0")
+                      <*> toPermutationWithDefault (DefaultD 50)
+                           (durationParse "t_end")
+                           )
+                       <*> toPermutation startingModelStateParse
+                       <*> toPermutation (durationParse "Duration")
+                       <*> toPermutation flipParse
+                       <*> toPermutation nodeAlterationsParse
+                       <*> toPermutationWithDefault 1 expRepsParse
+                       <*> toPermutation figKindsParse
+        
     )
 
 -- In every experiment is a StartingModelState{}, whose
@@ -404,20 +425,21 @@ showHiddenCheck vexLExpSpec = case vexISpaceSpec vexLExpSpec of
                 newVexExps = insertBCF bcF <$> (vexExperiments vexLExpSpec)
 
 insertBCF :: BarcodeFilter -> VEXExperiment -> VEXExperiment
-insertBCF bc (GeneralExp n inEnv es ps reps)
-    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps reps
-    | otherwise = GeneralExp n inEnv es ps reps
+insertBCF bc (GeneralExp n inEnv es ps reps fs)
+    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps reps fs
+    | otherwise = GeneralExp n inEnv es ps reps fs
     where newInEnv = inEnv {showHidden = Right bc} 
-insertBCF bc (Pulse1 ts inEnv d f rs)
-    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f rs
-    | otherwise = Pulse1 ts inEnv d f rs
+insertBCF bc (Pulse1 ts inEnv d f rs fs)
+    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f rs fs
+    | otherwise = Pulse1 ts inEnv d f rs fs
     where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KnockDOverE ts inEnv d alts reps)
-    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts reps
-    | otherwise = KnockDOverE ts inEnv d alts reps
+insertBCF bc (KnockDOverE ts inEnv d alts reps fs)
+    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts reps fs
+    | otherwise = KnockDOverE ts inEnv d alts reps fs
     where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KDOEAtTransition ts inEnv d f alts rs)
-    | showHidden inEnv == Left False = KDOEAtTransition ts newInEnv d f alts rs
-    | otherwise = KnockDOverE ts inEnv d alts rs
+insertBCF bc (KDOEAtTransition ts inEnv d f alts rs fs)
+    | showHidden inEnv == Left False =
+        KDOEAtTransition ts newInEnv d f alts rs fs
+    | otherwise = KnockDOverE ts inEnv d alts rs fs
     where newInEnv = inEnv {showHidden = Right bc}
 

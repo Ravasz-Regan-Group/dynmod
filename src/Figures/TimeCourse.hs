@@ -3,8 +3,9 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE FlexibleContexts          #-}
 
-module Figures.NodeTimeCourse
+module Figures.TimeCourse
     ( layerRunFigure
+    , BCExpFigures(..)
     ) where
 
 import Types.DMModel
@@ -20,6 +21,7 @@ import qualified Data.Text as T
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
+import qualified Data.Colour as C
 import Data.List.Split (splitPlaces)
 import Diagrams.Prelude
 import Diagrams.Backend.Cairo
@@ -31,15 +33,21 @@ import qualified Data.List as L
 -- one PDF file. 
 type BarcodeResult = (Barcode, [[([RealTimeline], [PulseSpacing])]])
 
+-- The figures produced from each BarcodeResult in an experiment. 
+data BCExpFigures = BCEXFS { nodeBCTCFigs :: Maybe [Diagram B]
+                           , phenotypeBCTCFigs :: Maybe [Diagram B]
+                           }
+
 attResCombine :: [AttractorResult] -> [BarcodeResult]
 attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
     where
         preppedArs = pure <<$>> ars
 
-layerRunFigure :: ColorMap
-               -> HS.HashSet Attractor
-               -> LayerResult
-               -> ([(ExpContext, [(Barcode, [Diagram B])])], Maybe (Diagram B))
+layerRunFigure ::
+    ColorMap
+    -> HS.HashSet Attractor
+    -> LayerResult
+    -> ([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
 layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
     where
         expF = expRunFigure cMap lrfMM lrfML <$> eResults
@@ -58,22 +66,38 @@ expRunFigure :: ColorMap
              -> ModelMapping
              -> ModelLayer
              -> ExperimentResult
-             -> (ExpContext, [(Barcode, [Diagram B])])
-expRunFigure cMap mM mL (exCon, attResults) = (exCon, bcDiasWBCs)
+             -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
+expRunFigure cMap mM mL (exMeta, attResults) = (exMeta, bcDiasWBCs)
     where
-        bcDiasWBCs = bcRunDia cMap mM mL <$> (attResCombine attResults)
+        bcDiasWBCs = bcRunDia cMap mM mL figKs <$> (attResCombine attResults)
+        figKs = expFigures exMeta
 
 bcRunDia :: ColorMap
          -> ModelMapping
          -> ModelLayer
+         -> FigKinds
          -> BarcodeResult
-         -> (Barcode, [Diagram B])
-bcRunDia cMap mM mL (bc, tmLnPIs) = (bc, vsep 5.0 <$> captionedBCFigss)
+         -> (Barcode, BCExpFigures)
+bcRunDia cMap mM mL figKs (bc, tmLnPIs) = (bc, expFgs)
     where
-        captionedBCFigss = (legendDia :) <$> bcFigss
-        bcFigss = fmap (mconcat . fmap attRunDia) tmLnPIs
-        attRunDia (tmLns, pIs) = runDia cMap mM mL bc pIs <$> tmLns
-        legendDia = bcRunFigLegendDia cMap bc
+        expFgs = BCEXFS tcFigs phFigs
+        tcFigs
+            | nodeTimeCourse figKs = Just $
+                (vsep 5.0 . (legendDia :)) <$> nodeBCFigss
+            | otherwise = Nothing
+            where
+                nodeBCFigss = fmap (mconcat . fmap nodeBCRunDia) tmLnPIs
+                nodeBCRunDia (tmLns, pIs) =
+                    nodeRunDia cMap mM mL bc pIs <$> tcTmLns
+                    where tcTmLns = (B.map fst) <$> tmLns -- The node U.Vectors
+                legendDia = bcRunFigLegendDia cMap bc
+        phFigs
+            | phenotypeTimeCourse figKs = Just $ (vsep 5.0) <$> phenotypeBCFigss
+            | otherwise = Nothing
+            where
+                phenotypeBCFigss = fmap (mconcat . fmap phBCRunDia) tmLnPIs
+                phBCRunDia (tmLns, pIs) = phRunDia cMap mM bc pIs <$> phTmLns
+                    where phTmLns = (B.map snd) <$> tmLns -- PhenotypeWeights
 
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
 bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
@@ -134,14 +158,15 @@ phTextLabel mPhName phName = padX 1.1 <$> phLabel
 --         tOpts = F.TextOpts (unsafePerformIO F.lin) F.KERN False
         lScale = 5.0 :: Double
 
-runDia :: ColorMap
-       -> ModelMapping
-       -> ModelLayer
-       -> Barcode
-       -> [PulseSpacing]
-       -> RealTimeline
-       -> Diagram B
-runDia cMap mM mL bc pulseSps phTmLn =
+-- Make a Node TimeCourse Diagram B, complete with legend on the left. 
+nodeRunDia :: ColorMap
+           -> ModelMapping
+           -> ModelLayer
+           -> Barcode
+           -> [PulseSpacing]
+           -> B.Vector RealAnnotatedLayerVec
+           -> Diagram B
+nodeRunDia cMap mM mL bc pulseSps tmLn =
             (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
     where
         timeAxis = alignL $ switchSpacer |||
@@ -152,10 +177,10 @@ runDia cMap mM mL bc pulseSps phTmLn =
         figBlock = alignL $ vsep stripHt chunkedFigBlocks
         chunkedFigBlocks = zipWith (|||) switchFigs nodeStripBlocks
         switchFigs = zipWith (|||) switchNameFigs nnBlocks
-        switchNameFigs = runSwitchDia cMap stripHt swFWidth <$> switchPHPairs
+        switchNameFigs = runSwitchTCDia cMap stripHt swFWidth <$> switchPHPairs
         -- We want to annotate the Switch name with the phenotype this run
         -- started in, if such exists, so we pair them before passing to
-        -- runSwitchDia
+        -- runSwitchTCDia
         switchPHPairs = findBar bc <$> mM
         nodeStripBlocks = (alignY 0 . vcat) <$>
             (splitPlaces switchLs nodeStrips)
@@ -175,10 +200,9 @@ runDia cMap mM mL bc pulseSps phTmLn =
         reordTmLn = case timelineMMReorder (fst <<$>> mM) lniBMap tmLn of
             Right r -> r
             Left errs ->
-                error $ "reordTmLn in NodeTimeCourse.hs has: " <> show errs
+                error $ "reordTmLn in TimeCourse.hs has: " <> show errs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
         switchNodeOrder = concatMap (fst . snd) mM
-        tmLn = B.map fst phTmLn
 
 -- Mark where each new pulse begins. 
 pulseLine :: Double -> Int -> Diagram B
@@ -188,7 +212,7 @@ pulseLine lHeight pIndex = lBlock # alignY 0.975  # alignL
         vLine = vrule lHeight # lc red # lw ultraThin
         strutWidth = fromIntegral pIndex
 
--- Order the nodes in an Timeline according to the Switch partitioning
+-- Order the nodes in a node Timeline according to the Switch partitioning
 -- of the layer above. 
 timelineMMReorder :: U.Unbox a
                   => DMMSModelMapping
@@ -256,12 +280,13 @@ nodeStateDia (rangeB, rangeT) stripHt (realNState, avgWForced) = dia
             Just ca -> fillColor ca
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
-runSwitchDia :: ColorMap
-             -> Double
-             -> Double
-             -> (Switch, Maybe PhenotypeName)
-             -> Diagram B
-runSwitchDia cMap stripHt rectW (sw, mPhName) = (tText' stripHt swText) <> swBox
+runSwitchTCDia :: ColorMap
+               -> Double
+               -> Double
+               -> (Switch, Maybe PhenotypeName)
+               -> Diagram B
+runSwitchTCDia cMap stripHt rectW (sw, mPhName) =
+    (tText' stripHt swText) <> swBox
     where
         swBox :: Diagram B
         swBox = rect rectW rectH # fillColor swColor # lineWidth none
@@ -301,3 +326,116 @@ tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
                                       # fillColor black
                                       # lineWidth none
                                       # center
+
+-- Make a Phenotype TimeCourse Diagram B, complete with legend on the left. 
+phRunDia :: ColorMap
+         -> ModelMapping
+         -> Barcode
+         -> [PulseSpacing]
+         -> B.Vector PhenotypeWeights
+         -> Diagram B 
+phRunDia cMap mM bc pulseSps tmLn =
+    (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
+    where
+        timeAxis = alignL $ switchSpacer |||
+             (timeAxisDia stripHt $ B.length tmLn)
+        pulseLineFig = alignL $ switchSpacer ||| pulselines
+        switchSpacer = strutX ((width . head) switchFigs)
+        pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
+        figBlock = alignL $ vsep stripHt chunkedFigBlocks
+        chunkedFigBlocks = zipWith (|||) switchFigs switchStripBlocks
+        switchFigs = zipWith (|||) switchNameFigs paddedPHNBlocks
+        switchNameFigs = runSwitchPHDia cMap stripHt swFWidth <$> switchPHPairs
+        -- We want to annotate the Switch name with the phenotype this run
+        -- started in, if such exists, so we pair them before passing to
+        -- runSwitchPHDia
+        switchPHPairs = findBar bc <$> strippedSwitches
+        paddedPHNBlocks = padder maxphNBlockW <$> phNBlocks
+        maxphNBlockW = maximum $ width <$> phNBlocks
+        padder m d = extrudeLeft 1.0 $ padX (m / (width d)) d
+        phNBlocks = phNameBlockDia cMap stripHt <$> switchPhs 
+        switchStripBlocks = (alignY 0 . vcat) <$> switchStrips
+        switchStrips :: [[Diagram B]]
+        switchStrips = switchStripsDia cMap stripHt tmLn <$> switchPhs
+        (stripHt, swFWidth) = (2.0, 24.0) :: (Double, Double)
+        switchPhs = snd <<$>> strippedSwitches
+        -- Note that some Switches do not have Phenotypes, so these must be
+        -- stripped out. 
+        strippedSwitches = filter (not . L.null . snd . snd) mM
+
+phNameBlockDia :: ColorMap -> Double -> (NodeName, [Phenotype]) -> Diagram B
+phNameBlockDia cMap stripHt (nName, phs) = (alignY 0 . vcat) paddedLabels
+    where
+        paddedLabels = padder maxW <$> phLabels
+        padder m d = extrudeLeft 1.0 $ padX (m / (width d)) d
+        maxW = maximum $ width <$> phLabels
+        phLabels = phStripLabelDia stripHt <$> coloredPhs
+        coloredPhs = zip blendedColors (phenotypeName <$> phs)
+        blendedColors = phTCBlend baseColor (L.length phs)
+        baseColor = cMap M.! nName
+
+phStripLabelDia :: Double -> (LocalColor, PhenotypeName) -> Diagram B
+phStripLabelDia stripHt (phC, phN) = tText' stripHt phN # alignL # fc phC
+
+switchStripsDia :: ColorMap
+                -> Double
+                -> B.Vector PhenotypeWeights
+                -> (NodeName, [Phenotype])
+                -> [Diagram B]
+switchStripsDia cMap stripHt tmLn (nName, phs) = dias
+    where
+        dias = phStripDia stripHt tmLn <$> coloredPhs
+        coloredPhs = zip blendedColors (phenotypeName <$> phs)
+        blendedColors = phTCBlend baseColor (L.length phs)
+        baseColor = cMap M.! nName
+
+-- Produce a spread of colors for the Phenotypes of a
+-- Switch. 
+phTCBlend :: LocalColor -> Int -> [LocalColor]
+phTCBlend swColor phCount
+    | phCount <= 0 = []
+    | phCount == 1 = [swColor]
+    | otherwise = flip C.darken swColor <$> stepF phCount
+    where
+        stepF :: Int -> [Double]
+        stepF i = ((1 -) . ((darkAnchor/(x-1)) *)) <$> [0..x-1]
+            where x = fromIntegral i
+        darkAnchor = 0.65 -- How close to black do we want to go?
+
+phStripDia :: Double
+           -> B.Vector PhenotypeWeights
+           -> (LocalColor, PhenotypeName)
+           -> Diagram B
+phStripDia stripHt tmLn phPair = timeStrip
+    where
+        timeStrip = hcat $ phStateDia stripHt phPair <$> B.toList tmLn
+
+phStateDia :: Double
+           -> (LocalColor, PhenotypeName)
+           -> PhenotypeWeights
+           -> Diagram B
+phStateDia stripHt (phColor, phName) phWeights = dia
+    where
+        dia = rect 1 stripHt # fcA cPick # lineWidth none
+        cPick
+            | phWeight == 0 = C.transparent
+            | otherwise = C.withOpacity phColor phWeight
+        phWeight = M.findWithDefault 0 phName phWeights
+
+runSwitchPHDia :: ColorMap
+               -> Double
+               -> Double
+               -> (Switch, Maybe PhenotypeName)
+               -> Diagram B
+runSwitchPHDia cMap stripHt rectW (sw, mPhName) =
+    (tText' stripHt swText) <> swBox
+    where
+        swBox :: Diagram B
+        swBox = rect rectW rectH # fillColor swColor # lineWidth none
+        swText = case mPhName of
+            Nothing -> swName
+            Just phName -> swName <> " - " <> phName
+        rectH = stripHt * ((fromIntegral . length . snd . snd) sw)
+        swColor = cMap M.! swName
+        swName = fst sw
+

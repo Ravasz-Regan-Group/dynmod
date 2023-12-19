@@ -7,6 +7,7 @@ module Types.DMInvestigation
     , layerMatch
     , inputOptions
     , textInputOptions
+    , DMExperimentMeta(..)
     , VEXInvestigation
     , VEXLayerExpSpec(..)
     , ISFSpec(..)
@@ -27,13 +28,17 @@ module Types.DMInvestigation
     , VEXInvestigationInvalid(..)
     , LayerResult(..)
     , ExperimentResult
-    , ExpContext(..)
     , ExpKind(..)
+    , FigKinds(..)
+    , DoNodeTimeCourse
+    , DoPhenotypeTimeCourse
     , AttractorResult
     , Timeline
     , RealTimeline
+    , RealAnnotatedLayerVec
     , WasForced
     , AvgWasForced
+    , PhenotypeWeights
     , PulseSpacing
     , runInvestigation
     , pickStates
@@ -83,8 +88,7 @@ data LayerExpSpec = LayerExpSpec {
 -- Separately from this one can also knock in or out individual non-input
 -- nodes, as in a wet-lab organism experiment.
 data DMExperiment = DMExperiment {
-      experimentName :: T.Text
-    , experimentDetails :: T.Text
+      experimentMeta :: DMExperimentMeta
 --    Select the relevant Attractors from those of the whole layer. 
     , attFilter :: [(Barcode, Attractor)] -> [(Barcode, Attractor)]
     , expStepper :: ExpStepper
@@ -96,9 +100,23 @@ data DMExperiment = DMExperiment {
 -- pulse, where L is the Attractor's length. inputPulseF generates those runs.
 -- There will be more of these sorts of experiments in the future. 
     , inputPulseF :: InputPulseF -- Attractor -> [[InputPulse]]
-    , expKind :: ExpKind -- Was the parsed VEXExperiment general or preset?
-    , expReps :: ExperimentReps -- Times to repeat this experiment.
     }
+
+data DMExperimentMeta = DMEMeta {
+      experimentName :: T.Text
+    , experimentDetails :: T.Text
+    , expReps :: ExperimentReps -- Times to repeat this experiment.
+    , expKind :: ExpKind -- Was the parsed VEXExperiment general or preset?
+    , expFigures :: FigKinds
+    } deriving (Eq, Show)
+
+data FigKinds = FigKinds {
+      nodeTimeCourse :: DoNodeTimeCourse
+    , phenotypeTimeCourse :: DoPhenotypeTimeCourse
+    } deriving (Eq, Show)
+
+type DoNodeTimeCourse = Bool
+type DoPhenotypeTimeCourse = Bool
 
 data ExpKind = P1
              | KDOE
@@ -175,11 +193,7 @@ data LayerResult = LayerResult
     , layerResultERs :: [ExperimentResult]
     , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
     } deriving (Eq, Show)
-type ExperimentResult = (ExpContext, [AttractorResult])
-
-data ExpContext = ExpCon ExpName ExpDetails ExpKind deriving (Eq, Show)
-type ExpName = T.Text
-type ExpDetails = T.Text
+type ExperimentResult = (DMExperimentMeta, [AttractorResult])
 
 type AttractorResult = (Barcode, [([RealTimeline], [PulseSpacing])])
 
@@ -202,7 +216,7 @@ type RealAnnotatedLayerVec = U.Vector (RealNodeState, AvgWasForced)
 -- False(not forced) = 0.0 and True(forced) = 1.0. 0 <= awf <= 1
 type AvgWasForced = Double
 -- Represents the distribution of present Phenotypes at this time-step. It is
--- weighted over all runs, NOT over the present Phenotypes. 
+-- weighted over all runs, NOT form among the Switch's Phenotypes. 
 type PhenotypeWeights = M.HashMap PhenotypeName Double
 
 data ExpStepper = SD PSStepper
@@ -371,18 +385,21 @@ data VEXExperiment =
                ExperimentStep
               [VEXInputPulse]
                ExperimentReps
+               FigKinds
 -- A parsed Pulse1{}.
     | Pulse1 (Duration, Duration) -- t_0 and t_end
               InitialEnvironment
               Duration -- pulse duration
              (NodeName, RealNodeState)
               ExperimentReps
+              FigKinds
 -- A parsed KDOE{}.
     | KnockDOverE (Duration, Duration) -- t_0 and t_end
                    InitialEnvironment
                    Duration -- pulse duration
                   [NodeAlteration]
                    ExperimentReps
+                   FigKinds
 -- A parsed KDOEAtTransition
     | KDOEAtTransition (Duration, Duration) -- t_0 and t_end
                         InitialEnvironment
@@ -390,6 +407,7 @@ data VEXExperiment =
                        (NodeName, RealNodeState)
                        [NodeAlteration]
                         ExperimentReps
+                        FigKinds
     deriving (Eq, Show)
 
 
@@ -606,29 +624,24 @@ phValidate mM phs
 
 mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
-mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps) =
-    DMExperiment <$> pure exName
-                 <*> pure exName
+mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps fkds) =
+    DMExperiment <$> pure expM
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper expStep (layerPrep mL))
                  <*> (const <$> listedPulses)
-                 <*> pure GenExp
-                 <*> pure exReps
         where
-            listedPulses :: Validation [VEXInvestigationInvalid] [[InputPulse]]
+            expM = DMEMeta exName exName exReps GenExp fkds
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
-mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps)
+mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
-        DMExperiment <$> pure expName
-                     <*> pure expDetails
+        DMExperiment <$> pure expM
                      <*> mkAttFilter mM mL inEnv
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> (const <$> listedPulses)
-                     <*> pure P1
-                     <*> pure exReps
         where
+            expM = DMEMeta expName expDetails exReps P1 fkds
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
             startPl = VEXInPt initialCs [] t_0
@@ -644,15 +657,13 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps)
                 "-" <> ((T.pack . show) dur) <> "_wInputs_" <> textInputs
             textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
             tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
-mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps) =
-    DMExperiment <$> pure expName
-                 <*> pure expDetails
+mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
+    DMExperiment <$> pure expM
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                  <*> (const <$> listedPulses)
-                 <*> pure KDOE
-                 <*> pure exReps
     where
+        expM = DMEMeta expName expDetails exReps KDOE fkds
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
         startPl = VEXInPt initialCs [] t_0
@@ -665,18 +676,16 @@ mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps) =
         textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
         tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
 mkDMExperiment mM mL
-   (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps)
+   (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps fkds)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
         Failure [KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)]
     | otherwise =
-        DMExperiment <$> pure expName
-                     <*> pure expDetails
+        DMExperiment <$> pure expM
                      <*> mkAttFilter mM mL inEnv
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
-                     <*> pure KDOEAtTr
-                     <*> pure exReps
         where
+            expM = DMEMeta expName expDetails exReps KDOEAtTr fkds
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
                 Nothing -> (pN, pSt):initialCs
@@ -1006,13 +1015,13 @@ runExperiment :: (LayerNameIndexBimap, [Phenotype])
               -> StdGen
               -> DMExperiment
               -> (StdGen, ExperimentResult)
-runExperiment phData layerBCG attSet gen ex = (newGen, (exCon, attResults))
+runExperiment phData layerBCG attSet gen ex = (newGen, (expMeta, attResults))
     where
         (newGen, attResults) =
             L.mapAccumL (runAttractor phData ex) gen filteredAtts
         filteredAtts = attFilter ex $ layerBCG <$> attList
         attList = HS.toList attSet
-        exCon = ExpCon (experimentName ex) (experimentDetails ex) (expKind ex)
+        expMeta = experimentMeta ex
 
 
 runAttractor :: (LayerNameIndexBimap, [Phenotype])
@@ -1036,11 +1045,11 @@ runAttractor phData ex gen (bc, att) = (newGen, (bc, zip avgIplRes pSpacess))
                   pSpace (UserD dur) = dur
         pDurss = inputDuration <<$>> iPulsess
         seeds = zip gens $ L.repeat iPulsess
-        (gens, newGen) = genGen (expReps ex) gen
+        (gens, newGen) = genGen ((expReps . experimentMeta) ex) gen
         iPulsess :: [[InputPulse]]
         iPulsess = inputPulseF ex $ att
         pulseF = pulseFold attL (expStepper ex)
-        reps = (fromIntegral . expReps) ex
+        reps = (fromIntegral . expReps . experimentMeta) ex
         attL = length att
 
 -- Average Timelines into RealTimeLines. 

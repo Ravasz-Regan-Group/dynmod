@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.7.1.0
+version:             0.7.2.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -49,7 +49,7 @@ library:
   - Properties.Attractors
   - Figures.AttHeatMap
   - Figures.InputSpaceFigure
-  - Figures.NodeTimeCourse
+  - Figures.TimeCourse
   ghc-options:
   - -Wall
   - -O2

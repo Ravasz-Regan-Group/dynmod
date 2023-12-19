@@ -1341,6 +1341,8 @@ vexKeyword = [ "DMMSFile"
              , "T_end"
              , "FlipTo"
              , "SampleSize"
+             , "NodeTimeCourse"
+             , "PhenotypeTimeCourse"
              ]
 
 vexPredefined ::[T.Text]

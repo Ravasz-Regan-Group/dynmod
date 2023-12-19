@@ -29,7 +29,7 @@ import Text.LaTeX.Base.Render (render)
 import Publish
 import Figures.AttHeatMap
 import Figures.InputSpaceFigure
-import Figures.NodeTimeCourse
+import Figures.TimeCourse
 import Types.GML
 import qualified ReadWrite as RW
 import qualified Data.List.Split as Split
@@ -224,18 +224,25 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets) invRs
                 writeVexFigs dmmsPath lRFigs
 
-writeVexFigs :: Path Abs File
-             -> [([(ExpContext, [(Barcode, [Diagram B])])], Maybe (Diagram B))]
-             -> IO ()
+writeVexFigs
+    :: Path Abs File
+    -> [([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))]
+    -> IO ()
 writeVexFigs fP layerFigs = mapM_ (writeLayerFig fP) layerFigs
     where
         writeLayerFig f (expPairs, m5DDia) = do
             mapM_ (writeExpFig f) expPairs
             mapM_ (writeFiveDFig f) m5DDia
 
-writeExpFig :: Path Abs File -> (ExpContext, [(Barcode, [Diagram B])]) -> IO ()
-writeExpFig f ((ExpCon expName expDetails expType), diaPairs) = do
+writeExpFig
+    :: Path Abs File
+    -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
+    -> IO ()
+writeExpFig f (dmExpMeta, bcExpFigs) = do
     let dirStem = parent f
+        expDetails = experimentDetails dmExpMeta
+        expType = expKind dmExpMeta
+        expName = experimentName dmExpMeta
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
         P1 -> parseRelDir "Pulse1"
@@ -243,32 +250,43 @@ writeExpFig f ((ExpCon expName expDetails expType), diaPairs) = do
         KDOEAtTr -> parseRelDir "KD_OE_At_Transition"
         GenExp -> parseRelDir "General_Time_Series"
     dirExpName <- parseRelDir (T.unpack expName)
-    let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
-    ensureDir dirFull
-    mapM_ (writeExpBCFig dirFull expDetails) diaPairs
+    dirNTC <- parseRelDir "NodeTC"
+    dirPHTC <- parseRelDir "PHTC"
+    let dirFullNTC = dirStem </> dirExp </> dirCat </> dirExpName </> dirNTC
+        dirFullPHTC = dirStem </> dirExp </> dirCat </> dirExpName </> dirPHTC
+-- Note that for a given experiment, there are either Just nodeBCTCFigs for
+-- every Barcode or Nothings; similarly for Just phenotypeBCTCFigs. So these
+-- (traverse . traverse) will not clobber any figures that we want to write out
+-- to disk. 
+        tcFigs = (traverse . traverse) nodeBCTCFigs bcExpFigs
+        phFigs = (traverse . traverse) phenotypeBCTCFigs bcExpFigs
+    (mapM_ . mapM_) (writeExpBCFig dirFullNTC expDetails) tcFigs
+    (mapM_ . mapM_) (writeExpBCFig dirFullPHTC expDetails) phFigs
 
 writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
-writeExpBCFig dirFull expDetails (bc, expDias) = case expDias of
-    [] -> do 
-        putStrLn "No figures for Barcode: "
-        PS.pPrint bc
-    [expDia] -> do
-        let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-            rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
-        relFileName <- parseRelFile rFString
-        relFileNameWExt <- addExtension ".pdf" relFileName
-        let absFileNameWExt = dirFull </> relFileNameWExt
-            fPath = toFilePath absFileNameWExt
-        renderCairo fPath (mkWidth 1600) expDia
-    expDs -> do
-        let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-            rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
-            dNum = L.length expDs -- this will always be of the form
-            intBase = (-(dNum `quot` 2) +) <$> [0..(dNum - 1)]
-            intBStrs = (("_" <>) . show) <$> intBase
-            rFStrings = (rFString <>) <$> intBStrs
-            fStrDiaPairs = zip rFStrings expDs
-        mapM_ (writeAttAlteredExpBCFig dirFull) fStrDiaPairs
+writeExpBCFig dirFull expDetails (bc, expDias) = do
+    ensureDir dirFull
+    case expDias of
+        [] -> do 
+            putStrLn "No figures for Barcode: "
+            PS.pPrint bc
+        [expDia] -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+            relFileName <- parseRelFile rFString
+            relFileNameWExt <- addExtension ".pdf" relFileName
+            let absFileNameWExt = dirFull </> relFileNameWExt
+                fPath = toFilePath absFileNameWExt
+            renderCairo fPath (mkWidth 1600) expDia
+        expDs -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                dNum = L.length expDs -- this will always be of the form
+                intBase = (-(dNum `quot` 2) +) <$> [0..(dNum - 1)]
+                intBStrs = (("_" <>) . show) <$> intBase
+                rFStrings = (rFString <>) <$> intBStrs
+                fStrDiaPairs = zip rFStrings expDs
+            mapM_ (writeAttAlteredExpBCFig dirFull) fStrDiaPairs
 
 writeAttAlteredExpBCFig :: Path Abs Dir -> (String, Diagram B) -> IO ()
 writeAttAlteredExpBCFig dirFull (rFString, expDia) = do
