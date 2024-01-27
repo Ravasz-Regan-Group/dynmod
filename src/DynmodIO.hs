@@ -281,7 +281,7 @@ writeExpBCFig dirFull expDetails (bc, expDias) = do
         expDs -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
                 rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
-                dNum = L.length expDs -- this will always be of the form
+                dNum = L.length expDs
                 intBase = (-(dNum `quot` 2) +) <$> [0..(dNum - 1)]
                 intBStrs = (("_" <>) . show) <$> intBase
                 rFStrings = (rFString <>) <$> intBStrs

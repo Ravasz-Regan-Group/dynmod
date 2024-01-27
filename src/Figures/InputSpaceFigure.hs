@@ -211,7 +211,7 @@ threeChunkS ds = (product . fmap (+1) . take 3) ds
 -- Consume a HS.HashSet Attractor and a FixedVec that represents a point in the
 -- environmental space, and produce a HS.HashSet Attractor of all the attractors
 -- which exist there. 
-attPartition ::  HS.HashSet Attractor -> FixedVec -> HS.HashSet Attractor
+attPartition :: HS.HashSet Attractor -> FixedVec -> HS.HashSet Attractor
 attPartition atts fVec = HS.filter (attMatch fVec) atts
 
 -- Does an attractor exist at a particular point in the space of environmental
@@ -280,7 +280,7 @@ mkBar lniBMap att sColor (sName, phs)
             attSize
             sName
             phNames
-    | otherwise  = case foldr redLinePrune (Nothing, 0, 0) sCandidates of
+    | otherwise  = case foldr redLinePrune (Nothing, 0, (-1)) sCandidates of
         (Just rlb, _, _) ->
             BR rlb attSize sName phNames
         (Nothing, _, _)  ->
@@ -333,7 +333,7 @@ mkSliceCandidate lniBMap att ph
         Just (ordIntPh, ordAtt, attOffset)
             | not $ isStepIncreasing matchInts -> MissCandidate attSize
             | any isNothing matches ->
-                RedLineCandidate rlcCount fPrintSize phName
+                RedLineCandidate rlcCount (fPrintSize - 1) phName
             | otherwise ->
                 MatchCandidate attSize rightOrderedLoops phName
             where
@@ -463,18 +463,14 @@ barcodeDia bCode = (hcat $ L.intersperse separator wrappedBars) # center
 
 barDia :: Bar -> Diagram B
 barDia bar = case barKind bar of
-    FullMiss bHeight -> bDia -- <> barRect
+    FullMiss bHeight -> bDia
         where
---             barRect :: Diagram B
---             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat slices # center
             slices = L.replicate bHeight missSlice
             missSlice = rect barwidth slHeight # fillColor white
                                                # lineWidth 0.1
-    RedLineBar bHeight phIndex _ -> bDia -- <> barRect
+    RedLineBar bHeight phIndex _ -> bDia
         where
---             barRect :: Diagram B
---             barRect = (rect (width bDia) (height bDia)) # lw 0.3
             bDia = vcat slices # center
             slices :: [Diagram B]
             slices = B.toList $ missVec B.// [rlPair]

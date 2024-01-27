@@ -27,6 +27,8 @@ import Diagrams.Prelude
 import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
+import qualified Data.Bifunctor as BF
+import Data.Maybe (fromMaybe, fromJust)
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
@@ -38,13 +40,7 @@ data BCExpFigures = BCEXFS { nodeBCTCFigs :: Maybe [Diagram B]
                            , phenotypeBCTCFigs :: Maybe [Diagram B]
                            }
 
-attResCombine :: [AttractorResult] -> [BarcodeResult]
-attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
-    where
-        preppedArs = pure <<$>> ars
-
-layerRunFigure ::
-    ColorMap
+layerRunFigure :: ColorMap
     -> HS.HashSet Attractor
     -> LayerResult
     -> ([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
@@ -69,35 +65,49 @@ expRunFigure :: ColorMap
              -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
 expRunFigure cMap mM mL (exMeta, attResults) = (exMeta, bcDiasWBCs)
     where
-        bcDiasWBCs = bcRunDia cMap mM mL figKs <$> (attResCombine attResults)
-        figKs = expFigures exMeta
+        bcDiasWBCs = bcRunDia cMap mM mL exMeta <$> (attResCombine attResults)
+        attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
+            where
+                preppedArs = pure <<$>> ars
 
 bcRunDia :: ColorMap
          -> ModelMapping
          -> ModelLayer
-         -> FigKinds
+         -> DMExperimentMeta
          -> BarcodeResult
          -> (Barcode, BCExpFigures)
-bcRunDia cMap mM mL figKs (bc, tmLnPIs) = (bc, expFgs)
+bcRunDia cMap mM mL exMeta (bc, tmLnPIs) = (bc, expFgs)
     where
+        figKs = expFigures exMeta
         expFgs = BCEXFS tcFigs phFigs
         tcFigs
-            | nodeTimeCourse figKs = Just $
-                (vsep 5.0 . (legendDia :)) <$> nodeBCFigss
+            | nodeTimeCourse figKs = Just $ (legendDia ===) <$> horizontalBCFigs
             | otherwise = Nothing
             where
-                nodeBCFigss = fmap (mconcat . fmap nodeBCRunDia) tmLnPIs
+                horizontalBCFigs = hsep 5.0 verticalBCFigss
+                verticalBCFigss = vsep 5.0 <$> nodeBCFigss
+                nodeBCFigss :: [[[Diagram B]]]
+                nodeBCFigss = (fmap . fmap) nodeBCRunDia tmLnPIs
                 nodeBCRunDia (tmLns, pIs) =
-                    nodeRunDia cMap mM mL bc pIs <$> tcTmLns
+                    nodeRunDia cMap mM mL params bc pIs <$> tcTmLns
                     where tcTmLns = (B.map fst) <$> tmLns -- The node U.Vectors
                 legendDia = bcRunFigLegendDia cMap bc
         phFigs
-            | phenotypeTimeCourse figKs = Just $ (vsep 5.0) <$> phenotypeBCFigss
+            | phenotypeTimeCourse figKs = Just $ (hsep 5.0) <$> figs
             | otherwise = Nothing
             where
-                phenotypeBCFigss = fmap (mconcat . fmap phBCRunDia) tmLnPIs
+                figs :: [[Diagram B]]
+                figs = (zipWith . zipWith) padder expGuides phenotypeBCFigss
+                padder eGfig phBCFigs = vsep 5.0 (alignR <$> (eGfig:phBCFigs))
+                expGuides :: [[Diagram B]]
+                expGuides = (fmap . fmap)
+                    (expGuideDia mL exMeta (stripHt) . snd) tmLnPIs
+                phenotypeBCFigss :: [[[Diagram B]]]
+                phenotypeBCFigss = (fmap . fmap) phBCRunDia tmLnPIs
                 phBCRunDia (tmLns, pIs) = phRunDia cMap mM bc pIs <$> phTmLns
                     where phTmLns = (B.map snd) <$> tmLns -- PhenotypeWeights
+        params = (stripHt, 24.0) :: (Double, Double)
+        stripHt = 2.0 :: Double
 
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
 bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
@@ -149,31 +159,28 @@ phTextLabel mPhName phName = padX 1.1 <$> phLabel
                                                # fillColor black
                                                # lineWidth none
                                                # center
---         bText t = F.svgText tOpts (T.unpack t) # F.fit_height (0.75 * lScale)
---                                                # F.set_envelope
---                                                # fillColor black
---                                                # italic
---                                                # lineWidth none
---                                                # center
---         tOpts = F.TextOpts (unsafePerformIO F.lin) F.KERN False
         lScale = 5.0 :: Double
 
 -- Make a Node TimeCourse Diagram B, complete with legend on the left. 
 nodeRunDia :: ColorMap
            -> ModelMapping
            -> ModelLayer
+           -> (Double, Double)
            -> Barcode
            -> [PulseSpacing]
            -> B.Vector RealAnnotatedLayerVec
            -> Diagram B
-nodeRunDia cMap mM mL bc pulseSps tmLn =
+nodeRunDia cMap mM mL (stripHt, swFWidth) bc pulseSps tmLn =
             (vsep stripHt [pulseLineFig `atop` figBlock, timeAxis])
     where
         timeAxis = alignL $ switchSpacer |||
              (timeAxisDia stripHt $ B.length reordTmLn)
         pulseLineFig = alignL $ switchSpacer ||| pulselines
         switchSpacer = strutX ((width . head) switchFigs)
-        pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
+        pulselines = hcat $ (pulseLine (height figBlock)) <$> pulseInts
+        -- We drop the last spacing because we do not need to put a pulse line
+        -- at the end of the figure. 
+        pulseInts = (L.init . fstOf3 . unzip3) pulseSps
         figBlock = alignL $ vsep stripHt chunkedFigBlocks
         chunkedFigBlocks = zipWith (|||) switchFigs nodeStripBlocks
         switchFigs = zipWith (|||) switchNameFigs nnBlocks
@@ -186,7 +193,6 @@ nodeRunDia cMap mM mL bc pulseSps tmLn =
             (splitPlaces switchLs nodeStrips)
         nnBlocks = nodeNameBlockDia switchLs stripHt switchNodeOrder
         nodeStrips = nodeStripDia reordLNIBMap reordRTs stripHt <$> annTStrips
-        (stripHt, swFWidth) = (2.0, 24.0) :: (Double, Double)
         annTStrips = zip switchNodeOrder transposedRTmLn
         transposedRTmLn = (L.transpose . B.toList . fmap U.toList) reordTmLn
         -- We want to striate the runs by Switch, so we will need these spacings
@@ -341,7 +347,10 @@ phRunDia cMap mM bc pulseSps tmLn =
              (timeAxisDia stripHt $ B.length tmLn)
         pulseLineFig = alignL $ switchSpacer ||| pulselines
         switchSpacer = strutX ((width . head) switchFigs)
-        pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseSps)
+        pulselines = hcat $ (pulseLine (height figBlock)) <$> (pulseInts)
+        -- We drop the last spacing because we do not need to put a pulse line
+        -- at the end of the figure. 
+        pulseInts = (L.init . fstOf3 . unzip3) pulseSps
         figBlock = alignL $ vsep stripHt chunkedFigBlocks
         chunkedFigBlocks = zipWith (|||) switchFigs switchStripBlocks
         switchFigs = zipWith (|||) switchNameFigs paddedPHNBlocks
@@ -439,3 +448,99 @@ runSwitchPHDia cMap stripHt rectW (sw, mPhName) =
         swColor = cMap M.! swName
         swName = fst sw
 
+-- Make a clarifying guide for phenotype time course figures. 
+expGuideDia :: ModelLayer
+            -> DMExperimentMeta
+            -> Double
+            -> [PulseSpacing]
+            -> Diagram B
+expGuideDia mL exMeta stripHt pIs = expTypeText ||| pulseDia
+    where
+        pulseDia = hcat $ L.intersperse tickDia pulseDias
+        tickDia = vrule (maximum (height <$> pulseDias)) # lw ultraThin # alignT
+        pulseDias = pulseSpacingDia stripHt <$> inputStrippedPIs
+        inputStrippedPIs = inputStrip mLInputs lniBMap pIs
+        LayerSpecs lniBMap _ _ _ = layerPrep mL
+        mLInputs = (inputs . modelGraph) mL
+        expTypeText = tText' stripHt ((T.pack . show . expKind) exMeta <> " ")
+
+-- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
+-- for display. 
+inputStrip :: [[DMNode]]
+           -> LayerNameIndexBimap
+           -> [PulseSpacing]
+           -> [(Int, [[(NodeName, RealNodeState)]], [NodeAlteration])]
+inputStrip mLInputs lniBMap pIs = stripper <$> groupedIptIPs
+    where
+        stripper (a, inpts, c) = (a, filter stripper' inpts, c)
+            where
+                stripper' inpt = snd $ inputsHaveChanged M.! (fst <$> inpt)
+--      If a [NodeName] key is associated with a False, then it remains
+--      constant throughout. If True, then it changes as some point. 
+        inputsHaveChanged :: M.HashMap [NodeName] ([RealNodeState], Bool)
+        inputsHaveChanged = foldr changeCheck mempty groupedIptIPs
+        changeCheck (_, inpSts, _) inputM = foldr chCk inputM inpSts
+            where
+                chCk inpt iM = M.insertWith inserter ns (sts, True) iM
+                    where
+                        inserter (nSTS, _) (oSts, _)
+                            | oSts == nSTS = (oSts, False)
+                            | otherwise = (nSTS, True)
+                        ns = fst <$> inpt
+                        sts = snd <$> inpt
+        groupedIptIPs = groupInputs mLInputNames lniBMap <$> pIs
+        mLInputNames = (nodeName . nodeMeta) <<$>> mLInputs
+
+-- Given an [[Ints]] that represents the NodeIndices of the inputs of a
+-- ModelLayer and a RealInputCoord, produce the [[(Nodename, RealNodeState)]]
+-- that are the inputs actually set by that RealInputCoord. 
+groupInputs :: [[NodeName]]
+            -> LayerNameIndexBimap
+            -> PulseSpacing
+            -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
+groupInputs inputNames lniBMap (a, inputV, c) = (a, inputStates, c)
+    where
+        inputStates = grouper namedCoordL <$> inputNames
+--      This convoluted nonsense to separate out each input is necessary to keep
+--      the correct node order from the [[DMNode]] inputs. That then lets us
+--      determine what level that input is set to. 
+        grouper iV ns = grouper' iV <$> ns
+        grouper' v n = fromJust $ L.find ((== n) . fst) v
+        namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
+
+
+pulseSpacingDia :: Double
+                -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
+                -> Diagram B
+pulseSpacingDia stripHt (pW, inputLs, nAlts) =
+    tText' stripHt iptSetT === hDiv === vcat (tText' stripHt <$> nAltTexts)
+    where
+        iptSetT = T.intercalate ", " $ inputCoordText <$> inputLs
+        nAltTexts
+            | L.null nudges && L.null locks = []
+            | L.null nudges = [lockText]
+            | L.null locks = [nudgeText]
+            | otherwise = [lockText, nudgeText]
+        nudgeText = "Nudge: " <> T.intercalate ", "  (nAltTPrep <$> locks)
+        lockText = "Lock: " <> T.intercalate ", "  (nAltTPrep <$> locks)
+        (locks, nudges) = L.partition isNodeLock nAlts
+        hDiv = hrule (fromIntegral pW) # lw ultraThin
+
+nAltTPrep :: NodeAlteration -> T.Text
+nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> tpsh nlS <> "@" <> tpsh nlP
+nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tpsh gP
+    where
+        shND NudgeUp = "up"
+        shND NudgeDown = "down"
+
+-- Given a RealInputCoord, which environmental inputs are being set, and to
+-- which real-valued levels? Presumes that the RealInputCoord is properly formed
+-- and belongs to the [[DMNode]] (inputs) and LayerNameIndexBimap in question. 
+inputCoordText :: [(NodeName, RealNodeState)] -> T.Text
+inputCoordText [] = ""
+inputCoordText [(nN, nS)] = nN <> ":" <> tpsh nS
+inputCoordText ipts = nN <> ":" <> tpsh nS
+    where (nN, nS) = fromMaybe (L.last ipts) (L.find ((> 0) . snd) ipts)
+
+tpsh :: Show a => a -> T.Text
+tpsh = T.pack . show

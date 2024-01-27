@@ -19,8 +19,8 @@ import qualified Data.List as L
 import Control.Applicative (liftA2)
 
 data AttractorsInvalid =
-      SwitcheNamesDifferent ([NodeName], [NodeName])
-    | SwitcheNodesDifferent (NodeName, ([NodeName], [NodeName]))
+      AttractorCheckSwitchNamesDifferent ([NodeName], [NodeName])
+    | AttractorCheckSwitchNodesDifferent (NodeName, ([NodeName], [NodeName]))
     | NotAnAttractor Thread
     | InvalidLVReorder InvalidLVReorder
     deriving (Show, Eq)
@@ -214,7 +214,7 @@ attCheck dmmsLNIBMap dmmsPSStepper csvLNIBMap thread
 mmCheck :: DMMSModelMapping -> DMMSModelMapping -> [AttractorsInvalid]
 mmCheck csvMMap dmmsMMap = case lrUniques cSwitches dSwitches of
     ([], []) -> foldr switchContentsF [] pairedMMs
-    err -> [SwitcheNamesDifferent err]
+    err -> [AttractorCheckSwitchNamesDifferent err]
     where
         pairedMMs = zipWith zipper sortedCSV sortedDMMS
         zipper (x, xs) (_, ys) = (x, xs, ys)
@@ -228,6 +228,6 @@ switchContentsF :: (NodeName, [NodeName], [NodeName])
                 -> [AttractorsInvalid]
 switchContentsF (sName, csVNNs, dmmsNNs) ais = case lrUniques csVNNs dmmsNNs of
     ([], []) -> ais
-    errs     -> (SwitcheNodesDifferent (sName, errs)) : ais
+    errs     -> (AttractorCheckSwitchNodesDifferent (sName, errs)) : ais
 
 
