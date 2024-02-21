@@ -352,7 +352,7 @@ instance Texy NodeType where
     texy Enzyme             = (footnotesize . fromLaTeX . TeXRaw) "Enz"
     texy Protein            = (footnotesize . fromLaTeX . TeXRaw) "Prot"
     texy Membrane_Potential = (footnotesize . fromLaTeX . TeXRaw) "MP"
-    texy LncRNA             = (footnotesize . fromLaTeX . TeXRaw) "LncRNA"
+    texy LncRNA             = (footnotesize . fromLaTeX . TeXRaw) "lncRNA"
     texy Cell_Surgace_Ligand
                             = (footnotesize . fromLaTeX . TeXRaw) "SLig"
 

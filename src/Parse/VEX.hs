@@ -338,14 +338,25 @@ figKindsParse :: Parser FigKinds
 figKindsParse = runPermutation $
     FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
              <*> toPermutationWithDefault False phTimeCourseParse
+             <*> toPermutationWithDefault [] nodeAvgBChartParse
 
--- Do we produce a NOde time course figure? Default to True. 
+-- Do we produce a Node time course figure? Default to True. 
 nodeTimeCourseParse :: Parser DoNodeTimeCourse
 nodeTimeCourseParse = rword "NodeTimeCourse" >> colon >> boolParse
 
 -- Do we produce a Phenotype time course figure? Default to False. 
 phTimeCourseParse :: Parser DoPhenotypeTimeCourse
 phTimeCourseParse = rword "PhenotypeTimeCourse" >> colon >> boolParse
+
+-- Which Nodes should we make average value bar charts for? Default to []
+nodeAvgBChartParse :: Parser AvgBChartNodes
+nodeAvgBChartParse = lexeme $ rword "AvgBarChartNodes" >>
+    (try
+        (colon >>
+            (sepBy1 variable comma
+            )
+        )
+    )
 
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50

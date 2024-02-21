@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.7.3.0
+version:             0.7.4.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -28,12 +28,13 @@ library:
   exposed-modules:
   - DynmodIO
   - Input
+  - Parse
   - Parse.DMMS
   - Parse.UI
+  - Parse.GML
+  - Types
   - Types.DMModel
   - Types.Simulation
-  - Types.Figures
-  - Parse.GML
   - Types.GML
   - Compare
   - Visualize
@@ -47,9 +48,11 @@ library:
   - Text.LaTeX.Packages.ColorTbl
   - Properties.LayerCharacteristics
   - Properties.Attractors
+  - Figures
   - Figures.AttHeatMap
   - Figures.InputSpaceFigure
   - Figures.TimeCourse
+  - Figures.BarCharts
   ghc-options:
   - -Wall
   - -O2
@@ -81,7 +84,6 @@ library:
   - parallel
   - deepseq
   - random
-#   - splitmix # Remove this when you move to GHC 9.2.1
   - split
   - diagrams-lib
   - diagrams-cairo
@@ -89,6 +91,9 @@ library:
   - SVGFonts
   - bimap
   - extra
+  - Chart
+  - Chart-diagrams
+  - statistics
 
 executables:
   dynmod:

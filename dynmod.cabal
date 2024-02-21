@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           dynmod
-version:        0.7.3.0
+version:        0.7.4.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -27,12 +27,13 @@ library
   exposed-modules:
       DynmodIO
       Input
+      Parse
       Parse.DMMS
       Parse.UI
+      Parse.GML
+      Types
       Types.DMModel
       Types.Simulation
-      Types.Figures
-      Parse.GML
       Types.GML
       Compare
       Visualize
@@ -46,20 +47,25 @@ library
       Text.LaTeX.Packages.ColorTbl
       Properties.LayerCharacteristics
       Properties.Attractors
+      Figures
       Figures.AttHeatMap
       Figures.InputSpaceFigure
       Figures.TimeCourse
+      Figures.BarCharts
   other-modules:
       Parse.Attractor
       Parse.VEX
       Text.LaTeX.DynMod.Extra
       Types.DMInvestigation
+      Types.Figures
       Paths_dynmod
   hs-source-dirs:
       src
   ghc-options: -Wall -O2 -j
   build-depends:
-      HaTeX
+      Chart
+    , Chart-diagrams
+    , HaTeX
     , SVGFonts
     , Unique
     , base >=4.7 && <5
@@ -87,6 +93,7 @@ library
     , safe-exceptions
     , scientific
     , split
+    , statistics
     , text
     , unordered-containers
     , validation

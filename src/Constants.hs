@@ -7,7 +7,6 @@ module Constants ( svgColors
     , lTDesc
     , lEDesc
     , vexRWS
-    , PUCGradient
     , viridisCM
     , magmaCM
     , infernoCM
@@ -18,13 +17,13 @@ module Constants ( svgColors
     ) where
 
 import Types.DMModel
+import Types.Figures
 import qualified Data.Text as T
 import qualified Data.Colour as C
 import Data.Colour.SRGB (sRGB, sRGB24)
 import qualified Data.Colour.Names as CN
 import Data.Colour.Palette.Harmony (colorRamp)
 import qualified Data.Vector as B
-
 
 -- SVG Color Names:
 svgColors :: [T.Text]
@@ -352,8 +351,6 @@ svgLocalColors = [
 -- accurate interpretation of scientific data. By Jamie R. Nuñez,
 -- Christopher R. Anderton, and Ryan S. Renslow. 
 -- https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0199239
-
-type PUCGradient = B.Vector LocalColor
 
 -- colorMaps :: [PUCGradient]
 -- colorMaps =
@@ -1343,6 +1340,7 @@ vexKeyword = [ "DMMSFile"
              , "SampleSize"
              , "NodeTimeCourse"
              , "PhenotypeTimeCourse"
+             , "AvgBarChartNodes"
              ]
 
 vexPredefined ::[T.Text]

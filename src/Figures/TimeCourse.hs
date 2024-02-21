@@ -4,22 +4,22 @@
 {-# LANGUAGE FlexibleContexts          #-}
 
 module Figures.TimeCourse
-    ( layerRunFigure
-    , BCExpFigures(..)
+    ( bcRunFigLegendDia
+    , nodeRunDia
+    , expGuideDia
+    , phRunDia
     ) where
 
 import Types.DMModel
-import Constants
 import Types.Simulation
 import Types.DMInvestigation
 import Types.Figures
 import Utilities
-import Figures.InputSpaceFigure
+import Constants
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as M
-import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Colour as C
 import Data.List.Split (splitPlaces)
@@ -28,86 +28,9 @@ import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromMaybe, mapMaybe)
 
--- BarcodeResult combines AttractorResults by equality on Barcodes, because all
--- of the AttractorResults for a given Barcode will be turned into figures in
--- one PDF file. 
-type BarcodeResult = (Barcode, [[([RealTimeline], [PulseSpacing])]])
 
--- The figures produced from each BarcodeResult in an experiment. 
-data BCExpFigures = BCEXFS { nodeBCTCFigs :: Maybe [Diagram B]
-                           , phenotypeBCTCFigs :: Maybe [Diagram B]
-                           }
-
-layerRunFigure :: ColorMap
-    -> HS.HashSet Attractor
-    -> LayerResult
-    -> ([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
-layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
-    where
-        expF = expRunFigure cMap lrfMM lrfML <$> eResults
-        fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
-        LayerSpecs lniBMap _ _ _ = layerPrep lrfML
-
--- Create NodeTimeCourse figures for an individual experiment. Each element in
--- the [([Timeline], [PulseSpacing])] in the AttractorResult is
--- turned into a single PDF, no matter how many Timelines it has. 
--- As of 10/24/23, only KDOEAtTransition experiments will have more than one, 
--- because only they alter the experiment as a function of the size of the
--- Attractor they start in, but this will change in the future. This is in
--- addition to the fact that AttractorResults were combined if their Barcodes
--- were identical. 
-expRunFigure :: ColorMap
-             -> ModelMapping
-             -> ModelLayer
-             -> ExperimentResult
-             -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
-expRunFigure cMap mM mL (exMeta, attResults) = (exMeta, bcDiasWBCs)
-    where
-        bcDiasWBCs = bcRunDia cMap mM mL exMeta <$> (attResCombine attResults)
-        attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
-            where
-                preppedArs = pure <<$>> ars
-
-bcRunDia :: ColorMap
-         -> ModelMapping
-         -> ModelLayer
-         -> DMExperimentMeta
-         -> BarcodeResult
-         -> (Barcode, BCExpFigures)
-bcRunDia cMap mM mL exMeta (bc, tmLnPIs) = (bc, expFgs)
-    where
-        figKs = expFigures exMeta
-        expFgs = BCEXFS tcFigs phFigs
-        tcFigs
-            | nodeTimeCourse figKs = Just $ (legendDia ===) <$> horizontalBCFigs
-            | otherwise = Nothing
-            where
-                horizontalBCFigs = hsep 5.0 verticalBCFigss
-                verticalBCFigss = vsep 5.0 <$> nodeBCFigss
-                nodeBCFigss :: [[[Diagram B]]]
-                nodeBCFigss = (fmap . fmap) nodeBCRunDia tmLnPIs
-                nodeBCRunDia (tmLns, pIs) =
-                    nodeRunDia cMap mM mL params bc pIs <$> tcTmLns
-                    where tcTmLns = (B.map fst) <$> tmLns -- The node U.Vectors
-                legendDia = bcRunFigLegendDia cMap bc
-        phFigs
-            | phenotypeTimeCourse figKs = Just $ (hsep 5.0) <$> figs
-            | otherwise = Nothing
-            where
-                figs :: [[Diagram B]]
-                figs = (zipWith . zipWith) padder expGuides phenotypeBCFigss
-                padder eGfig phBCFigs = vsep 5.0 (alignR <$> (eGfig:phBCFigs))
-                expGuides :: [[Diagram B]]
-                expGuides = (fmap . fmap)
-                    (expGuideDia mL exMeta (stripHt) . snd) tmLnPIs
-                phenotypeBCFigss :: [[[Diagram B]]]
-                phenotypeBCFigss = (fmap . fmap) phBCRunDia tmLnPIs
-                phBCRunDia (tmLns, pIs) = phRunDia cMap mM bc pIs <$> phTmLns
-                    where phTmLns = (B.map snd) <$> tmLns -- PhenotypeWeights
-        params = (stripHt, 24.0) :: (Double, Double)
-        stripHt = 2.0 :: Double
 
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
 bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
@@ -459,18 +382,19 @@ expGuideDia mL exMeta stripHt pIs = expTypeText ||| pulseDia
         pulseDia = hcat $ L.intersperse tickDia pulseDias
         tickDia = vrule (maximum (height <$> pulseDias)) # lw ultraThin # alignT
         pulseDias = pulseSpacingDia stripHt <$> inputStrippedPIs
-        inputStrippedPIs = inputStrip mLInputs lniBMap pIs
+        inputStrippedPIs = inputStrip mLInputNames lniBMap pIs
         LayerSpecs lniBMap _ _ _ = layerPrep mL
-        mLInputs = (inputs . modelGraph) mL
+        mLInputNames =
+            ((fmap . fmap) (nodeName . nodeMeta) . inputs . modelGraph) mL
         expTypeText = tText' stripHt ((T.pack . show . expKind) exMeta <> " ")
 
 -- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
 -- for display. 
-inputStrip :: [[DMNode]]
+inputStrip :: [[NodeName]]
            -> LayerNameIndexBimap
            -> [PulseSpacing]
            -> [(Int, [[(NodeName, RealNodeState)]], [NodeAlteration])]
-inputStrip mLInputs lniBMap pIs = stripper <$> groupedIptIPs
+inputStrip mLInputNames lniBMap pIs = stripper <$> groupedIptIPs
     where
         stripper (a, inpts, c) = (a, filter stripper' inpts, c)
             where
@@ -489,9 +413,8 @@ inputStrip mLInputs lniBMap pIs = stripper <$> groupedIptIPs
                         ns = fst <$> inpt
                         sts = snd <$> inpt
         groupedIptIPs = groupInputs mLInputNames lniBMap <$> pIs
-        mLInputNames = (nodeName . nodeMeta) <<$>> mLInputs
 
--- Given an [[Ints]] that represents the NodeIndices of the inputs of a
+-- Given an [[NodeName]] that represents the NodeName of the inputs of a
 -- ModelLayer and a RealInputCoord, produce the [[(Nodename, RealNodeState)]]
 -- that are the inputs actually set by that RealInputCoord. 
 groupInputs :: [[NodeName]]
@@ -500,14 +423,14 @@ groupInputs :: [[NodeName]]
             -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
 groupInputs inputNames lniBMap (a, inputV, c) = (a, inputStates, c)
     where
-        inputStates = grouper namedCoordL <$> inputNames
+        inputStates = mapMaybe (grouper namedCoordL) inputNames
 --      This convoluted nonsense to separate out each input is necessary to keep
 --      the correct node order from the [[DMNode]] inputs. That then lets us
 --      determine what level that input is set to. 
-        grouper iV ns = grouper' iV <$> ns
-        grouper' v n = fromJust $ L.find ((== n) . fst) v
+        grouper iVL ns = traverse (grouper' iVL) ns
+        grouper' vL n = L.find ((== n) . fst) vL
+        namedCoordL :: [(NodeName, RealNodeState)]
         namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
-
 
 pulseSpacingDia :: Double
                 -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])

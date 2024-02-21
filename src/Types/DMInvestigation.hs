@@ -33,8 +33,12 @@ module Types.DMInvestigation
     , FigKinds(..)
     , DoNodeTimeCourse
     , DoPhenotypeTimeCourse
+    , AvgBChartNodes
     , AttractorResult
+    , RepResults
+    , ExpSpreadResults
     , Timeline
+    , AnnotatedLayerVec
     , RealTimeline
     , RealAnnotatedLayerVec
     , WasForced
@@ -48,9 +52,8 @@ module Types.DMInvestigation
 import Utilities
 import Types.DMModel
 import Types.Simulation
-import Figures.InputSpaceFigure
+import Types.Figures
 import Data.Validation
--- import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Instances()
 import qualified Data.Vector as B
@@ -61,7 +64,6 @@ import qualified Data.Text as T
 import qualified Control.Parallel.Strategies as P
 import qualified Data.List.Unique as Uniq
 import System.Random
--- import Path
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (mapMaybe, fromJust, isNothing, catMaybes)
@@ -114,10 +116,14 @@ data DMExperimentMeta = DMEMeta {
 data FigKinds = FigKinds {
       nodeTimeCourse :: DoNodeTimeCourse
     , phenotypeTimeCourse :: DoPhenotypeTimeCourse
+    , nodeAvgBars :: AvgBChartNodes
+--     , phnotypeAvgBars :: DoPhenotypeAvgBars
     } deriving (Eq, Show)
 
 type DoNodeTimeCourse = Bool
 type DoPhenotypeTimeCourse = Bool
+type AvgBChartNodes = [NodeName]
+-- type AvgBarsPhs = [PhenotypeName]
 
 data ExpKind = P1
              | KDOE
@@ -195,8 +201,12 @@ data LayerResult = LayerResult
     , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
     } deriving (Eq, Show)
 type ExperimentResult = (DMExperimentMeta, [AttractorResult])
-
-type AttractorResult = (Barcode, [([RealTimeline], [PulseSpacing])])
+-- The commented and real AttractorResults are equivalent. 
+-- type AttractorResult = (Barcode, ([[[Timeline]]], [[PulseSpacing]]))
+type AttractorResult = (Barcode, RepResults)
+type RepResults = ([ExpSpreadResults], [[PulseSpacing]])
+type ExpSpreadResults =  [AttBatch]
+type AttBatch = [Timeline]
 
 -- The spacing between pulses, along with any input changes or node alterations.
 type PulseSpacing = (Int, RealInputCoord, [NodeAlteration])
@@ -1034,28 +1044,23 @@ runExperiment phData layerBCG attSet gen ex = (newGen, (expMeta, attResults))
         attList = HS.toList attSet
         expMeta = experimentMeta ex
 
-
 runAttractor :: (LayerNameIndexBimap, [Phenotype])
              -> DMExperiment
              -> StdGen
              -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
-runAttractor phData ex gen (bc, att) = (newGen, (bc, zip avgIplRes pSpacess))
+runAttractor phData ex gen (bc, att) = (newGen, (bc, bundledRs))
     where
-        avgIplRes = averagedAttResults reps annIplResultReps
+        bundledRs = (annIplResultReps, pSpacess)
         annIplResultReps = (fmap . fmap . fmap) (phMatch phData) iplResultReps
-        iplResultReps :: [[[PTimeLine]]]
         iplResultReps = P.parMap P.rdeepseq unpacker seeds
         unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
         rIPLF = runInputPulseList att pulseF
-        pSpacess :: [[PulseSpacing]]
         pSpacess = pulseSpacing attL lniBMap <<$>> iPulsess
         seeds = zip gens $ L.repeat iPulsess
         (gens, newGen) = genGen ((expReps . experimentMeta) ex) gen
-        iPulsess :: [[InputPulse]]
         iPulsess = inputPulseF ex $ att
         pulseF = pulseFold attL (expStepper ex)
-        reps = (fromIntegral . expReps . experimentMeta) ex
         attL = length att
         lniBMap = fst phData
 
@@ -1072,56 +1077,6 @@ pulseSpacing attL lniBMap ipls = (pSpacing, realInputCoord ipls, nodeAltChanges)
         pSpacing = (pSpace . inputDuration) ipls
         pSpace (DefaultD dur) = max dur attL
         pSpace (UserD dur) = dur
-        
-
-
--- Average Timelines into RealTimeLines. 
-averagedAttResults :: Double -> [[[Timeline]]] -> [[RealTimeline]]
-averagedAttResults reps tlss = (fmap . fmap . B.map) (divider reps) summedVecs
-    where
-        summedVecs ::
-            [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
-        summedVecs = L.foldr deepZip tlssAccum (tail tlss)
-        tlssAccum = (mkAnnoLVAcc . head) tlss
-
--- These are all kept as top-level functions to be very clear in the type
--- signatures what structures are being transformed. In particular, we make the
--- accumulator out of the head of the [[[Timeline]]] because we don't know its
--- structure beforehand, just that it will be identical accros the list. 
-divider :: Double
-        -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
-        -> (RealAnnotatedLayerVec, PhenotypeWeights)
-divider reps (accVec, phHM) = (U.map uVecDivider accVec, M.map hmDivider phHM)
-    where
-        hmDivider x = fromIntegral x / reps
-        uVecDivider (stSum, sFSum) = (fromIntegral stSum / reps, sFSum / reps)
-
-deepZip :: [[Timeline]]
-   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
-   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
-deepZip = (L.zipWith . L.zipWith . B.zipWith) annoLVAccum
-
-mkAnnoLVAcc :: [[B.Vector (AnnotatedLayerVec, [PhenotypeName])]]
-   -> [[B.Vector (U.Vector (Int, Double), M.HashMap PhenotypeName Int)]]
-mkAnnoLVAcc = (fmap . fmap . B.map) prepAcc
-    where
-        prepAcc (uVec, phNs) = (U.map prepUVec uVec, mkPhNameMap phNs)        
-        prepUVec (nSt, wF) = (nSt, bConv wF)
-        mkPhNameMap phN = M.fromList $ (\x -> (x, 1)) <$> phN
-
-annoLVAccum :: (AnnotatedLayerVec, [PhenotypeName])
-            -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
-            -> (U.Vector (Int, Double), M.HashMap PhenotypeName Int)
-annoLVAccum (uVec, phNs) (accVec, phHM) = (newVec, newPhHM)
-    where
-        newPhHM = foldr hFold phHM phNs
-        hFold phN phMap = M.insertWith (+) phN 1 phMap
-        newVec = U.zipWith uZip uVec accVec
-        uZip (nSt, wF) (stSum, sFSum) = (nSt + stSum, bConv wF + sFSum)
-
-bConv :: Bool -> Double
-bConv False = 0.0
-bConv True = 1.0
 
 -- Find which Phenotypes are present in the given Timeline, and where.
 phMatch :: (LayerNameIndexBimap, [Phenotype]) -> PTimeLine -> Timeline

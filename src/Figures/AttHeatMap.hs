@@ -3,7 +3,6 @@
 
 module Figures.AttHeatMap
     ( attractorGrid
-    , rnGrid
     , attractorHeatMapDia
     ) where
 

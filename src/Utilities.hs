@@ -10,7 +10,7 @@ import Data.Bifunctor (Bifunctor(..), bimap)
 import Control.Applicative (liftA2)
 import qualified Data.Vector.Unboxed as UVec
 import qualified Data.HashSet as Set
-import qualified Data.HashMap.Strict as Map
+import qualified Data.HashMap.Strict as M
 import qualified Data.Hashable as Hash
 import qualified Text.Pretty.Simple as PS
 import Data.Validation
@@ -141,14 +141,14 @@ concatPair (x, y) = x <> y
 
 differenceWithKey :: (Eq k, Hash.Hashable k) =>
                                         (k -> v -> w -> Maybe v)
-                                        -> Map.HashMap k v
-                                        -> Map.HashMap k w
-                                        -> Map.HashMap k v
-differenceWithKey f a b = Map.foldlWithKey' go Map.empty a
+                                        -> M.HashMap k v
+                                        -> M.HashMap k w
+                                        -> M.HashMap k v
+differenceWithKey f a b = M.foldlWithKey' go M.empty a
   where
-    go m k v = case Map.lookup k b of
-                 Nothing -> Map.insert k v m
-                 Just w  -> maybe m (\y -> Map.insert k y m) (f k v w)
+    go m k v = case M.lookup k b of
+                 Nothing -> M.insert k v m
+                 Just w  -> maybe m (\y -> M.insert k y m) (f k v w)
 
 -- Sort the second list by the order of elements in the first list. 
 sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
@@ -158,10 +158,10 @@ sortWithOrderOn :: (Ord a, Ord b, Hash.Hashable b)
                 => (a -> b) -> [b] -> [a] -> [a]
 sortWithOrderOn f order = L.sortOn (getOrder . f)
     where
-        getOrder k = Map.lookupDefault (-1) k $ mkOrderHashMap order
+        getOrder k = M.lookupDefault (-1) k $ mkOrderHashMap order
 
-mkOrderHashMap :: (Ord a, Hash.Hashable a) => [a] -> Map.HashMap a Int
-mkOrderHashMap xs = Map.fromList (zip xs ([1..] :: [Int]))
+mkOrderHashMap :: (Ord a, Hash.Hashable a) => [a] -> M.HashMap a Int
+mkOrderHashMap xs = M.fromList (zip xs ([1..] :: [Int]))
 
 -- The symmetric difference of two lists, ie the bit outside the intersection.
 -- Also know as the Sheffer stroke, or NANDing two lists. 
@@ -233,4 +233,3 @@ mkProb p
 -- Non-polymorphic version (which is all I need)
 isInt :: Int -> Double -> Bool
 isInt n x = ((round $ 10^n * (x - (fromInteger $ round x))) :: Int) == 0
-

@@ -10,27 +10,17 @@ module DynmodIO
     ) where
 
 import Input
-import Types.DMModel
-import Types.Simulation
-import Types.DMInvestigation
-import Types.Figures
+import Types
+import Figures
 import SuppMat
 import Compare
 import Render
-import Parse.DMMS
-import Parse.GML
-import Parse.Attractor
-import Parse.UI
-import Parse.VEX
+import Parse
 import Visualize
 import Utilities
 import Properties.Attractors
 import Text.LaTeX.Base.Render (render)
 import Publish
-import Figures.AttHeatMap
-import Figures.InputSpaceFigure
-import Figures.TimeCourse
-import Types.GML
 import qualified ReadWrite as RW
 import qualified Data.List.Split as Split
 import Path
@@ -250,18 +240,19 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
         KDOEAtTr -> parseRelDir "KD_OE_At_Transition"
         GenExp -> parseRelDir "General_Time_Series"
     dirExpName <- parseRelDir (T.unpack expName)
-    dirNTC <- parseRelDir "NodeTC"
     dirPHTC <- parseRelDir "PHTC"
-    let dirFullNTC = dirStem </> dirExp </> dirCat </> dirExpName </> dirNTC
-        dirFullPHTC = dirStem </> dirExp </> dirCat </> dirExpName </> dirPHTC
+    dirNTC <- parseRelDir "NodeTC"
+    let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
 -- Note that for a given experiment, there are either Just nodeBCTCFigs for
 -- every Barcode or Nothings; similarly for Just phenotypeBCTCFigs. So these
 -- (traverse . traverse) will not clobber any figures that we want to write out
 -- to disk. 
         tcFigs = (traverse . traverse) nodeBCTCFigs bcExpFigs
         phFigs = (traverse . traverse) phenotypeBCTCFigs bcExpFigs
-    (mapM_ . mapM_) (writeExpBCFig dirFullNTC expDetails) tcFigs
-    (mapM_ . mapM_) (writeExpBCFig dirFullPHTC expDetails) phFigs
+        nBChFig = (traverse . traverse) nodeBCAvgBarFig bcExpFigs
+    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNTC) expDetails) tcFigs
+    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHTC) expDetails) phFigs
+    (mapM_ . mapM_) (writeExpBCFig dirFull expDetails) nBChFig
 
 writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
 writeExpBCFig dirFull expDetails (bc, expDias) = do
