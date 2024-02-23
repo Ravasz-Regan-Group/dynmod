@@ -68,6 +68,7 @@ import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (mapMaybe, fromJust, isNothing, catMaybes)
 import Data.Bitraversable (bitraverse)
+import qualified Debug.Trace as TR
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -108,6 +109,7 @@ data DMExperiment = DMExperiment {
 data DMExperimentMeta = DMEMeta {
       experimentName :: T.Text
     , experimentDetails :: T.Text
+    , expInitCoord :: RealInputCoord -- Every input, pinned
     , expReps :: ExperimentReps -- Times to repeat this experiment.
     , expKind :: ExpKind -- Was the parsed VEXExperiment general or preset?
     , expFigures :: FigKinds
@@ -646,23 +648,23 @@ phValidate mM phs
 mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
 mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps fkds) =
-    DMExperiment <$> pure expM
+    DMExperiment <$> mkDMExpMeta mL exName exName initialCs exReps GenExp fkds
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper expStep (layerPrep mL))
                  <*> (const <$> listedPulses)
         where
-            expM = DMEMeta exName exName exReps GenExp fkds
+            initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
 mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
-        DMExperiment <$> pure expM
+        DMExperiment <$> expM
                      <*> mkAttFilter mM mL inEnv
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> (const <$> listedPulses)
         where
-            expM = DMEMeta expName expDetails exReps P1 fkds
+            expM = mkDMExpMeta mL expName expDetails initialCs exReps P1 fkds
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
             startPl = VEXInPt initialCs [] t_0
@@ -679,12 +681,12 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
             textInputs = T.intercalate "_" $ tShow <$> (initCoord inEnv)
             tShow (aNN, aNS) = aNN <> "-" <> (T.pack . show) aNS
 mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
-    DMExperiment <$> pure expM
+    DMExperiment <$> expM
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                  <*> (const <$> listedPulses)
     where
-        expM = DMEMeta expName expDetails exReps KDOE fkds
+        expM = mkDMExpMeta mL expName expDetails initialCs exReps KDOE fkds
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
         startPl = VEXInPt initialCs [] t_0
@@ -701,12 +703,13 @@ mkDMExperiment mM mL
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
         Failure [KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)]
     | otherwise =
-        DMExperiment <$> pure expM
+        DMExperiment <$> expM
                      <*> mkAttFilter mM mL inEnv
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
         where
-            expM = DMEMeta expName expDetails exReps KDOEAtTr fkds
+            expM =
+                mkDMExpMeta mL expName expDetails initialCs exReps KDOEAtTr fkds
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
                 Nothing -> (pN, pSt):initialCs
@@ -858,18 +861,19 @@ mkKDOEAtTrRun intInitialCs intFlipedInitialCs nIAlts (t_0, t_end) pDur offSet
     | otherwise = startPl:kdoeAPPostivePls <> [kdoeEnd]
     where
         startNegativePls
-            | offSet < durationMagnitude t_0 =
-                [ InputPulse intInitialCs [] ((-offSet +) <$> t_0)
-                , InputPulse intInitialCs [] (UserD offSet)]
-            | otherwise = [InputPulse intInitialCs [] (UserD offSet)]
+            | abs offSet < durationMagnitude t_0 =
+                [ InputPulse intInitialCs [] ((offSet +) <$> t_0)
+                , InputPulse intInitialCs nIAlts (UserD (-offSet))]
+            | otherwise = [InputPulse intInitialCs nIAlts (UserD (-offSet))]
         startPl = InputPulse intInitialCs [] t_0
         kdoeAPPostivePls
             | offSet < durationMagnitude pDur =
                 [ InputPulse intFlipedInitialCs [] (UserD offSet)
-                , InputPulse intFlipedInitialCs [] ((-offSet +) <$> pDur)]
+                , InputPulse intFlipedInitialCs nIAlts ((-offSet +) <$> pDur)]
             | otherwise = [justPulse]
         kdoeAndPulse = InputPulse intFlipedInitialCs nIAlts pDur
-        kdoeEnd = InputPulse intInitialCs nIAlts t_end
+        kdoeEnd = TR.trace ("nIAlts: " ++ show nIAlts)
+            (InputPulse intInitialCs nIAlts t_end)
         justPulse = InputPulse intFlipedInitialCs [] pDur
 
 mkInputPulse :: ModelLayer -> VEXInputPulse
@@ -878,6 +882,17 @@ mkInputPulse mL (VEXInPt vexRICs vexNAlts vexDuration) =
     InputPulse <$> mkRealInputCoordinate mL vexRICs
                <*> mkIntNodeAlterations mL vexNAlts
                <*> pure vexDuration
+
+mkDMExpMeta :: ModelLayer -> T.Text -> T.Text -> [(NodeName, RealNodeState)]
+            -> ExperimentReps -> ExpKind -> FigKinds
+            -> Validation [VEXInvestigationInvalid] DMExperimentMeta
+mkDMExpMeta mL expName expDetails initialCs exReps exKnd figureKinds = 
+    DMEMeta <$> pure expName
+            <*> pure expDetails
+            <*> mkRealInputCoordinate mL initialCs
+            <*> pure exReps
+            <*> pure exKnd
+            <*> pure figureKinds
 
 mkRealInputCoordinate :: ModelLayer
                       -> [(NodeName, RealNodeState)]

@@ -91,8 +91,10 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
             | nodeTimeCourse figKs = Just $ (legendDia ===) <$> horizontalBCFigs
             | otherwise = Nothing
             where
-                horizontalBCFigs = hsep 5.0 verticalBCFigss
-                verticalBCFigss = vsep 5.0 <$> nodeBCFigss
+                horizontalBCFigs :: [Diagram B]
+                horizontalBCFigs = mconcat verticalBCFigss
+                verticalBCFigss :: [[Diagram B]]
+                verticalBCFigss = (fmap . fmap) (vsep 5.0) nodeBCFigss
                 nodeBCFigss :: [[[Diagram B]]]
                 nodeBCFigss = (fmap . fmap) nodeBCRunDia avgTmlnPSs
                 nodeBCRunDia (tmLns, pSs) =
@@ -182,10 +184,8 @@ bConv True = 1.0
 -- element in the resultant list represents statistics over an ExpSpreadResult,
 -- since they represent running the experiment with different NodeAlteration
 -- timings. 
-nodeBarChartStats :: RepResults
-                  -> [([U.Vector (RealNodeState, StdDev)], [PulseSpacing])]
-nodeBarChartStats (exSpRs, pSPss) = zip tStats pSPss
-    
+nodeBarChartStats :: RepResults -> [[U.Vector (RealNodeState, StdDev)]]
+nodeBarChartStats (exSpRs, pSPss) = tStats
     where
         tStats = statsCalc <<$>> preppedStates
         preppedStates = (L.transpose . mconcat) <$> splitByIpSpStateVs

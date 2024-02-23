@@ -20,6 +20,7 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as M
+import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Colour as C
 import Data.List.Split (splitPlaces)
@@ -377,51 +378,57 @@ expGuideDia :: ModelLayer
             -> Double
             -> [PulseSpacing]
             -> Diagram B
-expGuideDia mL exMeta stripHt pIs = expTypeText ||| pulseDia
+expGuideDia mL exMeta stripHt pSps = expTypeText ||| pulseDia
     where
         pulseDia = hcat $ L.intersperse tickDia pulseDias
         tickDia = vrule (maximum (height <$> pulseDias)) # lw ultraThin # alignT
         pulseDias = pulseSpacingDia stripHt <$> inputStrippedPIs
-        inputStrippedPIs = inputStrip mLInputNames lniBMap pIs
+        inputStrippedPIs = case expKnd of
+            GenExp -> inputStrip mLInputNames lniBMap (Just initialRIC) pSps
+                where initialRIC = expInitCoord exMeta
+            _ -> inputStrip mLInputNames lniBMap Nothing pSps
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mLInputNames =
             ((fmap . fmap) (nodeName . nodeMeta) . inputs . modelGraph) mL
-        expTypeText = tText' stripHt ((T.pack . show . expKind) exMeta <> " ")
+        expTypeText = tText' stripHt ((T.pack . show) expKnd <> " ")
+        expKnd = expKind exMeta
 
 -- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
 -- for display. 
 inputStrip :: [[NodeName]]
            -> LayerNameIndexBimap
+           -> Maybe RealInputCoord
            -> [PulseSpacing]
            -> [(Int, [[(NodeName, RealNodeState)]], [NodeAlteration])]
-inputStrip mLInputNames lniBMap pIs = stripper <$> groupedIptIPs
+inputStrip mLInputNames lniBMap mRIC pSps = stripper <$> grpdIptIPs
     where
         stripper (a, inpts, c) = (a, filter stripper' inpts, c)
             where
-                stripper' inpt = snd $ inputsHaveChanged M.! (fst <$> inpt)
+                stripper' inpt = inputsHaveChanged M.! (fst <$> inpt)
 --      If a [NodeName] key is associated with a False, then it remains
 --      constant throughout. If True, then it changes as some point. 
-        inputsHaveChanged :: M.HashMap [NodeName] ([RealNodeState], Bool)
-        inputsHaveChanged = foldr changeCheck mempty groupedIptIPs
-        changeCheck (_, inpSts, _) inputM = foldr chCk inputM inpSts
+        inputsHaveChanged :: M.HashMap [NodeName] Bool
+        inputsHaveChanged = M.map (\hs -> HS.size hs > 1) gatheredHM
+        gatheredHM :: M.HashMap [NodeName] (HS.HashSet [Double])
+        gatheredHM = foldr changeCheck initialHM (sndOf3 <$> grpdIptIPs)
+        initialHM = maybe mempty (flip changeCheck mempty) grpdMRIC
+        grpdMRIC = groupInputs mLInputNames lniBMap <$> mRIC
+        changeCheck inpSts inputM = foldr chCk inputM inpSts
             where
-                chCk inpt iM = M.insertWith inserter ns (sts, True) iM
+                chCk inpt iM = M.insertWith HS.union ns (HS.singleton sts) iM
                     where
-                        inserter (nSTS, _) (oSts, _)
-                            | oSts == nSTS = (oSts, False)
-                            | otherwise = (nSTS, True)
                         ns = fst <$> inpt
                         sts = snd <$> inpt
-        groupedIptIPs = groupInputs mLInputNames lniBMap <$> pIs
+        grpdIptIPs = (fmap . BF.first) (groupInputs mLInputNames lniBMap) pSps
 
 -- Given an [[NodeName]] that represents the NodeName of the inputs of a
 -- ModelLayer and a RealInputCoord, produce the [[(Nodename, RealNodeState)]]
 -- that are the inputs actually set by that RealInputCoord. 
 groupInputs :: [[NodeName]]
             -> LayerNameIndexBimap
-            -> PulseSpacing
-            -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
-groupInputs inputNames lniBMap (a, inputV, c) = (a, inputStates, c)
+            -> RealInputCoord
+            -> [[(NodeName, RealNodeState)]]
+groupInputs inputNames lniBMap inputV = inputStates
     where
         inputStates = mapMaybe (grouper namedCoordL) inputNames
 --      This convoluted nonsense to separate out each input is necessary to keep

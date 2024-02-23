@@ -232,17 +232,17 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
     let dirStem = parent f
         expDetails = experimentDetails dmExpMeta
         expType = expKind dmExpMeta
-        expName = experimentName dmExpMeta
+        expName = experimentDetails dmExpMeta
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
         P1 -> parseRelDir "Pulse1"
         KDOE -> parseRelDir "KD_OE"
         KDOEAtTr -> parseRelDir "KD_OE_At_Transition"
         GenExp -> parseRelDir "General_Time_Series"
-    dirExpName <- parseRelDir (T.unpack expName)
+    dirExpDetails <- parseRelDir (T.unpack expName)
     dirPHTC <- parseRelDir "PHTC"
     dirNTC <- parseRelDir "NodeTC"
-    let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
+    let dirFull = dirStem </> dirExp </> dirCat </> dirExpDetails
 -- Note that for a given experiment, there are either Just nodeBCTCFigs for
 -- every Barcode or Nothings; similarly for Just phenotypeBCTCFigs. So these
 -- (traverse . traverse) will not clobber any figures that we want to write out
@@ -272,9 +272,7 @@ writeExpBCFig dirFull expDetails (bc, expDias) = do
         expDs -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
                 rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
-                dNum = L.length expDs
-                intBase = (-(dNum `quot` 2) +) <$> [0..(dNum - 1)]
-                intBStrs = (("_" <>) . show) <$> intBase
+                intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
                 rFStrings = (rFString <>) <$> intBStrs
                 fStrDiaPairs = zip rFStrings expDs
             mapM_ (writeAttAlteredExpBCFig dirFull) fStrDiaPairs

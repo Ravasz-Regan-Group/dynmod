@@ -27,9 +27,9 @@ nBChartDia :: ColorMap
            -> ModelLayer
            -> DMExperimentMeta
            -> AvgBChartNodes
-           -> ([U.Vector (RealNodeState, StdDev)], [PulseSpacing])
+           -> [U.Vector (RealNodeState, StdDev)]
            -> Diagram B
-nBChartDia cMap mL exMeta bCHNodeNs (statVs, pulseSps) = fst $
+nBChartDia cMap mL exMeta bCHNodeNs statVs = fst $
     (runBackendR dEnv . toRenderable) layout
     where
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
@@ -71,6 +71,5 @@ nBChartDia cMap mL exMeta bCHNodeNs (statVs, pulseSps) = fst $
         nRangeTops = (fmap snd . U.toList . U.backpermute rangeTs) nIndices
         nIndices = U.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = (opaque . (cMap M.!)) <$> bCHNodeNs
---         pulseLengths = fstOf3 <$> pulseSps
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
 
