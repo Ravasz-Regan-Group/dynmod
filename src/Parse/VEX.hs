@@ -15,7 +15,6 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as LE
 import Control.Applicative.Permutations -- from parser-combinators
 import Data.Scientific
-import Data.List.Unique (repeated)
 import Data.Void
 import qualified Data.List as L
 

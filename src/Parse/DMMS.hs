@@ -21,7 +21,6 @@ import qualified Data.HashSet as Set
 import Control.Monad.Combinators.Expr   -- from parser-combinators
 import Control.Applicative.Permutations -- from parser-combinators
 import Data.Validation
-import Data.List.Unique (repeated)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as LE

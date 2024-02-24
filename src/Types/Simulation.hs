@@ -52,10 +52,9 @@ import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Graph.Inductive as Gr
 import qualified Control.Parallel.Strategies as P
-import qualified Data.List.Unique as Uniq
 import Data.Maybe (fromJust)
 import qualified Data.Sequence as S
-import qualified Data.List as L
+import qualified Data.List.Extra as L
 import Data.Maybe (isNothing, catMaybes)
 
 
@@ -424,7 +423,7 @@ layerPrep mL = LayerSpecs lniBMap lrVec ttList ivList
 -- self-loop. See the diagrams below. Afterwards, be sure to exclude those
 -- DMNodes in constrainedInputs. 
 inputs :: ModelGraph -> [[DMNode]]
-inputs mG = (fromJust . Gr.lab mG) <<$>> ((fstOf3 . Uniq.complex) <$> reps)
+inputs mG = (fromJust . Gr.lab mG) <<$>> (L.nubOrd <$> reps)
   where
     reps = (uncurry go) <$> goStart
     goStart :: [([Gr.Node], Gr.Node)]

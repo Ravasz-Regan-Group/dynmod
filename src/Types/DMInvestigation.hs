@@ -62,7 +62,6 @@ import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Text as T
 import qualified Control.Parallel.Strategies as P
-import qualified Data.List.Unique as Uniq
 import System.Random
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
@@ -521,7 +520,7 @@ mkInputNodes mL axesOrd inputChoices
             inputNodeNames
         moreThanOne xs = L.length xs > 1
         nonPresentAxes = axesOrd L.\\ mlInputNames
-        axesRepeats = Uniq.repeated axesOrd
+        axesRepeats = repeated axesOrd
         nonInputAxes = filter (flip notElem inputNodeNamesFlat) axesOrd
         inputNodeNamesFlat = mconcat inputNodeNames
         inputNodeNames = (nodeName . nodeMeta) <<$>> nonPinnedIs
@@ -571,7 +570,7 @@ mkInIBFixedVec mL pinnedIs
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         nonPresentPinned = (fst <$> pinnedIs) L.\\ mlNodeNames
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
-        pinnedRepeats = (Uniq.repeated . fmap fst) pinnedIs
+        pinnedRepeats = (repeated . fmap fst) pinnedIs
 
 
 -- Calculate the possible integer pinnings for environmental inputs. 
@@ -640,7 +639,7 @@ phValidate mM phs
         phNameExists phMap (sName, phName) = elem phName 
             (phenotypeName <$> (phMap M.! sName))
         npSwitches = filter (not . flip M.member mMphMap) (fst <$> phs)
-        bcfsRepeats = (Uniq.repeated . fmap fst) phs
+        bcfsRepeats = (repeated . fmap fst) phs
         mMphMap = M.fromList mMPhenotypes
         mMPhenotypes = filter (not . null) $ snd <<$>> mM
 
@@ -785,7 +784,7 @@ mkInEnvFV mL inEnvPIs
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         nonPresentPinned = (fst <$> inEnvPIs) L.\\ mlNodeNames
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
-        pinnedRepeats = (Uniq.repeated . fmap fst) inEnvPIs
+        pinnedRepeats = (repeated . fmap fst) inEnvPIs
 
 mkExpBCFilter :: ModelMapping
               -> (Maybe BarcodeFilter, Either Bool BarcodeFilter)
@@ -918,7 +917,7 @@ mkRealInputCoordinate mL vexRealPIs
         inPts = (inputs . modelGraph) mL
         nonPresentPinned = (fst <$> vexRealPIs) L.\\ mlNodeNames
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
-        pinnedRepeats = (Uniq.repeated . fmap fst) vexRealPIs
+        pinnedRepeats = (repeated . fmap fst) vexRealPIs
 
 -- Is a real-valued input pinned within its valid range?
 isInBand :: [[(NodeName, Int)]] -> (NodeName, RealNodeState) -> Bool
@@ -980,7 +979,7 @@ mkIntNodeAlterations mL nAlts
         nonPresentAlts = altNodeNames L.\\ mlNodeNames
         mlNodeNames = (nodeName . nodeMeta) <$> mlNodes
         mlNodes = layerNodes mL
-        altRepeats = Uniq.repeated altNodeNames
+        altRepeats = repeated altNodeNames
         altNodeNames = nodeAltName <$> nAlts
 
 txtNodeLockOpts :: [(NodeName, NodeState)] -> [NodeRange] -> T.Text
@@ -1353,7 +1352,7 @@ limitedInputsV mL lims
         nonTopLevel = filter (flip notElem topLevelNames) limNames
         nonInput = filter (flip notElem inputStackNames) limNames
         nonPresLim = filter (flip notElem layerNodeNames) limNames
-        limRepeats = Uniq.repeated limNames
+        limRepeats = repeated limNames
         limNames = fst <$> lims
         topLevelNames = (nodeName . nodeMeta) <$> topLevels
 --      Here we take advantage of the fact that inputs calls soleSelfLoops on

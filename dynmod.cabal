@@ -67,7 +67,6 @@ library
     , Chart-diagrams
     , HaTeX
     , SVGFonts
-    , Unique
     , base >=4.7 && <5
     , bimap
     , bytestring

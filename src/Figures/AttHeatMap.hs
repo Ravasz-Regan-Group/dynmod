@@ -40,11 +40,11 @@ heatMapAxis atts mult = r2Axis &~ do
 attractorHeatMapDia :: [[Double]] -> Int -> QDiagram B V2 Double Any
 attractorHeatMapDia ass mult = renderAxis $ heatMapAxis ass mult
 
-rnGrid :: Int -> Int -> Int -> [[(Double, Double)]]
-rnGrid r n mult = mkRow <$> [1..rD]
-    where
-        mkRow m = (\p -> (multD * m, multD * p)) <$> [1..nD]
-        rD = fromIntegral r
-        nD = fromIntegral n
-        multD = fromIntegral mult
+-- rnGrid :: Int -> Int -> Int -> [[(Double, Double)]]
+-- rnGrid r n mult = mkRow <$> [1..rD]
+--     where
+--         mkRow m = (\p -> (multD * m, multD * p)) <$> [1..nD]
+--         rD = fromIntegral r
+--         nD = fromIntegral n
+--         multD = fromIntegral mult
 

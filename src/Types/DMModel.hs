@@ -123,14 +123,12 @@ import qualified Data.Text as T
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
--- import qualified Data.Map.Monoidal.Strict as MMap
 import Data.Validation
-import qualified Data.List.Unique as Uniq
 import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
-import Control.Applicative (liftA2)
 import Data.Maybe (fromJust)
 import qualified Data.Bifunctor as BF
+import Control.Applicative (liftA2)
 
 -- We need a Hashable version of Colour to put them into HashMaps, but this will
 -- really only work for a Double-esque a in Colour a. I'd rather not use a
@@ -779,12 +777,12 @@ mkLayerBinding dmmsMMap sProfiles mLayer mModel =
 
 -- Check that there are no duplicates in the coarse nodes
 noCoarseDupes :: [NodeName] -> Validation [ModelInvalid] [NodeName]
-noCoarseDupes cs = case Uniq.repeated cs of
+noCoarseDupes cs = case repeated cs of
     []   -> Success cs
     errs -> Failure $ [DuplicateCoarseMapNodes errs]
 
 noFineDupes :: [NodeName] -> Validation [ModelInvalid] [NodeName]
-noFineDupes cs = case Uniq.repeated cs of
+noFineDupes cs = case repeated cs of
     []   -> Success cs
     errs -> Failure $ [DuplicateFineMapNodes errs]
 
@@ -878,20 +876,20 @@ phNoMissingOrTooHigh sProfile
     | (maximum st + 1) == (length cleaned) = Success sProfile
     | otherwise = Failure [PhMissingOrTooHigh (fst sProfile, st)]
     where
-         cleaned = Uniq.sortUniq st
+         cleaned = (L.sort . L.nubOrd) st
          st = (fmap switchNodeState . snd) sProfile
 
 -- Check that there are no duplicate Phenotype state assignments. 
 phNoDupes :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
 phNoDupes sProfile
-    | (length st) == (length $ Uniq.sortUniq st) = Success sProfile
+    | (length st) == (length $ (L.sort . L.nubOrd) st) = Success sProfile
     | otherwise = Failure [PhDuplicateAssigns (fst sProfile, st)]
     where
         st = (fmap switchNodeState . snd) sProfile
 
 -- Check that there are no two SwitchPhenotypes with the same SwitchName. 
 noDupeSwitches :: [SwitchProfile] -> Validation [ModelInvalid] [SwitchProfile]
-noDupeSwitches sProfiles = case Uniq.repeated (fst <$> sProfiles) of
+noDupeSwitches sProfiles = case repeated (fst <$> sProfiles) of
     []   -> Success sProfiles
     dSws -> Failure $ [DuplicateProfileSwitches dSws]
 
@@ -903,7 +901,7 @@ noExtraSwitches dmmsMMap sProfiles = case excessSWs of
     []  -> Success sProfiles
     _ -> Failure $ [ExcessProfileSwitches excessSWs]
     where
-        uqs = Uniq.sortUniq (fst <$> sProfiles)
+        uqs = (L.sort . L.nubOrd) (fst <$> sProfiles)
         excessSWs = uqs L.\\ (fst <$> dmmsMMap)
 
 -- Check that each SwitchPhenotype has a corresponding DMNode, and that these
@@ -953,7 +951,7 @@ noSubSpaceRepeatedNodes sProfiles = sequenceA $ go <$> sProfiles
                             | repeatedNNames == [] = Success sbSps1
                             | otherwise = Failure [RepeatedSubSpaceNode err]
                             where
-                                repeatedNNames = Uniq.repeated (fst <$> sbSps1)
+                                repeatedNNames = repeated (fst <$> sbSps1)
                                 err = (sN1, phN1, snNS1, repeatedNNames)
 
 -- In the whole of a ModelMapping, no SubSpace should be a subset of any other.
@@ -996,7 +994,7 @@ subSpaceNodesInSwitch' (nName, (dmmsMMFineNNames, phs))
     | otherwise = Failure $ [SubSpaceNodesNotInSwitch (nName, excessSSNNs)]
     where
         excessSSNNs = subSpaceNodeNames L.\\ dmmsMMFineNNames
-        subSpaceNodeNames = (Uniq.sortUniq . fmap fst) subSpacePairs
+        subSpaceNodeNames = (L.sort . L.nubOrd . fmap fst) subSpacePairs
         subSpacePairs :: [(NodeName, NodeState)]
         subSpacePairs = mconcat $ concatMap fingerprint phs
 
@@ -1112,7 +1110,7 @@ tableToLogical nodes inputRows outputs = collapsedOrs
         inputAssigns = zip inputExprs outputs
 --      Pull the range of possible output states
         possibleOutputStates :: [NodeState]
-        possibleOutputStates = Uniq.sortUniq outputs
+        possibleOutputStates = (L.sort . L.nubOrd) outputs
 --      Match assignments for a given (s) state
         stateMatch :: NodeState -> (b, NodeState) -> Bool
         stateMatch s = (== s) . snd
@@ -1144,7 +1142,7 @@ tableToLogical nodes inputRows outputs = collapsedOrs
 -- Check that there are no duplicate state assignments. 
 noDupes :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]
 noDupes ns = let st = states ns in 
-             case (length st) == (length $ Uniq.sortUniq st) of
+             case (length st) == (length $ (L.sort . L.nubOrd) st) of
                True  -> Success ns
                False -> Failure DuplicateAssigns
 
@@ -1162,7 +1160,7 @@ noMissingOrTooHigh :: [NodeStateAssign]
 noMissingOrTooHigh ns = let st = states ns
 --                          Remove any dupes and any assignments below 1. 
 --                          That kind of error will be dealt with separately. 
-                            clean = Uniq.sortUniq . (filter (> 0))
+                            clean = (L.sort . L.nubOrd) . (filter (> 0))
                             cleaned = clean st
                         in 
               case maximum st == (length cleaned) of
@@ -1226,7 +1224,7 @@ allOutputsPresent :: [NodeState] -> Validation TableInvalid [[NodeState]]
 allOutputsPresent outputs =
     let top = maximum outputs
         expectedOutputs = [0..top]
-        presentOutputs = Uniq.sortUniq outputs
+        presentOutputs = (L.sort . L.nubOrd) outputs
     in
     case presentOutputs == expectedOutputs of
         True  -> Success [outputs]
@@ -1259,16 +1257,8 @@ rowsStrictlyIncreasing inputs = case isStrictlyIncreasing inputs of
 noDupeInputs :: [[NodeState]]
              -> Validation TableInvalid [[NodeState]]
 noDupeInputs inputs
-    | Uniq.allUnique inputs = Success inputs
+    | allUnique inputs = Success inputs
     | otherwise = Failure DuplicatedInputRows
-
--- In case it turns out that finding where duplicated rows are is challenging, 
--- This is how to return a map of them. It makes the error reporting harder, so
--- I'm not going to do it unless I have to. SUPPRESSED
--- duplicatedRowMap :: [[NodeState]] -> ([[Int]], [[NodeState]])
--- duplicatedRowMap inputs = (coordinates, inputs)
---     where (_, dupes, _) = Uniq.complex inputs
---           coordinates = sequenceA (L.elemIndices <$> dupes) inputs
 
 
 

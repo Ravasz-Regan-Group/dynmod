@@ -14,9 +14,9 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import Data.Validation
+import Control.Applicative (liftA2)
 import Data.Tuple (swap)
 import qualified Data.List as L
-import Control.Applicative (liftA2)
 
 data AttractorsInvalid =
       AttractorCheckSwitchNamesDifferent ([NodeName], [NodeName])

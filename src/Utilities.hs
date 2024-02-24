@@ -7,7 +7,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.List as L
 import Data.Foldable (foldl', toList)
 import Data.Bifunctor (Bifunctor(..), bimap)
-import Control.Applicative (liftA2)
+-- import Control.Applicative (liftA2)
 import qualified Data.Vector.Unboxed as UVec
 import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict as M
@@ -17,16 +17,16 @@ import Data.Validation
 import qualified Data.Text as T
 import Data.Text.Lazy (toStrict)
 
-infixl 4 <<$>>, <<*>>, <<<$>>>
+infixl 4 <<$>>{-, <<*>>-}, <<<$>>>
 
 (<<$>>) :: (Functor f1, Functor f2) => (a -> b) -> f1 (f2 a) -> f1 (f2 b)
 (<<$>>) = fmap . fmap
 
-(<<*>>) :: (Applicative f1, Applicative f2) =>
-           f1 (f2 (a -> b))
-        -> f1 (f2  a      )
-        -> f1 (f2       b )
-(<<*>>) = liftA2 (<*>)
+-- (<<*>>) :: (Applicative f1, Applicative f2) =>
+--            f1 (f2 (a -> b))
+--         -> f1 (f2  a      )
+--         -> f1 (f2       b )
+-- (<<*>>) = liftA2 (<*>)
 
 (<<<$>>>) :: (Functor f1, Functor f2, Functor f3) => 
              (a -> b)
@@ -233,3 +233,22 @@ mkProb p
 -- Non-polymorphic version (which is all I need)
 isInt :: Int -> Double -> Bool
 isInt n x = ((round $ 10^n * (x - (fromInteger $ round x))) :: Int) == 0
+
+-- repeated and allUniqiue are lifted wholesale from the Unique package, which
+-- is not as actively maintained as it was, and which I don't want to keep in my
+-- extra-deps. 
+-- https://hackage.haskell.org/package/Unique
+
+-- Find only the elements that are present more than once in a list.
+repeated :: Ord a => [a] -> [a]
+repeated = repeatedBy (>1)
+
+-- Find only the elements that are present more than n times in a list.
+repeatedBy :: Ord a => (Int -> Bool) -> [a] -> [a]
+repeatedBy p = map head . filterByLength p 
+
+filterByLength :: Ord a => (Int -> Bool) -> [a] -> [[a]]
+filterByLength p = filter (p . length) . L.group . L.sort
+
+allUnique :: Ord a => [a] -> Bool
+allUnique = all ( (==) 1 . length) . L.group . L.sort
