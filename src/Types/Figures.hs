@@ -280,7 +280,7 @@ mkSliceCandidate lniBMap att ph
     | otherwise  = case anyMatchReorder intPh att of
         Nothing -> MissCandidate attSize
         Just (ordIntPh, ordAtt, attOffset)
-            | not $ isStepIncreasing matchInts -> MissCandidate attSize
+            | not $ isStrictlyIncreasing matchInts -> MissCandidate attSize
             | any isNothing matches ->
                 RedLineCandidate rlcCount (fPrintSize - 1) phName
             | otherwise ->

@@ -119,10 +119,32 @@ type FixedVec = U.Vector (NodeIndex, NodeState)
 type RangeTop = Int
 type Thread = B.Vector LayerVec
 
--- These functions are needed in both DMInvestigation.hs and
--- InputSpaceFigure.hs, so here they go. 
+-- These functions are needed in both DMInvestigation.hs and Figure.hs,
+-- sso here they go. 
 -- Do the states in the Int-converted Subspace match the equivalent states in
 -- the LayerVec?
+
+-- Mark where on a Thread the Phenotypes of its ModelMaping match. The size of
+-- the Phenotype vector always matches the size of the thread. 
+-- phenotypeMatch :: LayerNameIndexBimap
+--                -> [Phenotype]
+--                -> Thread
+--                -> B.Vector [PhenotypeName]
+-- phenotypeMatch lniBMap phs thread = L.foldl' folderF accV results
+--     where
+--         folderF :: B.Vector [PhenotypeName]
+--                 -> B.Vector PhenotypeName
+--                 -> B.Vector [PhenotypeName]
+--         folderF acc phNameVec = B.zipWith (:) phNameVec acc
+--         results = phMatch lniBMap thread <$> phs
+--         accV = B.replicate (B.length thread) []
+-- 
+-- phMatch :: LayerNameIndexBimap
+--         -> Thread
+--         -> Phenotype
+--         -> B.Vector PhenotypeName
+-- phMatch lniBMap thread ph =
+
 isSSMatch :: LayerVec -> IntSubSpace -> Bool
 isSSMatch lV sS = all (isStateMatch lV) sS
     where
@@ -142,7 +164,7 @@ loopCheck sSs att lastIndex = go croppedAtt [] (lastIndex + 1)
         croppedAtt = B.drop (lastIndex + 1) att
         go anAtt matches indexOffset
             | length sSs > B.length anAtt = matches
-            | not $ isStepIncreasing oMatchInts = matches
+            | not $ isStrictlyIncreasing oMatchInts = matches
             | any isNothing otherMatches = matches
             | otherwise = go newCroppedAtt newMatches newIndexOffset
             where

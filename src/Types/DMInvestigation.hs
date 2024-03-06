@@ -67,7 +67,6 @@ import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (mapMaybe, fromJust, isNothing, catMaybes)
 import Data.Bitraversable (bitraverse)
-import qualified Debug.Trace as TR
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -871,8 +870,7 @@ mkKDOEAtTrRun intInitialCs intFlipedInitialCs nIAlts (t_0, t_end) pDur offSet
                 , InputPulse intFlipedInitialCs nIAlts ((-offSet +) <$> pDur)]
             | otherwise = [justPulse]
         kdoeAndPulse = InputPulse intFlipedInitialCs nIAlts pDur
-        kdoeEnd = TR.trace ("nIAlts: " ++ show nIAlts)
-            (InputPulse intInitialCs nIAlts t_end)
+        kdoeEnd = InputPulse intInitialCs nIAlts t_end
         justPulse = InputPulse intFlipedInitialCs [] pDur
 
 mkInputPulse :: ModelLayer -> VEXInputPulse
@@ -1032,7 +1030,6 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
         layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
         exps = experiments lExpSpec
         phData = (lniBMap, phs)
-        phs :: [Phenotype]
         phs = concatMap (snd . snd) mMap
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mL = layerExpMLayer lExpSpec
@@ -1103,7 +1100,7 @@ phMatch (lniBMap, phs) partialTmln = phMatchIntegrate partialTmln phSlices
             | otherwise = case phMatchReorder intPh tThread of
                 Nothing -> Nothing
                 Just ordIntPh
-                    | not $ isStepIncreasing matchInts -> Nothing
+                    | not $ isStrictlyIncreasing matchInts -> Nothing
                     | any isNothing matches -> Nothing
                     | otherwise -> Just (phenotypeName ph, allSlices)
                     where
@@ -1115,7 +1112,6 @@ phMatch (lniBMap, phs) partialTmln = phMatchIntegrate partialTmln phSlices
                         matches = matchLocation tThread <$> ordIntPh
                         mkRange nSts = (head nSts, last nSts)
             where
-                tThread :: Thread
                 tThread = B.map (fst . U.unzip) partialTmln
                 intPh = f <<$>> fPrint
                     where f (x, y) = (lniBMap BM.! x, y)
@@ -1149,17 +1145,17 @@ phMatchIntegrate partialTmln phSlices = B.zip partialTmln phenotypesVec
 
 
 -- Do any of the Int-converted SubSpaces in the Phenotype match to any
--- state in the Timeline? If so, reorder the Phenotype at the first Phenotype
+-- state in the timeline? If so, reorder the Phenotype at the first Phenotype
 -- SubSpace that matches any Attractor state and return it. 
 phMatchReorder :: [IntSubSpace] -> Thread -> Maybe [IntSubSpace]
 phMatchReorder intPh tThread = case attOffset of
     Nothing -> Nothing
     Just i -> Just (frontSS <> backSS)
-        where
+        where 
             (backSS, frontSS) = L.break (isSSMatch (tThread B.! i)) intPh
     where
         attOffset = B.findIndex (isAttMatch intPh) tThread
-        isAttMatch iph attLVec = any (isSSMatch attLVec) iph
+        isAttMatch iph attLVec = (any (isSSMatch attLVec) iph)
 
 -- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
 -- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline

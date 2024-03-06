@@ -182,10 +182,15 @@ type Switch = (NodeName, ([NodeName],[Phenotype]))
 -- A Phenotype maps a state of a switch node to a (possibly degenerate)
 -- loop of SubSpaces of its constituent nodes, where SubSpaces are subsets
 -- of the switch at particular states, thus constraining the whole ModelLayer
--- network to that particular subspace of possible states. 
+-- network to that particular subspace of possible states. If a Phenotype is a
+-- loop, then at most one of its SubSpaces may be marked, i.e. it is
+-- mutually satisfiable with at most one point Phenotype in that Switch. 
+-- Loop Phenotypes may not share a point Phenotype each other. 
+
 data Phenotype = Phenotype { phenotypeName :: PhenotypeName
                            , switchNodeState :: NodeState
                            , fingerprint :: [SubSpace]
+                           , markedSubSpace :: Maybe SubSpace
                            } deriving (Show, Eq, Ord)
 
 type PhenotypeName = T.Text
@@ -629,32 +634,37 @@ findInAdjs n = L.find ((\x (dmN, _) -> x == (nodeName . nodeMeta) dmN) n)
 
 -- Error handling types
 
-data ModelInvalid = DuplicateCoarseMapNodes [NodeName]
-                  | DuplicateFineMapNodes [NodeName]
-                  | ExcessFineMapNodes [NodeName]
-                  | MissingFineMapNodes [NodeName]
-                  | ExcessCoarseMapNodes [NodeName]
-                  | MissingCoarseMapNodes [NodeName]
-                  | FineInMultipleCoarse [NodeName]
-                  | DuplicatedNodeNames [NodeName]
-                  | DuplicateProfileSwitches [NodeName]
-                  | ExcessProfileSwitches [NodeName]
-                  | ProfileSwitchNotInModelGraph NodeName
-                  | MissingPhenotypes (NodeName, [NodeState])
-                  | ExcessPhenotypes (NodeName, [NodeState])
-                  | RepeatedSubSpaceNode
-                        (NodeName, NodeName, NodeState, [NodeName])
-                  | SubSpaceIsASubSet (SubSpace, [SubSpace])
-                  | DuplicatedPhenotypeNames [NodeName]
-                  | PhNegStates (NodeName, [NodeState])
-                  | PhOutOfOrder (NodeName, [NodeState])
-                  | PhMissingOrTooHigh (NodeName, [NodeState])
-                  | PhDuplicateAssigns (NodeName, [NodeState])
-                  | SubSpaceNodesNotInSwitch (NodeName, [NodeName])
-                  | UnknownSubSpaceNode NodeName
-                  | InvalidSubSpaceNodeValue (NodeName, NodeState)
-                  | DuplicatedModelNames [NodeName]
---                   | MissingCitations MissingCitations
+data ModelInvalid =
+    DuplicateCoarseMapNodes [NodeName]
+  | DuplicateFineMapNodes [NodeName]
+  | ExcessFineMapNodes [NodeName]
+  | MissingFineMapNodes [NodeName]
+  | ExcessCoarseMapNodes [NodeName]
+  | MissingCoarseMapNodes [NodeName]
+  | FineInMultipleCoarse [NodeName]
+  | DuplicatedNodeNames [NodeName]
+  | DuplicateProfileSwitches [NodeName]
+  | ExcessProfileSwitches [NodeName]
+  | ProfileSwitchNotInModelGraph NodeName
+  | MissingPhenotypes (NodeName, [NodeState])
+  | ExcessPhenotypes (NodeName, [NodeState])
+  | RepeatedSubSpaceNode (NodeName, NodeName, NodeState, [NodeName])
+  | SubSpaceIsASubSet (SubSpace, [SubSpace])
+  | DuplicatedPhenotypeNames [NodeName]
+  | PhNegStates (NodeName, [NodeState])
+  | PhOutOfOrder (NodeName, [NodeState])
+  | PhMissingOrTooHigh (NodeName, [NodeState])
+  | PhDuplicateAssigns (NodeName, [NodeState])
+  | SubSpaceNodesNotInSwitch (NodeName, [NodeName])
+  | UnknownSubSpaceNode NodeName
+  | InvalidSubSpaceNodeValue (NodeName, NodeState)
+  | MutuallySatisfiablePointPhSubSpaces
+                        ((PhenotypeName, SubSpace), (PhenotypeName, SubSpace))
+  | MutuallySatisfiableLoopPhSubSpaces
+                        ((PhenotypeName, SubSpace), (PhenotypeName, SubSpace))
+  | MultipleLoopPointSubSpaceMatches PhenotypeName [(PhenotypeName, SubSpace)]
+  | DuplicatedModelNames [NodeName]
+-- | MissingCitations MissingCitations
     deriving (Show, Eq)
 -- type MissingCitations = [BibTeXKey]
 
@@ -828,24 +838,26 @@ isMapSurjective ms
 mkModelMapping :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
                -> Validation [ModelInvalid] DMModel
 mkModelMapping (dmmsMMap, sProfiles, mLayer, mModel) = 
-    (traverse phIsMonotonic sProfiles)         *>
-    (traverse phNoMissingOrTooHigh sProfiles)  *>
-    (traverse phNoDupes sProfiles)             *>
-    noDupeSwitches sProfiles                   *>
-    noExtraSwitches dmmsMMap sProfiles         *>
-    allSwitchStatesCovered sProfiles mLayer    *>
-    noSubSpaceRepeatedNodes sProfiles          *>
-    noSubSpaceSubSets sProfiles                *>
-    subSpaceNodesInSwitch dmmsMMap sProfiles   *>
+    (traverse phIsMonotonic sProfiles)             *>
+    (traverse phNoMissingOrTooHigh sProfiles)      *>
+    (traverse phNoDupes sProfiles)                 *>
+    noDupeSwitches sProfiles                       *>
+    noExtraSwitches dmmsMMap sProfiles             *>
+    allSwitchStatesCovered sProfiles mLayer        *>
+    noSubSpaceRepeatedNodes sProfiles              *>
+    noSubSpaceSubSets sProfiles                    *>
+    subSpaceNodesInSwitch dmmsMMap sProfiles       *>
     subSpaceNodeStatesCovered fineMLayer sProfiles *>
-    pure (LayerBinding mm mLayer mModel)
-    
+    (LayerBinding <$> mm <*> pure mLayer <*> pure mModel)
     where
-        mm = foldr (mappingsMatcher sProfiles) [] dmmsMMap
+        mm = case traverse wellFormedPh sProfiles of
+            Failure errs -> Failure errs
+            Success markedSProfiles -> Success $
+                foldr (mappingsMatcher markedSProfiles) [] dmmsMMap
         fineMLayer = coarseLayer mModel
 
--- Fold together a DMMSModelMapping and a [SwitchProfile] int a ModelMapping.
--- NOTE! This assumes that all checks have been performed! do not use outside of
+-- Fold together a DMMSModelMapping and a [SwitchProfile] into a ModelMapping.
+-- NOTE! This assumes that all checks have been performed! Do not use outside of
 -- mkModelMapping or subSpaceNodesInSwitch!
 mappingsMatcher :: [SwitchProfile]
                 -> (NodeName, [NodeName])
@@ -940,8 +952,8 @@ noSubSpaceRepeatedNodes sProfiles = sequenceA $ go <$> sProfiles
             where
                 go' :: NodeName -> Phenotype
                     -> Validation [ModelInvalid] [Phenotype]
-                go' sN (Phenotype phN snNS sbSps) =
-                    (:[]) <$> (Phenotype phN snNS) <$> g2Results
+                go' sN (Phenotype phN snNS sbSps mkd) =
+                    (:[]) <$> ((Phenotype phN snNS) <$> g2Results <*> pure mkd)
                     where
                         g2Results :: Validation [ModelInvalid] [SubSpace]
                         g2Results = sequenceA $ go'' sN phN snNS <$> sbSps
@@ -1018,6 +1030,93 @@ subSpaceNodeStatesCovered' lRange (nName, nState) =
         | otherwise -> Failure $ [InvalidSubSpaceNodeValue (nName, nState)]
     Nothing -> Failure $ [UnknownSubSpaceNode nName]
     
+-- Internally to a Switch, for each phenotype which is a loop (that is, where
+-- (length . fingerprint) ph > 1), there can be AT MOST one point phenotype
+-- ((length . fingerprint) ph == 1) whose SubSpace is mutually satifiable with
+-- AT MOST one SubSpace of the loop. That SubSpace MAY NOT repeat when searching
+-- for phenotype matches on a thread, and is set at the marked SubSpace
+-- Additionally, no two loop Phenotypes in the switch may have any mutually
+-- satisfiable SubSpaces. 
+wellFormedPh :: (NodeName, [Phenotype])
+             -> Validation [ModelInvalid] (NodeName, [Phenotype])
+wellFormedPh (nName, phs) =
+    -- Point Phenotypes non-mutually satisfiable check. 
+    sequenceA (pointPhsAreMU <$> pointPhs <*> pointPhs) *>
+    -- Loop Phenotypes non-mutually satisfiable check. 
+    sequenceA (loopPhsAreMU <$> loopPhs <*> loopPhs) *>
+    ((,) nName <$> phRs)
+    where
+        phRs :: Validation [ModelInvalid] [Phenotype]
+        phRs = traverse (($ pointPhs) . findMarkedSubSpace) loopPhs
+        (pointPhs, loopPhs) = L.partition ((== 1) . L.length . fingerprint) phs
+
+-- pointhenotypesAreMutuallyUnSatisfiable
+pointPhsAreMU :: Phenotype -> Phenotype
+             -> Validation [ModelInvalid] (Phenotype, Phenotype)
+pointPhsAreMU phX phY
+    -- PhenotypeNames are checked to be globally unique at parse time, so this
+    -- bit is just to avoid checking Phenotypes against themselves. 
+    | xPhName == yPhName = Success (phX, phY)
+    | otherwise = head <$> (sequenceA matches)
+    where
+        matches :: [Validation [ModelInvalid] (Phenotype, Phenotype)]
+        matches = checker <$> xPhNameSSExps <*> yPhNameSSExps
+        checker (xN, xSS) (yN, ySS)
+            | areMutuallySatisfiable xSS ySS = Failure
+                [MutuallySatisfiablePointPhSubSpaces ((xN, xSS), (yN, ySS))]
+            | otherwise = Success (phX, phY)
+        (xPhNameSSExps, yPhNameSSExps) = isoBimap phExpander (phX, phY)
+        phExpander ph = zip (repeat (phenotypeName ph)) (fingerprint ph)
+        (xPhName, yPhName) = isoBimap phenotypeName (phX, phY)
+
+
+-- loopPhenotypesAreMutuallyUnSatisfiable
+loopPhsAreMU :: Phenotype -> Phenotype
+             -> Validation [ModelInvalid] (Phenotype, Phenotype)
+loopPhsAreMU phX phY
+    -- PhenotypeNames are checked to be globally unique at parse time, so this
+    -- bit is just to avoid checking Phenotypes against themselves. 
+    | xPhName == yPhName = Success (phX, phY)
+    | otherwise = head <$> (sequenceA matches)
+    where
+        matches = checker <$> xPhNameSSExps <*> yPhNameSSExps
+        checker (xN, xSS) (yN, ySS)
+            | areMutuallySatisfiable xSS ySS = Failure
+                [MutuallySatisfiableLoopPhSubSpaces ((xN, xSS), (yN, ySS))]
+            | otherwise = Success (phX, phY)
+        (xPhNameSSExps, yPhNameSSExps) = isoBimap phExpander (phX, phY)
+        phExpander ph = zip (repeat (phenotypeName ph)) (fingerprint ph)
+        (xPhName, yPhName) = isoBimap phenotypeName (phX, phY)
+        
+-- Consume a loop Phenotype and a list of point Phenotypes, and produce a
+-- Just x marked Phenotype if a match exists. NOTE! This assumes that the point
+-- Phenotypes have been checked to be non-mutually satisfiable! Do not use
+-- outside of wellFormedPh!
+findMarkedSubSpace :: Phenotype -> [Phenotype]
+                   -> Validation [ModelInvalid] Phenotype
+findMarkedSubSpace loopPh pointPhs = case mtchs of
+    [] -> Success loopPh {markedSubSpace = Nothing}
+    [ph] -> Success $ loopPh {markedSubSpace = Just (fFp ph)}
+    phs -> Failure $ [MultipleLoopPointSubSpaceMatches lpPHN (errF <$> phs)]
+    where
+        errF x = (phenotypeName x, fFp x)
+        lpPHN = phenotypeName loopPh
+        mtchs = filter (fmss loopPh) pointPhs
+        fmss lPh pPh = any (areMutuallySatisfiable pPhSS) loopPhSSs
+            where
+                pPhSS = fFp pPh
+                loopPhSSs = fingerprint lPh
+        fFp = head . fingerprint
+
+-- Can two SubSpaces both be matched at the same time?
+areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool
+areMutuallySatisfiable ssX ssY = any id matchedSSs
+    where
+        matchedSSs = zipWith (\(_, i) (_, j) -> i == j) ssYMutuals ssXMutuals
+        ssYMutuals = pullMutuals ssY
+        ssXMutuals = pullMutuals ssX
+        pullMutuals xs = L.sort $ filter ((`elem` mutualNodes) . fst) xs
+        mutualNodes = L.intersect (fst <$> ssX) (fst <$> ssY)
 
 -- Split a ModelMapping into a DMMSModelMapping and a [SwitchProfile]. 
 modelMappingSplit :: ModelMapping -> (DMMSModelMapping, [SwitchProfile])

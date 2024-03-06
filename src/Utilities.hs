@@ -48,10 +48,10 @@ isStrictlyIncreasing (x:y:xs) = x < y && isStrictlyIncreasing (y:xs)
 
 -- Are the elements in the List increasing one-by-one, according to their Ord
 -- instance?
-isStepIncreasing :: (Ord a, Enum a) => [a] -> Bool
-isStepIncreasing [] = True
-isStepIncreasing [_] = True
-isStepIncreasing (x:y:xs) = succ x == y && isStepIncreasing (y:xs)
+-- isStepIncreasing :: (Ord a, Enum a) => [a] -> Bool
+-- isStepIncreasing [] = True
+-- isStepIncreasing [_] = True
+-- isStepIncreasing (x:y:xs) = succ x == y && isStepIncreasing (y:xs)
 
 -- Is List xs a subset of List ys? Not efficient. Do not use for n > 10000. 
 isSubset :: (Eq a) => [a] -> [a] -> Bool

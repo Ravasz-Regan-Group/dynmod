@@ -282,7 +282,7 @@ phenotypeParse = do
     switchState <- integer
     void stateAssign
     phFingerprint <- fingerPrintParse
-    return $ Phenotype phName switchState phFingerprint
+    return $ Phenotype phName switchState phFingerprint Nothing
 
 -- Note that you may not write to an element of a SubSpace without a state, even
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 
