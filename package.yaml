@@ -63,6 +63,7 @@ library:
   - fgl
   - vector
   - vector-instances
+  - vector-split
   - colour
   - palette
   - text

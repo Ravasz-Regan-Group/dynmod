@@ -65,7 +65,7 @@ import qualified Control.Parallel.Strategies as P
 import System.Random
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
-import Data.Maybe (mapMaybe, fromJust, isNothing, catMaybes)
+import Data.Maybe (mapMaybe, fromJust)
 import Data.Bitraversable (bitraverse)
 
 -- Defining the types that comprise sampling preferences, input space diagram
@@ -117,13 +117,13 @@ data FigKinds = FigKinds {
       nodeTimeCourse :: DoNodeTimeCourse
     , phenotypeTimeCourse :: DoPhenotypeTimeCourse
     , nodeAvgBars :: AvgBChartNodes
---     , phnotypeAvgBars :: DoPhenotypeAvgBars
+    , phenotypeAvgBars :: AvgBChartSwitches
     } deriving (Eq, Show)
 
 type DoNodeTimeCourse = Bool
 type DoPhenotypeTimeCourse = Bool
 type AvgBChartNodes = [NodeName]
--- type AvgBarsPhs = [PhenotypeName]
+type AvgBChartSwitches = [NodeName]
 
 data ExpKind = P1
              | KDOE
@@ -215,8 +215,6 @@ type Timeline = B.Vector (AnnotatedLayerVec, [PhenotypeName])
 type AnnotatedLayerVec = U.Vector (NodeState, WasForced)
 -- Was the NodeState in question forced to this state?
 type WasForced = Bool
--- slices of a timeline, of the form (a, b) | b >= a >= 0
-type TLSlice = (Int, Int)
 -- Partial Timeline. This comes up often enough that it saves space
 type PTimeLine = B.Vector (U.Vector (NodeState, WasForced))
 
@@ -274,6 +272,8 @@ data VEXInvestigationInvalid =
     | LimitedInputsNotTopLevel [NodeName]
     | InvalidInputLimits [(NodeName, [Int], [Int])]
     | KDOEATFlipDoesNotChangeStartingModelState (NodeName, RealNodeState)
+    | UnknownNodesInNodeBarChart [NodeName]
+    | UnknownOrNonPhenotypedSwitchesInPHBarChart [NodeName]
     deriving (Eq, Show, Ord)
 
 vexErrorPrep :: VEXInvestigationInvalid -> T.Text
@@ -364,6 +364,11 @@ vexErrorPrep (InvalidInputLimits oobLimitations) = "InvalidInputLimits; The \
                 psh = T.pack . show
 vexErrorPrep (KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)) =
     "KDOEATFlipDoesNotChangeStartingModelState: " <> (T.pack . show) (pN, pSt)
+vexErrorPrep (UnknownNodesInNodeBarChart nNms) =
+    "UnknownNodesInNodeBarChart: " <> T.intercalate ", " nNms
+vexErrorPrep (UnknownOrNonPhenotypedSwitchesInPHBarChart nNms) =
+    "UnknownOrNonPhenotypedSwitchesInPHBarChart: " <> T.intercalate ", " nNms
+
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
 
@@ -481,7 +486,7 @@ layerMatch dmM vLExSpec = case findLayerWithBinding vLName dmM of
 
 mkLayerExpSpec :: ((ModelMapping, ModelLayer), VEXLayerExpSpec)
                -> Validation [VEXInvestigationInvalid] LayerExpSpec
-mkLayerExpSpec ((mM, mL), vLExSpec) = 
+mkLayerExpSpec ((mM, mL), vLExSpec) =
     LayerExpSpec <$> pure mM
                  <*> pure mL
                  <*> traverse (mkDMInvesIBundle mM mL) (vexISpaceSpec vLExSpec)
@@ -634,19 +639,19 @@ phValidate mM phs
     
     where
         npPhs :: [(NodeName, PhenotypeName)]
-        npPhs = filter (not . phNameExists mMphMap) phs
-        phNameExists phMap (sName, phName) = elem phName 
-            (phenotypeName <$> (phMap M.! sName))
-        npSwitches = filter (not . flip M.member mMphMap) (fst <$> phs)
+        npPhs = filter ((`notElem` phNames) . snd) phs
+        phNames = concatMap (fmap phenotypeName . snd) mMPhenotypes
+        npSwitches = filter (`notElem` switchNames) (fst <$> phs)
+        switchNames = fst <$> mMPhenotypes
         bcfsRepeats = (repeated . fmap fst) phs
-        mMphMap = M.fromList mMPhenotypes
-        mMPhenotypes = filter (not . null) $ snd <<$>> mM
+        mMPhenotypes :: [(NodeName, [Phenotype])]
+        mMPhenotypes = filter (not . null . snd) $ (fmap . fmap) snd mM
 
 
 mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
                -> Validation [VEXInvestigationInvalid] DMExperiment
-mkDMExperiment mM mL (GeneralExp exName inEnv expStep vexPlss exReps fkds) =
-    DMExperiment <$> mkDMExpMeta mL exName exName initialCs exReps GenExp fkds
+mkDMExperiment mM mL (GeneralExp exNm inEnv expStep vexPlss exReps fkds) =
+    DMExperiment <$> mkDMExpMeta mM mL exNm exNm initialCs exReps GenExp fkds
                  <*> mkAttFilter mM mL inEnv
                  <*> pure (mkStepper expStep (layerPrep mL))
                  <*> (const <$> listedPulses)
@@ -662,7 +667,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
                      <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                      <*> (const <$> listedPulses)
         where
-            expM = mkDMExpMeta mL expName expDetails initialCs exReps P1 fkds
+            expM = mkDMExpMeta mM mL expName expDetails initialCs exReps P1 fkds
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
             startPl = VEXInPt initialCs [] t_0
@@ -684,7 +689,7 @@ mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
                  <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
                  <*> (const <$> listedPulses)
     where
-        expM = mkDMExpMeta mL expName expDetails initialCs exReps KDOE fkds
+        expM = mkDMExpMeta mM mL expName expDetails initialCs exReps KDOE fkds
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
         startPl = VEXInPt initialCs [] t_0
@@ -707,16 +712,16 @@ mkDMExperiment mM mL
                      <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
         where
             expM =
-                mkDMExpMeta mL expName expDetails initialCs exReps KDOEAtTr fkds
+                mkDMExpMeta mM mL expNm expDtls initialCs exReps KDOEAtTr fkds
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
                 Nothing -> (pN, pSt):initialCs
                 Just a -> (pN, pSt):(L.delete a initialCs)
             -- Switch from NodeStates to RealNodeStates. 
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
-            expName = "KDOEAtTr_" <> kdoeName nAlts <> "_wPulse_" <> pN <>
+            expNm = "KDOEAtTr_" <> kdoeName nAlts <> "_wPulse_" <> pN <>
                 "_wInputs_" <> textInputs
-            expDetails = "KDOEAtTr_" <> kdoeDetails nAlts <> "_wPulse_" <>
+            expDtls = "KDOEAtTr_" <> kdoeDetails nAlts <> "_wPulse_" <>
                 pulseDetails <> "_wInputs_" <> textInputs
             pulseDetails = pN <> "-" <> (T.pack . show) pSt <> "-" <>
                 ((T.pack . show) pDur)
@@ -880,16 +885,16 @@ mkInputPulse mL (VEXInPt vexRICs vexNAlts vexDuration) =
                <*> mkIntNodeAlterations mL vexNAlts
                <*> pure vexDuration
 
-mkDMExpMeta :: ModelLayer -> T.Text -> T.Text -> [(NodeName, RealNodeState)]
-            -> ExperimentReps -> ExpKind -> FigKinds
-            -> Validation [VEXInvestigationInvalid] DMExperimentMeta
-mkDMExpMeta mL expName expDetails initialCs exReps exKnd figureKinds = 
+mkDMExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
+            -> [(NodeName, RealNodeState)] -> ExperimentReps -> ExpKind
+            -> FigKinds -> Validation [VEXInvestigationInvalid] DMExperimentMeta
+mkDMExpMeta mM mL expName expDetails initialCs exReps exKnd figureKinds = 
     DMEMeta <$> pure expName
             <*> pure expDetails
             <*> mkRealInputCoordinate mL initialCs
             <*> pure exReps
             <*> pure exKnd
-            <*> pure figureKinds
+            <*> mkFigKinds mM mL figureKinds
 
 mkRealInputCoordinate :: ModelLayer
                       -> [(NodeName, RealNodeState)]
@@ -950,6 +955,24 @@ realTextInputOptions inPtNDs = T.intercalate "\n" $ realTxtInputOpt <$> inPtNDs
                 otherOpts nN = nN <> ":x, x ∈ (0,1]"
                 firstRange = head rNS <> ":x, x ∈ [0,1]"
                 rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
+
+-- Make sure that AvgBChartNodes are real NodeNames, and that AvgBChartSwitches
+-- are real Switches which are phenotyped. 
+mkFigKinds :: ModelMapping -> ModelLayer -> FigKinds
+           -> Validation [VEXInvestigationInvalid] FigKinds
+mkFigKinds mM mL (FigKinds ntcB phtcB nNs sNs) = 
+    FigKinds <$> pure ntcB <*> pure phtcB <*> nNCheck <*> sNsCheck
+    where
+        nNCheck = case filter (`notElem` layerNNames) nNs of
+            [] -> Success nNs
+            ns -> Failure $ [UnknownNodesInNodeBarChart ns]
+        sNsCheck = case filter (`notElem` switchNames) sNs of
+            [] -> Success nNs
+            sns -> Failure $ [UnknownOrNonPhenotypedSwitchesInPHBarChart sns]
+        layerNNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
+        switchNames = fst <$> nonEmptyPhs
+        nonEmptyPhs = filter (not . null . snd . snd) mM
+
 
 mkIntNodeAlterations :: ModelLayer -> [NodeAlteration]
                      -> Validation [VEXInvestigationInvalid] [IntNodeAlteration]
@@ -1060,10 +1083,10 @@ runAttractor :: (LayerNameIndexBimap, [Phenotype])
              -> StdGen
              -> (Barcode, Attractor)
              -> (StdGen, AttractorResult)
-runAttractor phData ex gen (bc, att) = (newGen, (bc, bundledRs))
+runAttractor (lniBMap, phs) ex gen (bc, att) = (newGen, (bc, bundledRs))
     where
         bundledRs = (annIplResultReps, pSpacess)
-        annIplResultReps = (fmap . fmap . fmap) (phMatch phData) iplResultReps
+        annIplResultReps = (fmap . fmap . fmap) zipper iplResultReps
         iplResultReps = P.parMap P.rdeepseq unpacker seeds
         unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
         rIPLF = runInputPulseList att pulseF
@@ -1072,8 +1095,9 @@ runAttractor phData ex gen (bc, att) = (newGen, (bc, bundledRs))
         (gens, newGen) = genGen ((expReps . experimentMeta) ex) gen
         iPulsess = inputPulseF ex $ att
         pulseF = pulseFold attL (expStepper ex)
-        attL = length att
-        lniBMap = fst phData
+        attL = length att 
+        zipper ptl = B.zip ptl $
+            phenotypeMatch lniBMap phs ((B.map (fst . U.unzip)) ptl)
 
 -- Produce the duration of an InputPulse, along with any input changes or node
 -- alterations. 
@@ -1089,73 +1113,6 @@ pulseSpacing attL lniBMap ipls = (pSpacing, realInputCoord ipls, nodeAltChanges)
         pSpace (DefaultD dur) = max dur attL
         pSpace (UserD dur) = dur
 
--- Find which Phenotypes are present in the given Timeline, and where.
-phMatch :: (LayerNameIndexBimap, [Phenotype]) -> PTimeLine -> Timeline
-phMatch (lniBMap, phs) partialTmln = phMatchIntegrate partialTmln phSlices
-    where
-        phSlices = mapMaybe phMatch' phs
-        phMatch' :: Phenotype -> Maybe (PhenotypeName, [TLSlice])
-        phMatch' ph
-            | fPrintSize > tmLnSize = Nothing
-            | otherwise = case phMatchReorder intPh tThread of
-                Nothing -> Nothing
-                Just ordIntPh
-                    | not $ isStrictlyIncreasing matchInts -> Nothing
-                    | any isNothing matches -> Nothing
-                    | otherwise -> Just (phenotypeName ph, allSlices)
-                    where
-                        allSlices = mkRange <$> (matchInts:extraSlices)
-                        extraSlices =
-                            loopCheck ordIntPh tThread lastMatchIndex
-                        lastMatchIndex = last matchInts
-                        matchInts = catMaybes matches
-                        matches = matchLocation tThread <$> ordIntPh
-                        mkRange nSts = (head nSts, last nSts)
-            where
-                tThread = B.map (fst . U.unzip) partialTmln
-                intPh = f <<$>> fPrint
-                    where f (x, y) = (lniBMap BM.! x, y)
-                tmLnSize = B.length partialTmln
-                fPrintSize = L.length fPrint
-                fPrint = fingerprint ph
-
--- transform our list of PhenotypeNames with associated [TLSlice] into a Vector
--- of lists of matching Phenotypes for each timestep in the partial Timeline, 
--- Then zip them together into an actual Timeline. 
-phMatchIntegrate :: PTimeLine -> [(PhenotypeName, [TLSlice])] -> Timeline
-phMatchIntegrate partialTmln phSlices = B.zip partialTmln phenotypesVec
-    where
-        phenotypesVec = B.generate (B.length partialTmln) lookuper
-        lookuper i = M.findWithDefault [] i indexMap
-        indexMap = foldr integrator M.empty phSlices
-        integrator :: (PhenotypeName, [TLSlice])
-                   -> M.HashMap Int [PhenotypeName]
-                   -> M.HashMap Int [PhenotypeName]
-        integrator (phName, tlSls) indexM = foldr integ indexM tlSls
-            where
-                integ :: (Int, Int)
-                      -> M.HashMap Int [PhenotypeName]
-                      -> M.HashMap Int [PhenotypeName]
-                integ (start, end) iM = foldr itg iM [start..end]
-                    where
-                        itg :: Int
-                            -> M.HashMap Int [PhenotypeName]
-                            -> M.HashMap Int [PhenotypeName]
-                        itg j aM = M.insertWith (<>) j [phName] aM
-
-
--- Do any of the Int-converted SubSpaces in the Phenotype match to any
--- state in the timeline? If so, reorder the Phenotype at the first Phenotype
--- SubSpace that matches any Attractor state and return it. 
-phMatchReorder :: [IntSubSpace] -> Thread -> Maybe [IntSubSpace]
-phMatchReorder intPh tThread = case attOffset of
-    Nothing -> Nothing
-    Just i -> Just (frontSS <> backSS)
-        where 
-            (backSS, frontSS) = L.break (isSSMatch (tThread B.! i)) intPh
-    where
-        attOffset = B.findIndex (isAttMatch intPh) tThread
-        isAttMatch iph attLVec = (any (isSSMatch attLVec) iph)
 
 -- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
 -- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline

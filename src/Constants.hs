@@ -1341,6 +1341,7 @@ vexKeyword = [ "DMMSFile"
              , "NodeTimeCourse"
              , "PhenotypeTimeCourse"
              , "AvgBarChartNodes"
+             , "AvgBarChartSwitches"
              ]
 
 vexPredefined ::[T.Text]

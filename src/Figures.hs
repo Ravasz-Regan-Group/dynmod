@@ -31,7 +31,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
-import Data.List.Split (splitPlaces)
+import Data.Vector.Split (splitPlaces)
 import Statistics.Sample (meanVarianceUnb)
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
@@ -54,6 +54,7 @@ layerRunFigure :: ColorMap
     -> ([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
 layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
     where
+        expF :: [(DMExperimentMeta, [(Barcode, BCExpFigures)])]
         expF = expRunFigure cMap lrfMM lrfML <$> eResults
         fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
@@ -74,9 +75,11 @@ expRunFigure :: ColorMap
 expRunFigure cMap mM mL (exMeta, attResults) = (exMeta, bcDiasWBCs)
     where
         bcDiasWBCs = bcRunDia cMap mM mL exMeta <$> (attResCombine attResults)
-        attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
-            where
-                preppedArs = pure <<$>> ars
+--         (:[]) <<$>> attResults
+
+attResCombine :: [AttractorResult] -> [BarcodeResult]
+attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
+    where preppedArs = pure <<$>> ars
 
 bcRunDia :: ColorMap
          -> ModelMapping
@@ -86,7 +89,7 @@ bcRunDia :: ColorMap
          -> (Barcode, BCExpFigures)
 bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
     where
-        expFgs = BCEXFS tcFigs phFigs nBChFig
+        expFgs = BCEXFS tcFigs phFigs nBChFig -- phBChFig
         tcFigs
             | nodeTimeCourse figKs = Just $ (legendDia ===) <$> horizontalBCFigs
             | otherwise = Nothing
@@ -122,6 +125,14 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
                     nBChartFigs :: [[Diagram B]]
                     nBChartFigs = nBChartDia cMap mL exMeta bCHNodeNs <<$>>
                                             (nodeBarChartStats <$> repRs)
+--         phBChFig = case phenotypeAvgBars figKs of
+--             [] -> Nothing
+--             phCHNodeNs -> Just $ vsep 5.0 <$> phBChartFigs
+--                 where
+--                     phBChartFigs :: [[Diagram B]]
+--                     phBChartFigs = phBChartDia cMap mL exMeta phCHNodeNs <<$>>
+--                                         (phBarChartStats <$> repRs)
+--         nonEmptySwPrs = snd <<$>> (filter (not . null . snd . snd) mM)
         -- Integrate the [[PulseSpacing]] with the RealExpSpreadResults. 
         avgTmlnPSs :: [[(RealExpSpreadResults, [PulseSpacing])]]
         avgTmlnPSs = (uncurry zip) <$> avgRepRs
@@ -185,9 +196,8 @@ bConv True = 1.0
 -- since they represent running the experiment with different NodeAlteration
 -- timings. 
 nodeBarChartStats :: RepResults -> [[U.Vector (RealNodeState, StdDev)]]
-nodeBarChartStats (exSpRs, pSPss) = tStats
+nodeBarChartStats (exSpRs, pSPss) = statsCalc <<$>> preppedStates
     where
-        tStats = statsCalc <<$>> preppedStates
         preppedStates = (L.transpose . mconcat) <$> splitByIpSpStateVs
         splitByIpSpStateVs = zipWith tmSplitter pulseIntss tpStates
         pulseIntss = (fstOf3 . unzip3) <$> pSPss
@@ -197,11 +207,9 @@ nodeBarChartStats (exSpRs, pSPss) = tStats
 
 -- Split time series into their InputPulse spacings
 tmSplitter :: [Int]
-           -> [[B.Vector (U.Vector NodeState)]]
-           -> [[[B.Vector (U.Vector NodeState)]]]
-tmSplitter plsSpaces tmlnss = tmSplitter' <<$>>  tmlnss
-    where
-        tmSplitter' = fmap B.fromList . splitPlaces plsSpaces . B.toList
+           -> [[B.Vector a]]
+           -> [[[B.Vector a]]]
+tmSplitter plsSpaces tmlnss = splitPlaces plsSpaces <<$>> tmlnss
 
 -- Calculate the mean and standard deviation of NodeStates of an experiment
 -- population. 
@@ -210,6 +218,35 @@ statsCalc :: [B.Vector (U.Vector NodeState)]
 statsCalc tmlns = U.fromList $ meanVarianceUnb <$> momentVs
     where
         momentVs = (fmap U.fromList . L.transpose . mconcat) floatTmlnLs
-        floatTmlnLs = ((fmap . fmap .fmap) fromIntegral tmlnLs) :: [[[Double]]]
+        floatTmlnLs :: [[[Double]]]
+        floatTmlnLs = ((fmap . fmap .fmap) fromIntegral tmlnLs)
         tmlnLs = (fmap U.toList . B.toList) <$> tmlns
 
+-- Statistics across a RepResults for individual phenotypes. As in
+-- nodeBarChartStats, we model the Timelines as the lifetimes of individual
+-- cells in some experiment. Each element in the resultant list represents
+-- statistics over an ExpSpreadResult, since they represent running the
+-- experiment with different NodeAlteration timings. 
+-- phBarChartStats :: RepResults -> [[M.HashMap PhenotypeName (Double, StdDev)]]
+-- phBarChartStats (exSpRs, pSPss) = phStatsCalc <<$>> preppedStates
+--     where
+--         preppedStates = (L.transpose . mconcat) <$> splitByIpSpPhNs
+--         splitByIpSpPhNs = zipWith tmSplitter pulseIntss tpPhNames
+--         pulseIntss = (fstOf3 . unzip3) <$> pSPss
+--         tpPhNames = L.transpose justPhenotypes
+--         justPhenotypes = (fmap . fmap . fmap) snd exSpRs
+--         threadDuration = (length . fst . head . head . head) exSpRs
+-- 
+-- phStatsCalc :: Int
+--             -> [M.HashMap PhenotypeName [ThreadSlice]]
+--             -> M.HashMap PhenotypeName (Double, StdDev)
+-- phStatsCalc threadDuration phMaps = meanVarianceUnb <$> phVecMap
+--     where
+--         phVecMap :: B.Vector [PhenotypeName]
+--                  -> M.HashMap PhenotypeName (U.Vector Double)
+--         phVecMap v = B.ifoldl' vFoldF M.empty v
+--         vFoldF phMap i phs = L.foldl' (phFoldF i) phMap phs
+--         phFoldF j phM phName = 
+--             M.insertWith (insertF j) phName (blankVec U.// [(j, 1.0)]) phM
+--         insertF j _ oldV = (oldV U.// [(j, 1.0)]) 
+--         blankVec = U.replicate (L.length tmlns) 0.0

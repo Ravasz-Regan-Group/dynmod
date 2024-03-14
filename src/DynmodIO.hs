@@ -46,7 +46,6 @@ import qualified Data.List as L
 import qualified Data.Bifunctor as BF
 import Data.Maybe (fromJust)
 
-
 experimentDMMS :: Path Abs File
                -> Experiments
                -> Either
@@ -250,9 +249,11 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
         tcFigs = (traverse . traverse) nodeBCTCFigs bcExpFigs
         phFigs = (traverse . traverse) phenotypeBCTCFigs bcExpFigs
         nBChFig = (traverse . traverse) nodeBCAvgBarFig bcExpFigs
+--         phBChFig = (traverse . traverse) phenotypeBCAvgBarFigs bcExpFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNTC) expDetails) tcFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHTC) expDetails) phFigs
     (mapM_ . mapM_) (writeExpBCFig dirFull expDetails) nBChFig
+--     (mapM_ . mapM_) (writeExpBCFig dirFull expDetails) phBChFig
 
 writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
 writeExpBCFig dirFull expDetails (bc, expDias) = do

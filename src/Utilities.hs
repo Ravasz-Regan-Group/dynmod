@@ -44,7 +44,14 @@ sPShowNoColor = toStrict . PS.pShowNoColor
 isStrictlyIncreasing :: (Ord a) => [a] -> Bool
 isStrictlyIncreasing [] = True
 isStrictlyIncreasing [_] = True
-isStrictlyIncreasing (x:y:xs) = x < y && isStrictlyIncreasing (y:xs)
+isStrictlyIncreasing (x:y:ys) = x < y && isStrictlyIncreasing (y:ys)
+
+-- Are all the elements each list strictly larger than the list before?
+areStrictlyIncreasing :: (Ord a) => [[a]] -> Bool
+areStrictlyIncreasing [] = True
+areStrictlyIncreasing [_] = True
+areStrictlyIncreasing (x:y:ys) =
+    maximum x < minimum y && areStrictlyIncreasing (y:ys)
 
 -- Are the elements in the List increasing one-by-one, according to their Ord
 -- instance?

@@ -338,6 +338,7 @@ figKindsParse = runPermutation $
     FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
              <*> toPermutationWithDefault False phTimeCourseParse
              <*> toPermutationWithDefault [] nodeAvgBChartParse
+             <*> toPermutationWithDefault [] phAvgBChartParse
 
 -- Do we produce a Node time course figure? Default to True. 
 nodeTimeCourseParse :: Parser DoNodeTimeCourse
@@ -356,6 +357,17 @@ nodeAvgBChartParse = lexeme $ rword "AvgBarChartNodes" >>
             )
         )
     )
+
+-- Which Switches should we make average value bar charts for? Default to []
+phAvgBChartParse :: Parser AvgBChartNodes
+phAvgBChartParse = lexeme $ rword "AvgBarChartPhenotypes" >>
+    (try
+        (colon >>
+            (sepBy1 variable comma
+            )
+        )
+    )
+
 
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50

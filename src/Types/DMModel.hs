@@ -1044,10 +1044,9 @@ wellFormedPh (nName, phs) =
     sequenceA (pointPhsAreMU <$> pointPhs <*> pointPhs) *>
     -- Loop Phenotypes non-mutually satisfiable check. 
     sequenceA (loopPhsAreMU <$> loopPhs <*> loopPhs) *>
-    ((,) nName <$> phRs)
+    traverse (($ pointPhs) . findMarkedSubSpace) loopPhs *>
+    pure (nName, phs)
     where
-        phRs :: Validation [ModelInvalid] [Phenotype]
-        phRs = traverse (($ pointPhs) . findMarkedSubSpace) loopPhs
         (pointPhs, loopPhs) = L.partition ((== 1) . L.length . fingerprint) phs
 
 -- pointhenotypesAreMutuallyUnSatisfiable
@@ -1110,7 +1109,9 @@ findMarkedSubSpace loopPh pointPhs = case mtchs of
 
 -- Can two SubSpaces both be matched at the same time?
 areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool
-areMutuallySatisfiable ssX ssY = any id matchedSSs
+areMutuallySatisfiable ssX ssY
+    | L.null mutualNodes = False
+    | otherwise = all id matchedSSs
     where
         matchedSSs = zipWith (\(_, i) (_, j) -> i == j) ssYMutuals ssXMutuals
         ssYMutuals = pullMutuals ssY

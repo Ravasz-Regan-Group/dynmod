@@ -32,7 +32,6 @@ import qualified Data.Bifunctor as BF
 import Data.Maybe (fromMaybe, mapMaybe)
 
 
-
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
 bcRunFigLegendDia cMap bc = hsep 1.0 evenedBlocks
     where

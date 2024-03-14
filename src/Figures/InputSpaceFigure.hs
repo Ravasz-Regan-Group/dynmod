@@ -192,24 +192,6 @@ barDia bar = case barKind bar of
             slices = L.replicate bHeight missSlice
             missSlice = rect barwidth slHeight # fillColor white
                                                # lineWidth 0.1
-    RedLineBar bHeight phIndex _ -> bDia
-        where
-            bDia = vcat slices # center
-            slices :: [Diagram B]
-            slices = B.toList $ missVec B.// [rlPair]
-            missVec :: B.Vector (Diagram B)
-            missVec = B.replicate bHeight missSlice
-            rlPair = (phIndex, redSlice)
-            redSlice :: Diagram B
-            redSlice = halfSlice === redLine === halfSlice
-            redLine :: Diagram B
-            redLine = hrule barwidth # lc red
-            halfSlice = rect barwidth halfHeight # fillColor white
-                                                 # lineWidth none
-            missSlice = rect barwidth slHeight # fillColor white
-                                               # lineWidth none
-            halfHeight :: Double
-            halfHeight = slHeight / 2.0
     MatchBar slices lColor -> bDia
         where
             bDia = vcat diaSlices # center
