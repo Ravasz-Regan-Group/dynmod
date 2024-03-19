@@ -73,3 +73,12 @@ nBChartDia cMap mL exMeta bCHNodeNs statVs = fst $
         nColors = (opaque . (cMap M.!)) <$> bCHNodeNs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
 
+-- phBChartDia :: ColorMap
+--             -> ModelMapping
+--             -> DMExperimentMeta
+--             -> AvgBChartSwitches
+--             -> [M.HashMap PhenotypeName (Double, StdDev)]
+--             -> Diagram B
+-- phBChartDia cMap mL exMeta bCHNodeNs statMs =
+--     where
+        

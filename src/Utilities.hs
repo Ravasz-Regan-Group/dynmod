@@ -46,12 +46,17 @@ isStrictlyIncreasing [] = True
 isStrictlyIncreasing [_] = True
 isStrictlyIncreasing (x:y:ys) = x < y && isStrictlyIncreasing (y:ys)
 
--- Are all the elements each list strictly larger than the list before?
-areStrictlyIncreasing :: (Ord a) => [[a]] -> Bool
+-- Are all the Ints in each list strictly larger than the list before, as well
+-- as strictly increasing internally?
+areStrictlyIncreasing :: [[Int]] -> Bool
 areStrictlyIncreasing [] = True
-areStrictlyIncreasing [_] = True
-areStrictlyIncreasing (x:y:ys) =
-    maximum x < minimum y && areStrictlyIncreasing (y:ys)
+areStrictlyIncreasing [x] = isStrictlyIncreasing x
+areStrictlyIncreasing (x:y:ys) = case (x, y) of
+    ([], []) -> areStrictlyIncreasing ys
+    (t, []) -> isStrictlyIncreasing t && areStrictlyIncreasing (t:ys)
+    ([], u) -> isStrictlyIncreasing u && areStrictlyIncreasing (u:ys)
+    (t, u) -> isStrictlyIncreasing t && isStrictlyIncreasing u &&
+              maximum t < minimum u && areStrictlyIncreasing (u:ys)
 
 -- Are the elements in the List increasing one-by-one, according to their Ord
 -- instance?

@@ -34,6 +34,7 @@ module Types.DMInvestigation
     , DoNodeTimeCourse
     , DoPhenotypeTimeCourse
     , AvgBChartNodes
+    , AvgBChartSwitches
     , AttractorResult
     , RepResults
     , ExpSpreadResults

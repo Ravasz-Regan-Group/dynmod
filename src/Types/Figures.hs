@@ -19,6 +19,7 @@ module Types.Figures
     , bcFilterF
     , barPhenotype
     , StdDev
+    , ThreadSlice
     ) where    
 
 import Types.DMModel
@@ -32,10 +33,9 @@ import qualified Data.Vector.Unboxed as U
 import Data.Hashable
 import GHC.Generics (Generic)
 import qualified Data.List.Extra as L
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
-
 
 -- Basic types to support all types of figures.
 
@@ -139,12 +139,11 @@ data BarcodeFilter =
       deriving (Eq, Show, Ord)
 
 -- Does an attractor exist at a particular point in the space of environmental
--- inputs? Using any to reject Attractors which do not match a bit faster, since
--- it will stop when it finds a gate which does not match. 
+-- inputs?
 attMatch :: FixedVec -> Attractor -> Bool
-attMatch fVec att = not $ U.any (checkV att) fVec
+attMatch fVec att = U.all (checkV att) fVec
     where
-        checkV anAtt (nIndex, nState) = ((B.head anAtt) U.! nIndex) /= nState
+        checkV anAtt (nIndex, nState) = ((B.head anAtt) U.! nIndex) == nState
 
 -- Generate a Barcode to represent Attractors on environment-space figures.
 -- Assumes the ColorMap order matches that of the Attractor. Return the
@@ -175,12 +174,12 @@ mkBar lniBMap att sColor (sName, phs)
     where
         slices = (uncurry (mkSlice attSize)) <$> (zip phNames matchTHSlicess)
         matchTHSlicess = phMatch lniBMap att <$> orderedPHs 
---      We order the Phenotypes by switchNodeState descending so the the Bar
+--      We order the Phenotypes by switchNodeState descending so that the Bar
 --      will have the 0 state at the bottom, rather than the top. 
+        phNames = phenotypeName <$> orderedPHs
         orderedPHs = (L.reverse . L.sortOn switchNodeState) phs
         attSize = L.length att
         swSize = L.length orderedPHs
-        phNames = phenotypeName <$> phs
 
 
 bcFilterF :: Maybe BarcodeFilter -> Barcode -> Bool
@@ -286,16 +285,25 @@ phMatch lniBMap thread ph
         where
           preppedTFMs = fst <$> trimmedFMatches
           trimmedFMatches = trimmedFHead:(tail matches)
+          trimmedFHead :: ([Int], IntSubSpace)
           trimmedFHead = (BF.first ((:[]) . last) . head) matches
-          extraLSlices = phMatch lniBMap (B.drop trimmedLMatchesSize thread) ph
+          extraLSlices
+            | B.null dpLThread = []
+            | otherwise = phMatch lniBMap dpLThread ph
+            where dpLThread = B.drop trimmedLMatchesSize thread
           preppedTLMs = fst <$> trimmedLMatches
           trimmedLMatchesSize = lmIndexF trimmedLMatches
           trimmedLMatches = (init matches) `L.snoc` trimmedLLast
+          trimmedLLast :: ([Int], IntSubSpace)
           trimmedLLast = (BF.first ((:[]) . head) . last) matches
-          extraSlices = phMatch lniBMap (B.drop (lmIndexF matches) thread) ph
+          extraSlices
+            | B.null dpThread = []
+            | otherwise = phMatch lniBMap dpThread ph
+            where dpThread = B.drop (lmIndexF matches) thread
+          lmIndexF :: [([Int], IntSubSpace)] -> Int
           lmIndexF = ((+1) . last . fst . last) 
           preppedMatches = fst <$> matches
-          matches = matchLocation thread <$> ordIntPh
+          matches = mapMaybe (matchLocation thread) ordIntPh
           mkRange zs = ((minimum . head) zs, (maximum . last) zs)
   where
     mIntNoRepeatSS :: Maybe IntSubSpace
@@ -329,14 +337,13 @@ isSSMatch lV sS = all (isStateMatch lV) sS
 -- Find the location of the first places in the Thread, if any, that the Int-
 -- converted SubSpace matches. Repeats are permitted at this step, so we return
 -- a (possibly empty) list of succesive Ints. 
-matchLocation :: Thread -> IntSubSpace -> ([Int], IntSubSpace)
-matchLocation thread sS = case B.findIndex (flip isSSMatch sS) thread of
-    Nothing -> ([], sS)
-    Just i -> ((i : L.unfoldr unF (i + 1)), sS)
+matchLocation :: Thread -> IntSubSpace -> Maybe ([Int], IntSubSpace)
+matchLocation thread sS = (,) <$> (unfolderF <$> firstMatchI) <*> pure sS
     where
+        unfolderF i = i : L.unfoldr unF (i + 1)
+        firstMatchI = B.findIndex (flip isSSMatch sS) thread
         unF j
-            | j >= thL = Nothing 
+            | j >= B.length thread = Nothing 
             | isSSMatch (thread B.! j) sS = Just (j, j + 1)
             | otherwise = Nothing
-        thL = B.length thread
 
