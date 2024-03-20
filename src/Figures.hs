@@ -29,10 +29,10 @@ import qualified Data.Vector as B
 import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
+import Data.Vector.Split (splitPlaces)
+import Statistics.Sample (meanVarianceUnb)
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
-import Data.Vector.Split (splitPlaces)
-import Statistics.Sample (meanVarianceUnb, geometricMean)
 
 -- BarcodeResult combines AttractorResults by equality on Barcodes, because all
 -- of the AttractorResults for a given Barcode will be turned into figures in
@@ -45,7 +45,7 @@ type RealExpSpreadResults = [RealTimeline]
 data BCExpFigures = BCEXFS { nodeBCTCFigs :: Maybe [Diagram B]
                            , phenotypeBCTCFigs :: Maybe [Diagram B]
                            , nodeBCAvgBarFig :: Maybe [Diagram B]
---                            , phenotypeBCAvgBarFigs :: Maybe [Diagram B]
+                           , phenotypeBCAvgBarFigs :: Maybe [Diagram B]
                            }
 
 layerRunFigure :: ColorMap
@@ -88,7 +88,7 @@ bcRunDia :: ColorMap
          -> (Barcode, BCExpFigures)
 bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
     where
-        expFgs = BCEXFS tcFigs phFigs nBChFig -- phBChFig
+        expFgs = BCEXFS tcFigs phFigs nBChFig phBChFig
         tcFigs
             | nodeTimeCourse figKs = Just $ (legendDia ===) <$> horizontalBCFigs
             | otherwise = Nothing
@@ -124,14 +124,16 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
                     nBChartFigs :: [[Diagram B]]
                     nBChartFigs = nBChartDia cMap mL exMeta bCHNodeNs <<$>>
                                             (nodeBarChartStats <$> repRs)
---         phBChFig = case phenotypeAvgBars figKs of
---             [] -> Nothing
---             phCHNodeNs -> Just $ vsep 5.0 <$> phBChartFigs
---                 where
---                     phBChartFigs :: [[Diagram B]]
---                     phBChartFigs = phBChartDia cMap mM exMeta phCHNodeNs <<$>>
---                                         (phBarChartStats <$> repRs)
-        nonEmptySwPrs = snd <<$>> (filter (not . null . snd . snd) mM)
+        phBChFig = case phenotypeAvgBars figKs of
+            [] -> Nothing
+            phCHNodeNs -> Just $ vsep 5.0 <$> phBChartFigs
+                where
+                    phBChartFigs :: [[Diagram B]]
+                    phBChartFigs = phBChartDia cMap switchMap exMeta phCHNodeNs
+                                            <<$>> (phBarChartStats <$> repRs)
+        switchMap = M.fromList nonEmptySwPhNs
+        nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
+        nonEmptySwPhs = snd <<$>> (filter (not . null . snd . snd) mM)
         -- Integrate the [[PulseSpacing]] with the RealExpSpreadResults. 
         avgTmlnPSs :: [[(RealExpSpreadResults, [PulseSpacing])]]
         avgTmlnPSs = (uncurry zip) <$> avgRepRs

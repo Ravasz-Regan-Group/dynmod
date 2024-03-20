@@ -968,7 +968,7 @@ mkFigKinds mM mL (FigKinds ntcB phtcB nNs sNs) =
             [] -> Success nNs
             ns -> Failure $ [UnknownNodesInNodeBarChart ns]
         sNsCheck = case filter (`notElem` switchNames) sNs of
-            [] -> Success nNs
+            [] -> Success sNs
             sns -> Failure $ [UnknownOrNonPhenotypedSwitchesInPHBarChart sns]
         layerNNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
         switchNames = fst <$> nonEmptyPhs

@@ -360,7 +360,7 @@ nodeAvgBChartParse = lexeme $ rword "AvgBarChartNodes" >>
 
 -- Which Switches should we make average value bar charts for? Default to []
 phAvgBChartParse :: Parser AvgBChartNodes
-phAvgBChartParse = lexeme $ rword "AvgBarChartPhenotypes" >>
+phAvgBChartParse = lexeme $ rword "AvgBarChartSwitches" >>
     (try
         (colon >>
             (sepBy1 variable comma

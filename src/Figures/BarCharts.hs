@@ -3,6 +3,7 @@
 
 module Figures.BarCharts
     ( nBChartDia
+    , phBChartDia
     ) where    
 
 import Types.DMModel
@@ -19,6 +20,7 @@ import qualified Data.Bimap as BM
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
 import qualified Data.List as L
+import Data.Maybe (mapMaybe)
 import GHC.IO (unsafePerformIO)
 
 -- Make a bar chart with average of the selected DMNodes during each pulse, plus
@@ -66,19 +68,53 @@ nBChartDia cMap mL exMeta bCHNodeNs statVs = fst $
 --                 test = [[1,2,3], [1,2,3], [1,2,3]] :: [[Double]]
         boxes = replicate (length avgs) (fromIntegral <$> nRangeTops)
         (avgs, _ {-stdDevs-}) =
-            (isoBimap (fmap U.toList) . L.unzip . fmap U.unzip) nodeStats
-        nodeStats = flip U.backpermute nIndices <$> statVs
+            (isoBimap (fmap U.toList) . L.unzip . fmap U.unzip) pulseStats
+        pulseStats = flip U.backpermute nIndices <$> statVs
         nRangeTops = (fmap snd . U.toList . U.backpermute rangeTs) nIndices
         nIndices = U.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = (opaque . (cMap M.!)) <$> bCHNodeNs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
 
--- phBChartDia :: ColorMap
---             -> ModelMapping
---             -> DMExperimentMeta
---             -> AvgBChartSwitches
---             -> [M.HashMap PhenotypeName (Double, StdDev)]
---             -> Diagram B
--- phBChartDia cMap mL exMeta bCHNodeNs statMs =
---     where
-        
+phBChartDia :: ColorMap
+            -> M.HashMap NodeName [PhenotypeName]
+            -> DMExperimentMeta
+            -> AvgBChartSwitches
+            -> [M.HashMap PhenotypeName (Double, StdDev)]
+            -> Diagram B
+phBChartDia cMap switchMap exMeta bChSwitchNs statMs = fst $
+    (runBackendR dEnv . toRenderable) layout
+    where
+        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
+        layout = 
+            layout_title .~ (T.unpack . experimentName) exMeta
+          $ layout_title_style . font_size .~ 24
+          $ layout_legend .~ legend
+          $ layout_y_axis . laxis_override .~ axisGridHide
+          $ layout_left_axis_visibility . axis_show_ticks .~ False
+          $ layout_plots .~ [plotBars barsAvgs]
+          $ def
+        barsAvgs = 
+            plot_bars_titles .~ (T.unpack <$> bChSwitchNs)
+          $ plot_bars_values .~ addIndexes testAvgs
+          $ plot_bars_style .~ BarsStacked
+          $ plot_bars_spacing .~ BarsFixGap 30 5
+          $ plot_bars_item_styles .~ (mkStyle <$> testBlendedColors)
+          $ def
+            where
+                mkStyle c = (solidFillStyle c, Nothing)
+        legend =  Just $
+            legend_label_style . font_size .~ 12
+            $ def
+        testAvgs = head avgs
+        testBlendedColors = head blendedColors
+        avgs::[[[Double]]]
+        avgs =  (fmap . fmap . fmap) fst pulseStats
+        pulseStats :: [[[(Double, StdDev)]]]
+        pulseStats = L.transpose $ extractor phNamess <$> statMs
+        extractor phNss statM = (fmap . mapMaybe) (statM M.!?) phNss
+        blendedColors = {-concatMap-}
+                        fmap (uncurry phTCBlend) (zip nColors switchSizes)
+        switchSizes = L.length <$> phNamess
+        phNamess :: [[PhenotypeName]]
+        phNamess = (switchMap M.!) <$> bChSwitchNs
+        nColors = (opaque . (cMap M.!)) <$> bChSwitchNs

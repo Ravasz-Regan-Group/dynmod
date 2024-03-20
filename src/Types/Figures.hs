@@ -14,6 +14,7 @@ module Types.Figures
     , mkBarcode
     , ColorMap
     , mkColorMap
+    , phTCBlend
     , gradientPick
     , attMatch
     , bcFilterF
@@ -31,8 +32,9 @@ import qualified Data.Bimap as BM
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import Data.Hashable
-import GHC.Generics (Generic)
 import qualified Data.List.Extra as L
+import qualified Data.Colour as C
+import GHC.Generics (Generic)
 import Data.Maybe (fromJust, mapMaybe)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
@@ -71,6 +73,18 @@ gradientPick pucGr (low, high) pick
         magnitude = high - low
         gradientSize = (fromIntegral . B.length) pucGr
 
+-- Produce a spread of colors for the Phenotypes of a
+-- Switch. 
+phTCBlend :: C.ColourOps a => a Double -> Int -> [a Double]
+phTCBlend swColor phCount
+    | phCount <= 0 = []
+    | phCount == 1 = [swColor]
+    | otherwise = flip C.darken swColor <$> stepF phCount
+    where
+        stepF :: Int -> [Double]
+        stepF i = ((1 -) . ((darkAnchor/(x-1)) *)) <$> [0..x-1]
+            where x = fromIntegral i
+        darkAnchor = 0.65 -- How close to black do we want to go?
 
 
 type Barcode = [Bar]
@@ -173,7 +187,7 @@ mkBar lniBMap att sColor (sName, phs)
     | otherwise = BR (MatchBar slices sColor) attSize sName phNames
     where
         slices = (uncurry (mkSlice attSize)) <$> (zip phNames matchTHSlicess)
-        matchTHSlicess = phMatch lniBMap att <$> orderedPHs 
+        matchTHSlicess = phMatch 0 lniBMap att <$> orderedPHs 
 --      We order the Phenotypes by switchNodeState descending so that the Bar
 --      will have the 0 state at the bottom, rather than the top. 
         phNames = phenotypeName <$> orderedPHs
@@ -259,18 +273,18 @@ phenotypeMatch lniBMap phs thread = B.generate (B.length thread) lookuper
                             -> Int
                             -> M.HashMap Int [PhenotypeName]
                         itg aM j = M.insertWith (<>) j [phName] aM
-        phSlices = zip phNames $ phMatch lniBMap thread <$> phs
+        phSlices = zip phNames $ phMatch 0 lniBMap thread <$> phs
         phNames = phenotypeName <$> phs
 
--- Find the places a Phenotypes is present in the given Thread.
-phMatch :: LayerNameIndexBimap -> Thread -> Phenotype -> [ThreadSlice]
-phMatch lniBMap thread ph
+-- Find the places a Phenotype is present in a Thread.
+phMatch :: Int -> LayerNameIndexBimap -> Thread -> Phenotype -> [ThreadSlice]
+phMatch offSet lniBMap thread ph
   | fPrintSize > thSize = []
   | otherwise = case phMatchReorder intPh thread of
     Nothing -> []
     Just ordIntPh
       | not $ areStrictlyIncreasing preppedMatches -> []
-      | any null matches -> []
+      | any L.null matches -> []
       | otherwise -> case mIntNoRepeatSS of
         Just intNoRepeatSS
           | nRSSIndex == 0 -> (mkRange preppedTFMs):extraSlices
@@ -289,8 +303,10 @@ phMatch lniBMap thread ph
           trimmedFHead = (BF.first ((:[]) . last) . head) matches
           extraLSlices
             | B.null dpLThread = []
-            | otherwise = phMatch lniBMap dpLThread ph
-            where dpLThread = B.drop trimmedLMatchesSize thread
+            | otherwise = phMatch newOffset lniBMap dpLThread ph
+            where
+                newOffset = trimmedLMatchesSize + offSet
+                dpLThread = B.drop trimmedLMatchesSize thread
           preppedTLMs = fst <$> trimmedLMatches
           trimmedLMatchesSize = lmIndexF trimmedLMatches
           trimmedLMatches = (init matches) `L.snoc` trimmedLLast
@@ -298,13 +314,16 @@ phMatch lniBMap thread ph
           trimmedLLast = (BF.first ((:[]) . head) . last) matches
           extraSlices
             | B.null dpThread = []
-            | otherwise = phMatch lniBMap dpThread ph
-            where dpThread = B.drop (lmIndexF matches) thread
+            | otherwise = phMatch newOffSet lniBMap dpThread ph
+            where
+                newOffSet = lmIndexF matches + offSet
+                dpThread = B.drop (lmIndexF matches) thread
           lmIndexF :: [([Int], IntSubSpace)] -> Int
           lmIndexF = ((+1) . last . fst . last) 
           preppedMatches = fst <$> matches
           matches = mapMaybe (matchLocation thread) ordIntPh
-          mkRange zs = ((minimum . head) zs, (maximum . last) zs)
+          mkRange zs = ( offSet + (minimum . head) zs
+                       , offSet + (maximum . last) zs)
   where
     mIntNoRepeatSS :: Maybe IntSubSpace
     mIntNoRepeatSS = (fmap toIntSubSpace . markedSubSpace) ph
@@ -317,15 +336,12 @@ phMatch lniBMap thread ph
 -- state in the timeline? If so, reorder the Phenotype at the first Phenotype
 -- SubSpace that matches any Attractor state and return it. 
 phMatchReorder :: [IntSubSpace] -> Thread -> Maybe [IntSubSpace]
-phMatchReorder intPh thread = case attOffset of
-    Nothing -> Nothing
-    Just i -> Just (frontSS <> backSS)
-        where
-            (backSS, frontSS) = L.break (isSSMatch (thread B.! i)) intPh
+phMatchReorder intPh thread = breakF <$> (B.findIndex (isAttMatch intPh) thread)
     where
-        attOffset :: Maybe Int
-        attOffset = B.findIndex (isAttMatch intPh) thread
-        isAttMatch iph attLVec = (any (isSSMatch attLVec) iph)
+        breakF i = mergeTuple $ L.break (isSSMatch (thread B.! i)) intPh
+        isAttMatch :: [IntSubSpace] -> LayerVec -> Bool
+        isAttMatch iph lVec = any (isSSMatch lVec) iph
+        mergeTuple (x, y) = y <> x
 
 -- Do the states in the Int-converted Subspace match the equivalent states in
 -- the LayerVec?

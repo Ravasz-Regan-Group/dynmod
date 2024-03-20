@@ -321,19 +321,6 @@ switchStripsDia cMap stripHt tmLn (nName, phs) = dias
         blendedColors = phTCBlend baseColor (L.length phs)
         baseColor = cMap M.! nName
 
--- Produce a spread of colors for the Phenotypes of a
--- Switch. 
-phTCBlend :: LocalColor -> Int -> [LocalColor]
-phTCBlend swColor phCount
-    | phCount <= 0 = []
-    | phCount == 1 = [swColor]
-    | otherwise = flip C.darken swColor <$> stepF phCount
-    where
-        stepF :: Int -> [Double]
-        stepF i = ((1 -) . ((darkAnchor/(x-1)) *)) <$> [0..x-1]
-            where x = fromIntegral i
-        darkAnchor = 0.65 -- How close to black do we want to go?
-
 phStripDia :: Double
            -> B.Vector PhenotypeWeights
            -> (LocalColor, PhenotypeName)

@@ -148,7 +148,7 @@ instance (Hashable a, Ord a, Floating a)=> Hashable (C.Colour a) where
 -- the functions of that network. 
 
 type LocalColor = C.Colour Double
-defaultColor :: LocalColor -- ErzsÃ³ red
+defaultColor :: LocalColor -- Erzs— red
 defaultColor = SC.sRGB24 148 17 0
 
 type FileFormatVersion = Ver.SemVer
@@ -662,7 +662,9 @@ data ModelInvalid =
                         ((PhenotypeName, SubSpace), (PhenotypeName, SubSpace))
   | MutuallySatisfiableLoopPhSubSpaces
                         ((PhenotypeName, SubSpace), (PhenotypeName, SubSpace))
-  | MultipleLoopPointSubSpaceMatches PhenotypeName [(PhenotypeName, SubSpace)]
+  | ExcessLoopPointSubSpaceMatches PhenotypeName [(PhenotypeName, SubSpace)]
+  | ExcessPointSubSpaceMatches (((PhenotypeName, SubSpace))
+                              , ((PhenotypeName, [SubSpace])))
   | DuplicatedModelNames [NodeName]
 -- | MissingCitations MissingCitations
     deriving (Show, Eq)
@@ -1095,17 +1097,23 @@ findMarkedSubSpace :: Phenotype -> [Phenotype]
                    -> Validation [ModelInvalid] Phenotype
 findMarkedSubSpace loopPh pointPhs = case mtchs of
     [] -> Success loopPh {markedSubSpace = Nothing}
-    [ph] -> Success $ loopPh {markedSubSpace = Just (fFp ph)}
-    phs -> Failure $ [MultipleLoopPointSubSpaceMatches lpPHN (errF <$> phs)]
+    [ph] -> case filter (areMutuallySatisfiable (fFp ph)) (fP loopPh) of
+        [] -> Success loopPh {markedSubSpace = Nothing}
+        [_] -> Success $ loopPh {markedSubSpace = Just (fFp ph)}
+        sSs -> Failure $ [ExcessPointSubSpaceMatches err]
+            where
+                err = ((errF ph), (phenotypeName loopPh, sSs))
+    phs -> Failure $ [ExcessLoopPointSubSpaceMatches lpPHN (errF <$> phs)]
     where
         errF x = (phenotypeName x, fFp x)
         lpPHN = phenotypeName loopPh
-        mtchs = filter (fmss loopPh) pointPhs
-        fmss lPh pPh = any (areMutuallySatisfiable pPhSS) loopPhSSs
+        mtchs = filter (findPointPhs loopPh) pointPhs
+        findPointPhs lPh pPh = any (areMutuallySatisfiable pPhSS) loopPhSSs
             where
                 pPhSS = fFp pPh
                 loopPhSSs = fingerprint lPh
-        fFp = head . fingerprint
+        fFp = (head . fingerprint)
+        fP = fingerprint
 
 -- Can two SubSpaces both be matched at the same time?
 areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool

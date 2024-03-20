@@ -241,6 +241,8 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
     dirExpDetails <- parseRelDir (T.unpack expName)
     dirPHTC <- parseRelDir "PHTC"
     dirNTC <- parseRelDir "NodeTC"
+    dirNBCH <- parseRelDir "NodeBCh"
+    dirPHBCH <- parseRelDir "PhBCh"
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpDetails
 -- Note that for a given experiment, there are either Just nodeBCTCFigs for
 -- every Barcode or Nothings; similarly for Just phenotypeBCTCFigs. So these
@@ -249,11 +251,11 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
         tcFigs = (traverse . traverse) nodeBCTCFigs bcExpFigs
         phFigs = (traverse . traverse) phenotypeBCTCFigs bcExpFigs
         nBChFig = (traverse . traverse) nodeBCAvgBarFig bcExpFigs
---         phBChFig = (traverse . traverse) phenotypeBCAvgBarFigs bcExpFigs
+        phBChFig = (traverse . traverse) phenotypeBCAvgBarFigs bcExpFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNTC) expDetails) tcFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHTC) expDetails) phFigs
-    (mapM_ . mapM_) (writeExpBCFig dirFull expDetails) nBChFig
---     (mapM_ . mapM_) (writeExpBCFig dirFull expDetails) phBChFig
+    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNBCH) expDetails) nBChFig
+    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHBCH) expDetails) phBChFig
 
 writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
 writeExpBCFig dirFull expDetails (bc, expDias) = do
