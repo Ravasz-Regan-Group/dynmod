@@ -1053,12 +1053,12 @@ wellFormedPh (nName, phs) =
 
 -- pointhenotypesAreMutuallyUnSatisfiable
 pointPhsAreMU :: Phenotype -> Phenotype
-             -> Validation [ModelInvalid] (Phenotype, Phenotype)
+              -> Validation [ModelInvalid] (Phenotype, Phenotype)
 pointPhsAreMU phX phY
     -- PhenotypeNames are checked to be globally unique at parse time, so this
     -- bit is just to avoid checking Phenotypes against themselves. 
     | xPhName == yPhName = Success (phX, phY)
-    | otherwise = head <$> (sequenceA matches)
+    | otherwise = (sequenceA matches) *> pure (phX, phY)
     where
         matches :: [Validation [ModelInvalid] (Phenotype, Phenotype)]
         matches = checker <$> xPhNameSSExps <*> yPhNameSSExps
@@ -1078,7 +1078,7 @@ loopPhsAreMU phX phY
     -- PhenotypeNames are checked to be globally unique at parse time, so this
     -- bit is just to avoid checking Phenotypes against themselves. 
     | xPhName == yPhName = Success (phX, phY)
-    | otherwise = head <$> (sequenceA matches)
+    | otherwise = (sequenceA matches) *> pure (phX, phY)
     where
         matches = checker <$> xPhNameSSExps <*> yPhNameSSExps
         checker (xN, xSS) (yN, ySS)
@@ -1118,7 +1118,7 @@ findMarkedSubSpace loopPh pointPhs = case mtchs of
 -- Can two SubSpaces both be matched at the same time?
 areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool
 areMutuallySatisfiable ssX ssY
-    | L.null mutualNodes = False
+    | L.null mutualNodes = True
     | otherwise = all id matchedSSs
     where
         matchedSSs = zipWith (\(_, i) (_, j) -> i == j) ssYMutuals ssXMutuals
