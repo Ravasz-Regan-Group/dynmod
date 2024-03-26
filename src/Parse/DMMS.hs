@@ -17,6 +17,7 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.Graph.Inductive.NodeMap as Grm
 import qualified Data.HashMap.Strict as Map
+import qualified Data.Bimap as BM
 import qualified Data.HashSet as Set
 import Control.Monad.Combinators.Expr   -- from parser-combinators
 import Control.Applicative.Permutations -- from parser-combinators
@@ -33,6 +34,7 @@ import Data.Char (toLower)
 import Data.Word (Word8)
 import Control.Monad (void)
 import Numeric (readHex)
+import Data.Ix (inRange)
 
 
 type Parser = Parsec Void T.Text
@@ -74,8 +76,8 @@ hsymbol = LE.symbol hsc
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
-hparens :: Parser a -> Parser a
-hparens = between (hsymbol "(") (hsymbol ")")
+-- hparens :: Parser a -> Parser a
+-- hparens = between (hsymbol "(") (hsymbol ")")
 
 -- | 'number' parses an number in scientific format.
 
@@ -112,8 +114,8 @@ stateAssign = symbol "*="
 comma :: Parser T.Text
 comma = symbol ","
 
-hcomma :: Parser T.Text
-hcomma = hsymbol ","
+-- hcomma :: Parser T.Text
+-- hcomma = hsymbol ","
 
 -- | 'rword' generates a parser for a specified reserved word. 
 
@@ -167,7 +169,7 @@ modelParse = between (symbol "Model{") (symbol "Model}")
 --            There might not be SwitchProfiles{}, so provide an empty default.
                     <*> toPermutationWithDefault [] switchProfilesParse
                     <*> (ModelLayer <$> toPermutation modelGraphParse
-                                    <*> toPermutation modelConfigParse)
+                                     <*> toPermutation modelConfigParse)
                     <*> toPermutation modelParse
              )
                 >>= modelMappingCheck
@@ -252,7 +254,9 @@ modelMappingCheck :: (DMMSModelMapping, [SwitchProfile], ModelLayer, DMModel)
                   -> Parser DMModel
 modelMappingCheck (dmmsMap, sProfiles, mLayer, mModel) =
     case mkLayerBinding dmmsMap sProfiles mLayer mModel of
-        Success dmModel -> return dmModel
+        Success dmModel -> case mkModelLayer mLayer of
+            Success _ -> return dmModel
+            Failure errs -> fail $ show errs
         Failure errs    -> fail $ show errs
 
 -- Parse the mapping from one layer of a model to the next. 
@@ -298,9 +302,13 @@ fingerNodeParse = do
     return (fingerNode, fingerNodeState)
 
 modelLayerParse :: Parser ModelLayer
-modelLayerParse = runPermutation $
-    ModelLayer <$> toPermutation modelGraphParse
-               <*> toPermutation modelConfigParse
+modelLayerParse = try
+    (
+        (runPermutation $
+            ModelLayer <$> toPermutation modelGraphParse
+                       <*> toPermutation modelConfigParse
+    )
+    >>= modelLayerCheck)
 
 
 -- Parse the internal network of a particular model layer. 
@@ -515,8 +523,8 @@ modelConfigParse = between (symbol "ModelMetaData{") (symbol "ModelMetaData}")
       ModelMeta <$> toPermutation (identifier "ModelName")
                 <*> toPermutation (versionParse "ModelVersion")
                 <*> toPermutation modelPaperParse
-                <*> toPermutation (biasPairParse "BiasOrderFirst")
-                <*> toPermutation (biasPairParse "BiasOrderLast")
+                <*> toPermutation (biasOrderParse "BiasOrderFirst")
+                <*> toPermutation (biasOrderParse "BiasOrderLast")
                 <*> (doubleUncurry LitInfo
                      <$> toPermutation (extractCitations "ModelDescription")
                      <*> toPermutation (extractCitations "ModelNotes")
@@ -537,12 +545,34 @@ modelPaperParse = do
     return paperKeys
 
 -- Parse a list of (NodeName, NodeState) for BiasOrder*
-biasPairParse :: T.Text -> Parser [(NodeName, NodeState)]
-biasPairParse bias = (lexeme . try) 
+biasOrderParse :: T.Text -> Parser [BiasOrder]
+biasOrderParse bias = lexeme
     (rword bias
-        >> hcolon
-        >> sepBy (hparens ((,) <$> variable <*> (comma >> integer))) hcomma
-        <* eol
+        >> colon
+        >> (sepBy ((WholeNode <$> variable) <|> specificStateParse) comma)
+    ) >>= check
+    where
+        check xs = case repeated wss of
+            [] -> case repeated sss of
+                [] -> case L.intersect wss (fst <$> sss) of
+                    [] -> return xs
+                    oss -> fail $ show (DuplicatedBiasOrderNodeNames oss)
+                ms -> fail $ show bias <> ": " <>
+                    show (DuplicatedBiasOrderNodeStates ms)
+            ns -> fail $ show bias <> ": " <>
+                show (DuplicatedBiasOrderNodeNames ns)
+        
+            where
+                sss = mapMaybe specificSs xs
+                specificSs (WholeNode _) = Nothing
+                specificSs (SpecificState nN nSt ) = Just (nN, nSt)
+                wss = mapMaybe wholes xs
+                wholes (WholeNode nN) = Just nN
+                wholes (SpecificState _ _) = Nothing
+
+specificStateParse :: Parser BiasOrder
+specificStateParse = (lexeme . try) 
+    (parens (SpecificState <$> variable <*> (comma >> integer))
     )
 
 -- Parse a Colour. 
@@ -550,9 +580,6 @@ metaColor :: Parser LocalColor
 metaColor = (lexeme . try) (rword "NodeColor" >> colon >>
     (try rgbColorParse <|> svgColor)
     )
-
--- metaColor mColor = (metaItem mColor) >>= (rgbColorParse <|> colorCheck)
-
 
 
 -- Parse an RGB hex of the form: #123456
@@ -578,6 +605,11 @@ colorCheck ts
     | ts == "" = return defaultColor
     | otherwise = fail $ show $ ts <> " is not an SVG color. "
         where lowered = toLower <$> ts
+
+modelLayerCheck :: ModelLayer -> Parser ModelLayer
+modelLayerCheck mL = case mkModelLayer mL of
+    Success theML -> return theML
+    Failure errs    -> fail $ show errs
 
 -- Parse a straight Text metadata item. 
 metaItem :: T.Text -> Parser T.Text
@@ -1116,3 +1148,44 @@ commaCheck :: BibTeXRecord -> Parser BibTeXRecord
 commaCheck r = case T.last r of
     ',' -> return $ T.init r
     _   -> return r
+
+-- These need to go here because they need both Types.DMModel and
+-- Types.Simulation.
+-- Checks on internal ModelLayer issues. 
+mkModelLayer :: ModelLayer -> Validation [ModelInvalid] ModelLayer
+mkModelLayer mL =
+    biasNodeNameCheck mL *>
+    biasNodeStateCheck mL *>
+    pure mL
+
+-- Do the BiasOrders have unknown NodeNames?
+biasNodeNameCheck :: ModelLayer -> Validation [ModelInvalid] ModelLayer
+biasNodeNameCheck mL = case filter (flip notElem lNames) bOFNames of
+    [] -> case filter (flip notElem lNames) bOLNames of
+        [] -> Success mL
+        ms -> Failure $ [UnknownNodesInBiasOrder ms]
+    ns -> Failure $ [UnknownNodesInBiasOrder ns]
+    where
+        bOFNames = biasOrderNodeName <$> bOF
+        bOLNames = biasOrderNodeName <$> bOL
+        bOF = (biasOrderFirst . modelMeta) mL
+        bOL = (biasOrderLast . modelMeta) mL
+        lNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
+
+-- Do any SpecificState BiasOrders contain any out-of-bounds states?
+biasNodeStateCheck :: ModelLayer -> Validation [ModelInvalid] ModelLayer
+biasNodeStateCheck mL = case mapMaybe checkState bOF of
+    [] -> case mapMaybe checkState bOL of
+        [] -> Success mL
+        ms -> Failure $ [OOBBiasOrderStates ms]
+    ns -> Failure $ [OOBBiasOrderStates ns]
+    where
+        checkState (WholeNode _) = Nothing
+        checkState (SpecificState n i)
+            | inRange nRange i = Nothing
+            | otherwise = Just (n, nRange, i)
+            where nRange = (lrVec U.! (lniBMap BM.! n))
+        bOF = (biasOrderFirst . modelMeta) mL
+        bOL = (biasOrderLast . modelMeta) mL
+        S.LayerSpecs lniBMap lrVec _ _ = S.layerPrep mL
+

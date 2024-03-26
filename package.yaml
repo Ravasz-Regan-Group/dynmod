@@ -94,6 +94,7 @@ library:
   - Chart
   - Chart-diagrams
   - statistics
+  - random-shuffle
 
 executables:
   dynmod:

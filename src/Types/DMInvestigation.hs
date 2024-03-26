@@ -654,7 +654,7 @@ mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
 mkDMExperiment mM mL (GeneralExp exNm inEnv expStep vexPlss exReps fkds) =
     DMExperiment <$> mkDMExpMeta mM mL exNm exNm initialCs exReps GenExp fkds
                  <*> mkAttFilter mM mL inEnv
-                 <*> pure (mkStepper expStep (layerPrep mL))
+                 <*> pure (mkStepper expStep mL)
                  <*> (const <$> listedPulses)
         where
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
@@ -665,7 +665,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
     | otherwise = 
         DMExperiment <$> expM
                      <*> mkAttFilter mM mL inEnv
-                     <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
+                     <*> pure (mkStepper SynchronousExpStepper mL)
                      <*> (const <$> listedPulses)
         where
             expM = mkDMExpMeta mM mL expName expDetails initialCs exReps P1 fkds
@@ -687,7 +687,7 @@ mkDMExperiment mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
 mkDMExperiment mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
     DMExperiment <$> expM
                  <*> mkAttFilter mM mL inEnv
-                 <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
+                 <*> pure (mkStepper SynchronousExpStepper mL)
                  <*> (const <$> listedPulses)
     where
         expM = mkDMExpMeta mM mL expName expDetails initialCs exReps KDOE fkds
@@ -709,7 +709,7 @@ mkDMExperiment mM mL
     | otherwise =
         DMExperiment <$> expM
                      <*> mkAttFilter mM mL inEnv
-                     <*> pure (mkStepper SynchronousExpStepper (layerPrep mL))
+                     <*> pure (mkStepper SynchronousExpStepper mL)
                      <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
         where
             expM =
@@ -806,20 +806,31 @@ mkExpBCFilter mM  (maybeExpBCF, eitherISFSpec) =
         dropLeft (Left _) = Nothing
         dropLeft (Right r) = Just r
 
-mkStepper :: ExperimentStep -> LayerSpecs -> ExpStepper
-mkStepper SynchronousExpStepper lSpecs = SD stepper
+mkStepper :: ExperimentStep -> ModelLayer -> ExpStepper
+mkStepper SynchronousExpStepper mL = SD stepper
     where
-        stepper = synchStep (iVecList lSpecs) (tTableList lSpecs)
-mkStepper (NoisyExpStepper noiseLevel) lSpecs = SN stepper
+        stepper = synchStep ivList ttList
+        LayerSpecs _ _ ttList ivList = layerPrep mL
+mkStepper (NoisyExpStepper noiseLevel) mL = SN stepper
     where
         stepper = noisyStep' psStepper noiseLevel lrVec
-        lrVec = lRangeVec lSpecs
-        psStepper = synchStep (iVecList lSpecs) (tTableList lSpecs)
-mkStepper AsynchronousExpStepper lSpecs = AD stepper
+        psStepper = synchStep ivList ttList
+        LayerSpecs _ lrVec ttList ivList = layerPrep mL
+mkStepper AsynchronousExpStepper mL = AD stepper
     where
-        stepper = asyncStep' (U.length (lRangeVec lSpecs)) ttMap ivMap
-        ttMap = M.fromList $ zip [0..] $ tTableList lSpecs
-        ivMap = M.fromList $ zip [0..] $ iVecList lSpecs
+        stepper = asyncStep'' intBOF intBOL ttMap ivMap
+        intBOL = (fmap (toIntBiasOrder lniBMap) . biasOrderLast) mMeta
+        intBOF = (fmap (toIntBiasOrder lniBMap) . biasOrderFirst) mMeta
+        mMeta = modelMeta mL
+        ttMap = M.fromList $ zip [0..] ttList
+        ivMap = M.fromList $ zip [0..] ivList
+        LayerSpecs lniBMap _ ttList ivList = layerPrep mL
+
+toIntBiasOrder :: LayerNameIndexBimap -> BiasOrder -> IntBiasOrder
+toIntBiasOrder lniBMap (WholeNode nName) = IntWholeNode (lniBMap BM.! nName)
+toIntBiasOrder lniBMap (SpecificState nName nState) =
+    IntSpecificState (lniBMap BM.! nName) nState
+
 
 -- Make the Attractor -> [[InputPulse]] function for the
 -- Knockdown/Over-Expression At Transition experiment

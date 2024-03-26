@@ -23,7 +23,7 @@ module Types.Simulation
     , InvalidLVReorder (..)
     , synchStep
     , noisyStep'
-    , asyncStep'
+    , asyncStep''
     , topStates
     , mkAttractor
     , layerVecReorder
@@ -42,14 +42,16 @@ import Utilities
 import Data.Validation
 import Control.Monad.State.Strict
 import System.Random.Stateful
+import System.Random.Shuffle (shuffle')
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Unboxed.Mutable as MU
 import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Graph.Inductive as Gr
 import qualified Control.Parallel.Strategies as P
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.Sequence as S
 import qualified Data.List.Extra as L
 
@@ -290,8 +292,7 @@ otherStates lVec lniBMap nName rangeTop = vecs
 
 
 tableGateEval :: LayerVec -> IndexVec -> TruthTable -> NodeState
-tableGateEval lVec iVec tTable =
-    let n = tTable M.! (U.backpermute lVec iVec) in n
+tableGateEval lVec iVec tTable = tTable M.! (U.backpermute lVec iVec)
 
 -- Synchronous, deterministic network update
 synchStep :: IndexVecList -> TruthTableList -> LayerVec -> LayerVec
@@ -351,23 +352,70 @@ chainP p (buildSeq, g) (nState, (low, high))
 --     return newVec
 
 -- Asynchronous, deterministic network update. Non-monadic
-asyncStep' :: Int -- Length of a LayerVec in this ModelLayer
-           -> M.HashMap NodeIndex TruthTable
-           -> M.HashMap NodeIndex IndexVec
-           -> LayerVec -> StdGen
-           -> (LayerVec, StdGen)
-asyncStep' vecLength ttMap ivMap lVec gen = (nextVec, newGen)
+-- asyncStep' :: Int -- Length of a LayerVec in this ModelLayer
+--            -> M.HashMap NodeIndex TruthTable
+--            -> M.HashMap NodeIndex IndexVec
+--            -> LayerVec -> StdGen
+--            -> (LayerVec, StdGen)
+-- asyncStep' vecLength ttMap ivMap lVec gen = (nextVec, newGen)
+--     where
+--         (updateIndex, newGen) = uniformR (0, vecLength - 1) gen
+--         tTable = ttMap M.! updateIndex
+--         iVec = ivMap M.! updateIndex
+--         nextVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
+
+-- Asynchronous, deterministic network update where all gates are updated in
+-- each step, in random permutation, save for gates deliberately biased to
+-- always go first or last. 
+asyncStep'' :: [IntBiasOrder]
+            -> [IntBiasOrder]
+            -> M.HashMap NodeIndex TruthTable
+            -> M.HashMap NodeIndex IndexVec
+            -> LayerVec -> StdGen
+            -> (LayerVec, StdGen)
+asyncStep'' intBiasOF intBiasOL ttMap ivMap lVec gen = (nextVec, newGen)
     where
-        (updateIndex, newGen) = uniformR (0, vecLength - 1) gen
+        nextVec = L.foldl' (modifyUpdater ttMap ivMap) lVec mergedIL
+        mergedIL = pfxIL <> shuffledIL <> sfxIL
+        shuffledIL = shuffle' freeIL shuffleI shuffleGen
+        shuffleI = L.length freeIL
+        freeIL = createFreeIndicies (U.length lVec - 1) pfxIL sfxIL
+        sfxIL = biasResolve intBiasOL lVec
+        pfxIL = biasResolve intBiasOF lVec
+        (newGen, shuffleGen) = split gen
+
+createFreeIndicies :: Int -> [NodeIndex] -> [NodeIndex] -> [NodeIndex]
+createFreeIndicies maxI pfxIL sfxIL = filter fF [0..maxI]
+    where fF i = L.notElem i pfxIL && L.notElem i sfxIL
+
+-- We do not need to keep any of the intermediary LayerVecs when we fold up the
+-- list of update NodeIndices, so it is better for memory to destructively
+-- modify the LayerVec long the way. 
+modifyUpdater :: M.HashMap NodeIndex TruthTable
+              -> M.HashMap NodeIndex IndexVec
+              -> LayerVec
+              -> NodeIndex
+              -> LayerVec
+modifyUpdater ttMap ivMap lVec updateIndex =
+    U.modify (\v -> MU.write v updateIndex newState) lVec
+    where
+        newState = tableGateEval lVec iVec tTable
         tTable = ttMap M.! updateIndex
         iVec = ivMap M.! updateIndex
-        nextVec = lVec U.// [(updateIndex, tableGateEval lVec iVec tTable)]
 
+-- Create a [NodeIndex] from a [BiasOrder] 
+biasResolve :: [IntBiasOrder] -> LayerVec -> [NodeIndex]
+biasResolve biasOrder lVec = mapMaybe bResolve biasOrder
+    where
+        bResolve (IntWholeNode nIndex) = Just nIndex
+        bResolve (IntSpecificState nIndex nState)
+            | lVec U.! nIndex == nState = Just nIndex
+            | otherwise = Nothing
 
 -- Construct (LayerNameIndexBimap, LayerRangeVec, TruthTableList, IndexVecList)
 -- from a ModelLayer. Ordering is alphabetical by node name in each. 
 layerPrep :: ModelLayer -> LayerSpecs
-layerPrep mL = LayerSpecs lniBMap lrVec ttList ivList
+layerPrep mL = LayerSpecs lniBMap lrVec ttList ivList 
     where
         lniBMap = BM.fromList $ zip (gNodeName <$> orderedNGates) [0..]
         lrVec = U.fromList $ ((\(_, n) -> (0, n)) . nodeRange) <$> orderedNodes

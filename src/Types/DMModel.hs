@@ -14,6 +14,8 @@ module Types.DMModel
     , SwitchProfile
     , ModelMeta(..)
     , ModelName
+    , BiasOrder(..)
+    , IntBiasOrder(..)
     , LocalColor
     , FileFormatVersion
     , DMNode(..)
@@ -63,6 +65,7 @@ module Types.DMModel
     , ModelTTFiles
     , DMMSNode
     , InAdj
+    , biasOrderNodeName
     , inAdjs
     , findInAdjs
     , defaultColor
@@ -148,7 +151,7 @@ instance (Hashable a, Ord a, Floating a)=> Hashable (C.Colour a) where
 -- the functions of that network. 
 
 type LocalColor = C.Colour Double
-defaultColor :: LocalColor -- Erzs— red
+defaultColor :: LocalColor -- ErzsÃ³ red
 defaultColor = SC.sRGB24 148 17 0
 
 type FileFormatVersion = Ver.SemVer
@@ -165,12 +168,22 @@ data ModelLayer = ModelLayer { modelGraph   :: ModelGraph
 data ModelMeta = ModelMeta { modelName      :: ModelName
                            , modelVersion   :: Ver.SemVer
                            , modelPaper     :: [BibTeXKey]
-                           , biasOrderFirst :: [(NodeName, NodeState)]
-                           , biasOrderLast  :: [(NodeName, NodeState)]
+                           , biasOrderFirst :: [BiasOrder]
+                           , biasOrderLast  :: [BiasOrder]
                            , modelInfo :: LitInfo
                            }
-                             deriving (Show, Eq)
+                           deriving (Show, Eq)
 type ModelName = T.Text
+data BiasOrder = WholeNode NodeName
+               | SpecificState NodeName NodeState
+               deriving (Show, Eq)
+data IntBiasOrder = IntWholeNode NodeIndex
+                  | IntSpecificState NodeIndex NodeState
+                  deriving (Show, Eq)
+
+biasOrderNodeName :: BiasOrder -> NodeName
+biasOrderNodeName (WholeNode n) = n
+biasOrderNodeName (SpecificState n _) = n
 
 -- A bijective map from the nodes of a coarse layer to the elements of a
 -- non-trivial partition of the nodes of its corresponding fine layer, and a
@@ -666,6 +679,10 @@ data ModelInvalid =
   | ExcessPointSubSpaceMatches (((PhenotypeName, SubSpace))
                               , ((PhenotypeName, [SubSpace])))
   | DuplicatedModelNames [NodeName]
+  | DuplicatedBiasOrderNodeNames [NodeName]
+  | DuplicatedBiasOrderNodeStates [(NodeName, NodeState)]
+  | UnknownNodesInBiasOrder [NodeName]
+  | OOBBiasOrderStates [(NodeName, (Int, Int), Int)]
 -- | MissingCitations MissingCitations
     deriving (Show, Eq)
 -- type MissingCitations = [BibTeXKey]

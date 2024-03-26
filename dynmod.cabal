@@ -89,6 +89,7 @@ library
     , plots
     , pretty-simple
     , random
+    , random-shuffle
     , safe-exceptions
     , scientific
     , split
