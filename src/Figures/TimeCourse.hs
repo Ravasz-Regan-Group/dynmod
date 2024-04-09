@@ -303,7 +303,7 @@ phNameBlockDia cMap stripHt (nName, phs) = (alignY 0 . vcat) paddedLabels
         maxW = maximum $ width <$> phLabels
         phLabels = phStripLabelDia stripHt <$> coloredPhs
         coloredPhs = zip blendedColors (phenotypeName <$> phs)
-        blendedColors = phTCBlend baseColor (L.length phs)
+        blendedColors = phTCBlend 0.65 baseColor (L.length phs)
         baseColor = cMap M.! nName
 
 phStripLabelDia :: Double -> (LocalColor, PhenotypeName) -> Diagram B
@@ -318,7 +318,7 @@ switchStripsDia cMap stripHt tmLn (nName, phs) = dias
     where
         dias = phStripDia stripHt tmLn <$> coloredPhs
         coloredPhs = zip blendedColors (phenotypeName <$> phs)
-        blendedColors = phTCBlend baseColor (L.length phs)
+        blendedColors = phTCBlend 0.65 baseColor (L.length phs)
         baseColor = cMap M.! nName
 
 phStripDia :: Double
@@ -360,7 +360,7 @@ runSwitchPHDia cMap stripHt rectW (sw, mPhName) =
 
 -- Make a clarifying guide for phenotype time course figures. 
 expGuideDia :: ModelLayer
-            -> DMExperimentMeta
+            -> TCExpMeta
             -> Double
             -> [PulseSpacing]
             -> Diagram B
@@ -371,13 +371,13 @@ expGuideDia mL exMeta stripHt pSps = expTypeText ||| pulseDia
         pulseDias = pulseSpacingDia stripHt <$> inputStrippedPIs
         inputStrippedPIs = case expKnd of
             GenExp -> inputStrip mLInputNames lniBMap (Just initialRIC) pSps
-                where initialRIC = expInitCoord exMeta
+                where initialRIC = tcExpInitCoord exMeta
             _ -> inputStrip mLInputNames lniBMap Nothing pSps
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mLInputNames =
             ((fmap . fmap) (nodeName . nodeMeta) . inputs . modelGraph) mL
-        expTypeText = tText' stripHt ((T.pack . show) expKnd <> " ")
-        expKnd = expKind exMeta
+        expTypeText = tText' stripHt (tShow expKnd <> " ")
+        expKnd = tcExpKind exMeta
 
 -- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
 -- for display. 

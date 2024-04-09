@@ -345,7 +345,7 @@ nodeStateCheck nodesWLinks =  case isSubset exNodes nodes of
             (\(a, b) -> (fst a, (snd a, snd b))) <$> zs
         []  -> case sequenceA (tableSizeCheck nodeMaxes <$> dmNodes) of
             Failure errs -> fail $
-                T.unpack $ T.unlines $ ((T.pack . show) <$>) errs
+                T.unpack $ T.unlines $ tShow <$> errs
             Success ns -> return $ zip ns links
     where
         links = snd <$> nodesWLinks
@@ -881,8 +881,8 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
         where            
             nGate = NodeGate lName tOrder assigns tTable Both
             prettyCombos :: [T.Text]
-            prettyCombos = (T.concat . (L.intersperse "  ")
-                . ((T.pack . show) <$>)) <$> tSortedtGOrderedELCombos
+            prettyCombos = (T.concat . (L.intersperse "  ") . fmap tShow) <$>
+                tSortedtGOrderedELCombos
             tSortedtGOrderedELCombos = L.sort $ (snd <$>) <$> tGOrderedELCombos
             tGOrderedELCombos = (sortWithOrderOn fst tOrder) <$> excessLCombos
             excessLCombos = Map.toList <$> (lCombos L.\\ tCombos )
@@ -905,10 +905,10 @@ accOutputMis :: TruthTableGate -> LogicalGate -> [T.Text]
 accOutputMis (_, tOrder, tTable) (_, _, assigns) = textified
     where
         textified = textify <$> mismatches
-        textify (t, (x, y)) = t <> "\t(" <> (T.pack . show) x <> ",  "
-            <> (T.pack . show) y <> ")"
+        textify (t, (x, y)) = t <> "\t(" <> tShow x <> ",  "
+            <> tShow y <> ")"
         mismatches = filter (\(_, (x, y)) -> x /= y) $ zip inputRowTexts outputs
-        inputRowTexts = (T.intersperse '\t' . T.concat . ((T.pack . show) <$>))
+        inputRowTexts = (T.intersperse '\t' . T.concat . fmap tShow)
             <$> inputLists
         outputs = zip tOutputs lOutputs
         lOutputs = fromJust . gateEval assigns <$> tCombos

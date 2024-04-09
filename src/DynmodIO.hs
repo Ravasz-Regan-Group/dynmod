@@ -147,7 +147,7 @@ writeAttractorBundle f lniBMap mapping (rN, nN, nP) mMult atts = do
         flatAttTanspLists = L.transpose (mconcat attLLists)
         switchRows = mappingFormat mapping
         attFile = mkAttTable attSizes switchRows flatAttTanspLists <> "\n\n" <>
-            ((T.pack . show) attNumber)
+            tShow attNumber
         fNameString = fromRelFile fName
         attFileNameStem = fNameString ++ "_attractors"
         attFileName = case mMult of 
@@ -175,7 +175,7 @@ mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
     where
         mkAttRow (r, intR) = r <> "," <> (spacedRow sizes intR)
         spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
-            ((T.pack . show) <<$>> Split.splitPlaces ss r)
+            (tShow <<$>> Split.splitPlaces ss r)
 
 runVEX :: Path Abs File
        -> Path Abs File
@@ -215,7 +215,7 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
 
 writeVexFigs
     :: Path Abs File
-    -> [([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))]
+    -> [([(TCExpMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))]
     -> IO ()
 writeVexFigs fP layerFigs = mapM_ (writeLayerFig fP) layerFigs
     where
@@ -225,13 +225,13 @@ writeVexFigs fP layerFigs = mapM_ (writeLayerFig fP) layerFigs
 
 writeExpFig
     :: Path Abs File
-    -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
+    -> (TCExpMeta, [(Barcode, BCExpFigures)])
     -> IO ()
 writeExpFig f (dmExpMeta, bcExpFigs) = do
     let dirStem = parent f
-        expDetails = experimentDetails dmExpMeta
-        expType = expKind dmExpMeta
-        expName = experimentDetails dmExpMeta
+        expDetails = tcExpDetails dmExpMeta
+        expType = tcExpKind dmExpMeta
+        expName = tcExpDetails dmExpMeta
     dirExp <- parseRelDir "_EXP"
     dirCat <- case expType of
         P1 -> parseRelDir "Pulse1"

@@ -492,8 +492,8 @@ prettyTTable :: NodeName -> GateOrder -> TruthTable -> (NodeName, T.Text)
 prettyTTable nN gO tT = (nN, gatePrint <> T.singleton '\n' <> prettyRows)
     where
         prettyRows = T.unlines textRows
-        textRows = (T.concat . (L.intersperse (T.singleton '\t')) .
-            ((T.pack . show) <$>)) <$> joinedRows
+        textRows = (T.concat . (L.intersperse (T.singleton '\t')) . fmap tShow)
+            <$> joinedRows
         joinedRows = (\(v, y) -> U.toList v <> [y]) <$> rows
         rows = (L.sortOn fst . Map.toList) tT
         gatePrint = T.concat $ L.intersperse (T.singleton '\t') $ gO <> [nN]
@@ -584,9 +584,7 @@ prettyGateEval :: GateOrder
 prettyGateEval gO assigns nInput = prettify output
     where
         prettify = (((prettyInput <> T.singleton '\t') <>) . T.pack . show)
-        prettyInput = T.intersperse '\t'
-                        $ T.concat
-                            $ (T.pack . show) <$> orderedInput
+        prettyInput = (T.intersperse '\t' . T.concat . fmap tShow) orderedInput
         orderedInput = fromJust <$> (sequenceA (Map.lookup <$> gO) nInput)
         output = fromJust $ gateEval assigns nInput
 
@@ -664,6 +662,7 @@ data ModelInvalid =
   | RepeatedSubSpaceNode (NodeName, NodeName, NodeState, [NodeName])
   | SubSpaceIsASubSet (SubSpace, [SubSpace])
   | DuplicatedPhenotypeNames [NodeName]
+  | PhenotypeReferenceAreCoarse [(PhenotypeName, [T.Text])]
   | PhNegStates (NodeName, [NodeState])
   | PhOutOfOrder (NodeName, [NodeState])
   | PhMissingOrTooHigh (NodeName, [NodeState])

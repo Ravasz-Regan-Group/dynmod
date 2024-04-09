@@ -117,7 +117,7 @@ layerParameterParse = between (symbol "LayerParameters{")
                         <*> toPermutationWithDefault Nothing
                             (Just <$> inputSpaceDiagramParse)
                         <*> toPermutation (many experimentParse)
-    ) >>= showHiddenCheck
+    )
 
 -- Parse a Sampling
 samplingParse :: Parser Sampling
@@ -231,13 +231,13 @@ phenotypeSetParse = (,) <$> variable <*> (colon >> variable)
 
 -- Parse a VEXExperiment. 
 experimentParse :: Parser VEXExperiment
-experimentParse =  generalExpParse
-               <|> pulse1Parse
-               <|> kdoeParse
-               <|> kdoeAtTransitionParse
+experimentParse =  (VXTC <$> generalExpParse)
+               <|> (VXTC <$> pulse1Parse)
+               <|> (VXTC <$> kdoeParse)
+               <|> (VXTC <$> kdoeAtTransitionParse)
 
 -- Parse a general experiment. 
-generalExpParse :: Parser VEXExperiment
+generalExpParse :: Parser VEXTimeCourse
 generalExpParse = between (symbol "GeneralExperiment{")
                           (symbol "GeneralExperiment}")
     (runPermutation $
@@ -246,7 +246,7 @@ generalExpParse = between (symbol "GeneralExperiment{")
                    <*> toPermutation modelStepTypeParse
                    <*> toPermutation (some pulseParse)
                    <*> toPermutationWithDefault 1 expRepsParse
-                   <*> toPermutation figKindsParse
+                   <*> toPermutationWithDefault defFigKinds figKindsParse
         
     )
 
@@ -259,8 +259,6 @@ startingModelStateParse = between (symbol "StartingModelState{")
         InEnv <$> toPermutation (coordParse "InputCoordinate")
               <*> toPermutationWithDefault Nothing
                                    (Just <$> barCodeFilterParse)
-              <*> toPermutation showHiddenParse
-        
     )
 
 modelStepTypeParse :: Parser ExperimentStep
@@ -273,10 +271,6 @@ modelStepTypeParse = lexeme $ rword "ModelStepType" >>
             )
         )
     )
-
-showHiddenParse :: Parser (Either Bool BarcodeFilter)
-showHiddenParse = rword "ShowHiddenFromSpaceDiagram" >> colon >>
-    (Left <$> boolParse)
 
 boolParse :: Parser Bool
 boolParse = (try (True <$ rword "True")) <|> (False <$ rword "False")
@@ -334,11 +328,19 @@ expRepsParse = rword "SampleSize" >> colon >> integer
 -- that will be made from single experiments, as opposed to a 5-D figure, which
 -- you only make one of per ModelMapping. 
 figKindsParse :: Parser FigKinds
-figKindsParse = runPermutation $
-    FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
-             <*> toPermutationWithDefault False phTimeCourseParse
-             <*> toPermutationWithDefault [] nodeAvgBChartParse
-             <*> toPermutationWithDefault [] phAvgBChartParse
+figKindsParse = between (symbol "Figures{") (symbol "Figures}")
+    (try
+        (runPermutation $
+            FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
+                     <*> toPermutationWithDefault False phTimeCourseParse
+                     <*> toPermutationWithDefault [] nodeAvgBChartParse
+                     <*> toPermutationWithDefault [] phAvgBChartParse
+        )
+    )
+
+-- Default FigKinds
+defFigKinds :: FigKinds
+defFigKinds = FigKinds True False [] []
 
 -- Do we produce a Node time course figure? Default to True. 
 nodeTimeCourseParse :: Parser DoNodeTimeCourse
@@ -371,7 +373,7 @@ phAvgBChartParse = lexeme $ rword "AvgBarChartSwitches" >>
 
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
-pulse1Parse :: Parser VEXExperiment
+pulse1Parse :: Parser VEXTimeCourse
 pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
     (runPermutation $
         Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
@@ -383,7 +385,7 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
                <*> toPermutation (durationParse "Duration")
                <*> toPermutation flipParse
                <*> toPermutationWithDefault 1 expRepsParse
-               <*> toPermutation figKindsParse
+               <*> toPermutationWithDefault defFigKinds figKindsParse
         
     )
 
@@ -393,7 +395,7 @@ flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
 
 -- Parse a KDOE. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
-kdoeParse :: Parser VEXExperiment
+kdoeParse :: Parser VEXTimeCourse
 kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
     (runPermutation $
         KnockDOverE <$>
@@ -406,13 +408,13 @@ kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
                        <*> toPermutation (durationParse "Duration")
                        <*> toPermutation nodeAlterationsParse
                        <*> toPermutationWithDefault 1 expRepsParse
-                       <*> toPermutation figKindsParse
+                       <*> toPermutationWithDefault defFigKinds figKindsParse
         
     )
 
 -- Parse a KDOEAtTransition. t_0 and t_end are optional, so they get the default
 -- values of: t_0 = 50, t_end = 50
-kdoeAtTransitionParse :: Parser VEXExperiment
+kdoeAtTransitionParse :: Parser VEXTimeCourse
 kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                                 (symbol "KDOEAtTransition}")
     (runPermutation $
@@ -427,41 +429,8 @@ kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                        <*> toPermutation flipParse
                        <*> toPermutation nodeAlterationsParse
                        <*> toPermutationWithDefault 1 expRepsParse
-                       <*> toPermutation figKindsParse
+                       <*> toPermutationWithDefault defFigKinds figKindsParse
         
     )
 
--- In every experiment is a StartingModelState{}, whose
--- ShowHiddenFromSpaceDiagram parameter checks if we should trim Attractors from
--- the experiment's run. We check if that is the case and, if there is an
--- ISFSpec with a BarcodeFilter, we copy it to the
--- InitialEnvironment of each VEXExperiment in the VEXLayerExpSpec. This is a
--- hack, but ¯\_(ツ)_/¯
-showHiddenCheck :: VEXLayerExpSpec -> Parser VEXLayerExpSpec
-showHiddenCheck vexLExpSpec = case vexISpaceSpec vexLExpSpec of
-    Nothing -> return vexLExpSpec
-    Just vISFSpec -> case bcFilter vISFSpec of
-        Nothing -> return vexLExpSpec
-        Just bcF -> return $ vexLExpSpec {vexExperiments = newVexExps}
-            where
-                newVexExps = insertBCF bcF <$> (vexExperiments vexLExpSpec)
-
-insertBCF :: BarcodeFilter -> VEXExperiment -> VEXExperiment
-insertBCF bc (GeneralExp n inEnv es ps reps fs)
-    | showHidden inEnv == Left False = GeneralExp n newInEnv es ps reps fs
-    | otherwise = GeneralExp n inEnv es ps reps fs
-    where newInEnv = inEnv {showHidden = Right bc} 
-insertBCF bc (Pulse1 ts inEnv d f rs fs)
-    | showHidden inEnv == Left False = Pulse1 ts newInEnv d f rs fs
-    | otherwise = Pulse1 ts inEnv d f rs fs
-    where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KnockDOverE ts inEnv d alts reps fs)
-    | showHidden inEnv == Left False = KnockDOverE ts newInEnv d alts reps fs
-    | otherwise = KnockDOverE ts inEnv d alts reps fs
-    where newInEnv = inEnv {showHidden = Right bc}
-insertBCF bc (KDOEAtTransition ts inEnv d f alts rs fs)
-    | showHidden inEnv == Left False =
-        KDOEAtTransition ts newInEnv d f alts rs fs
-    | otherwise = KnockDOverE ts inEnv d alts rs fs
-    where newInEnv = inEnv {showHidden = Right bc}
 

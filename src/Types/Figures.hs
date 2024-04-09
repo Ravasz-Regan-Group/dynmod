@@ -21,6 +21,7 @@ module Types.Figures
     , barPhenotype
     , StdDev
     , ThreadSlice
+    , isSSMatch
     ) where    
 
 import Types.DMModel
@@ -35,7 +36,7 @@ import Data.Hashable
 import qualified Data.List.Extra as L
 import qualified Data.Colour as C
 import GHC.Generics (Generic)
-import Data.Maybe (fromJust, mapMaybe)
+import Data.Maybe (fromJust)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
 
@@ -75,8 +76,8 @@ gradientPick pucGr (low, high) pick
 
 -- Produce a spread of colors for the Phenotypes of a
 -- Switch. 
-phTCBlend :: C.ColourOps a => a Double -> Int -> [a Double]
-phTCBlend swColor phCount
+phTCBlend :: C.ColourOps a => Double -> a Double -> Int -> [a Double]
+phTCBlend darkAnchor swColor phCount
     | phCount <= 0 = []
     | phCount == 1 = [swColor]
     | otherwise = flip C.darken swColor <$> stepF phCount
@@ -84,7 +85,7 @@ phTCBlend swColor phCount
         stepF :: Int -> [Double]
         stepF i = ((1 -) . ((darkAnchor/(x-1)) *)) <$> [0..x-1]
             where x = fromIntegral i
-        darkAnchor = 0.65 -- How close to black do we want to go?
+        -- darkAnchor: How close to black do we want to go?
 
 
 type Barcode = [Bar]
@@ -284,7 +285,7 @@ phMatch offSet lniBMap thread ph
     Nothing -> []
     Just ordIntPh
       | not $ areStrictlyIncreasing preppedMatches -> []
-      | any L.null matches -> []
+      | any (== []) preppedMatches -> []
       | otherwise -> case mIntNoRepeatSS of
         Just intNoRepeatSS
           | nRSSIndex == 0 -> (mkRange preppedTFMs):extraSlices
@@ -321,7 +322,7 @@ phMatch offSet lniBMap thread ph
           lmIndexF :: [([Int], IntSubSpace)] -> Int
           lmIndexF = ((+1) . last . fst . last) 
           preppedMatches = fst <$> matches
-          matches = mapMaybe (matchLocation thread) ordIntPh
+          matches = (matchLocation thread) <$> ordIntPh
           mkRange zs = ( offSet + (minimum . head) zs
                        , offSet + (maximum . last) zs)
   where
@@ -353,11 +354,12 @@ isSSMatch lV sS = all (isStateMatch lV) sS
 -- Find the location of the first places in the Thread, if any, that the Int-
 -- converted SubSpace matches. Repeats are permitted at this step, so we return
 -- a (possibly empty) list of succesive Ints. 
-matchLocation :: Thread -> IntSubSpace -> Maybe ([Int], IntSubSpace)
-matchLocation thread sS = (,) <$> (unfolderF <$> firstMatchI) <*> pure sS
+matchLocation :: Thread -> IntSubSpace -> ([Int], IntSubSpace)
+matchLocation thread sS = case B.findIndex (flip isSSMatch sS) thread of
+    Nothing -> ([], sS)
+    Just firstMatchI -> (unfolderF firstMatchI, sS)
     where
         unfolderF i = i : L.unfoldr unF (i + 1)
-        firstMatchI = B.findIndex (flip isSSMatch sS) thread
         unF j
             | j >= B.length thread = Nothing 
             | isSSMatch (thread B.! j) sS = Just (j, j + 1)

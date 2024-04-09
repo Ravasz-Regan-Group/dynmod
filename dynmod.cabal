@@ -57,7 +57,10 @@ library
       Parse.VEX
       Text.LaTeX.DynMod.Extra
       Types.DMInvestigation
+      Types.DMInvestigation.Scan
+      Types.DMInvestigation.TimeCourse
       Types.Figures
+      Types.VEXInvestigation
       Paths_dynmod
   hs-source-dirs:
       src

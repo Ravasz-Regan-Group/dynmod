@@ -264,3 +264,6 @@ filterByLength p = filter (p . length) . L.group . L.sort
 
 allUnique :: Ord a => [a] -> Bool
 allUnique = all ( (==) 1 . length) . L.group . L.sort
+
+tShow :: Show a => a -> T.Text
+tShow = T.pack . show

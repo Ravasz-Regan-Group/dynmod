@@ -51,10 +51,10 @@ data BCExpFigures = BCEXFS { nodeBCTCFigs :: Maybe [Diagram B]
 layerRunFigure :: ColorMap
     -> HS.HashSet Attractor
     -> LayerResult
-    -> ([(DMExperimentMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
+    -> ([(TCExpMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))
 layerRunFigure cMap atts (LayerResult lrfMM lrfML eResults mIB) = (expF, fDF)
     where
-        expF :: [(DMExperimentMeta, [(Barcode, BCExpFigures)])]
+        expF :: [(TCExpMeta, [(Barcode, BCExpFigures)])]
         expF = expRunFigure cMap lrfMM lrfML <$> eResults
         fDF = attractorESpaceFigure cMap lrfMM lniBMap atts <$> mIB
         LayerSpecs lniBMap _ _ _ = layerPrep lrfML
@@ -71,10 +71,12 @@ expRunFigure :: ColorMap
              -> ModelMapping
              -> ModelLayer
              -> ExperimentResult
-             -> (DMExperimentMeta, [(Barcode, BCExpFigures)])
-expRunFigure cMap mM mL (exMeta, attResults) = (exMeta, bcDiasWBCs)
-    where
-        bcDiasWBCs = bcRunDia cMap mM mL exMeta <$> (attResCombine attResults)
+             -> (TCExpMeta, [(Barcode, BCExpFigures)])
+expRunFigure cMap mM mL expRes = case expRes of
+    TCExpRes (exMeta, attResults) -> (exMeta, bcDiasWBCs)
+        where
+            bcDiasWBCs = bcRunDia cMap mM mL exMeta <$>
+                                            (attResCombine attResults)
 
 attResCombine :: [AttractorResult] -> [BarcodeResult]
 attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
@@ -83,7 +85,7 @@ attResCombine ars = M.toList $ M.fromListWith (<>) preppedArs
 bcRunDia :: ColorMap
          -> ModelMapping
          -> ModelLayer
-         -> DMExperimentMeta
+         -> TCExpMeta
          -> BarcodeResult
          -> (Barcode, BCExpFigures)
 bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
@@ -140,7 +142,7 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
         avgRepRs :: [([RealExpSpreadResults], [[PulseSpacing]])]
         avgRepRs = (fmap . BF.first) (averagedAttResults reps) repRs
         reps = ((fromIntegral . expReps) exMeta) :: Double
-        figKs = expFigures exMeta
+        figKs = tcExpFigures exMeta
         params = (stripHt, 24.0) :: (Double, Double)
         stripHt = 2.0 :: Double
 

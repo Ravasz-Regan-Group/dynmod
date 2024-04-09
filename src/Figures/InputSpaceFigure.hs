@@ -7,6 +7,7 @@ module Figures.InputSpaceFigure
     ( attractorESpaceFigure
     ) where    
 
+import Utilities
 import Types.DMModel
 import Types.Simulation
 import Types.Figures
@@ -143,7 +144,7 @@ eSpaceNames nns = (eSpaceName . reverse) <$> nns
                     | (i <= nRange) = Just (iLine, i + 1)
                     |otherwise = Nothing
                     where
-                        iLine = nName <> ":" <> ((T.pack . show) i)
+                        iLine = nName <> ":" <> tShow i
                 (nName, nRange) = nodeRange n
         eSpaceName ns = [headName <> " off"] <> [headName <> " on"] <>
                                 ((nodeName . nodeMeta) <$> (tail ns))
