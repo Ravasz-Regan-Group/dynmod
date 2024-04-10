@@ -10,6 +10,16 @@ module Types.Figures
     , Bar(..)
     , BarKind(..)
     , Slice(..)
+    , RealNodeState
+    , NodeAlteration(..)
+    , LockProbability
+    , NudgeProbability
+    , RealInputCoord
+    , NudgeDirection(..)
+    , BoolNudgeDirection
+    , GeneralDuration(..)
+    , Duration
+    , PulseSpacing
     , phenotypeMatch
     , mkBarcode
     , ColorMap
@@ -22,6 +32,12 @@ module Types.Figures
     , StdDev
     , ThreadSlice
     , isSSMatch
+    , isNodeLock
+    , durationMagnitude
+    , inputStrip
+    , groupInputs
+    , nAltTPrep
+    , inputCoordText
     ) where    
 
 import Types.DMModel
@@ -29,6 +45,7 @@ import Types.Simulation
 import Utilities
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as M
+import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
@@ -36,7 +53,7 @@ import Data.Hashable
 import qualified Data.List.Extra as L
 import qualified Data.Colour as C
 import GHC.Generics (Generic)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe, fromMaybe)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
 
@@ -46,6 +63,57 @@ type SVGText = T.Text
 type ColorMap = M.HashMap NodeName LocalColor
 type PUCGradient = B.Vector LocalColor
 type StdDev = Double
+
+type RealNodeState = Double
+
+-- Set an environmental input (or inputs) to a particular value. Real
+-- values will be stochastically set on each time-step. 
+type RealInputCoord = U.Vector (NodeIndex, RealNodeState)
+
+data NodeAlteration = NodeLock NodeName NodeState LockProbability
+                    | GradientNudge NodeName
+                                    NudgeDirection
+                                    NudgeProbability
+                    deriving (Eq, Show, Ord)
+
+isNodeLock :: NodeAlteration -> Bool
+isNodeLock (NodeLock _ _ _) = True
+isNodeLock (GradientNudge _ _ _) = False
+
+-- isGradientNudge :: NodeAlteration -> Bool
+-- isGradientNudge (GradientNudge _ _ _) = True
+-- isGradientNudge (NodeLock _ _ _) = False
+
+data NudgeDirection = NudgeUp
+                    | NudgeDown
+                    deriving (Eq, Show, Ord, Enum)
+
+type LockProbability = Probability
+-- NudgeDirection is its own sum type, but we need nudging to be fast-ish
+-- when we alter NodeStates in the middle of a DMExperiment, so:
+-- False = NudgeDown
+-- True  = NudgeUp
+type BoolNudgeDirection = Bool
+type NudgeProbability = Probability
+
+data GeneralDuration a = DefaultD a | UserD a
+                       deriving (Eq, Ord, Read, Show)
+
+instance Functor GeneralDuration where
+    fmap f (DefaultD x) = DefaultD $ f x
+    fmap f (UserD x) = UserD $ f x
+
+-- DefaultD is a default duration, and may be altered by the length of the
+-- Attractor that the pulse starts in. UserD is specified by the user, and may
+-- not be so altered. 
+type Duration = GeneralDuration Int
+
+durationMagnitude :: Duration -> Int
+durationMagnitude (DefaultD i) = i
+durationMagnitude (UserD i) = i
+
+-- The spacing between pulses, along with any input changes or node alterations.
+type PulseSpacing = (Int, RealInputCoord, [NodeAlteration])
 
 -- slices of a timeline, of the form (a, b) | b >= a >= 0
 type ThreadSlice = (Int, Int)
@@ -364,4 +432,68 @@ matchLocation thread sS = case B.findIndex (flip isSSMatch sS) thread of
             | j >= B.length thread = Nothing 
             | isSSMatch (thread B.! j) sS = Just (j, j + 1)
             | otherwise = Nothing
+
+-- We need this in Figures.TimeCourse and Figures.BarCharts. 
+-- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
+-- for display. 
+inputStrip :: [[NodeName]]
+           -> LayerNameIndexBimap
+           -> Maybe RealInputCoord
+           -> [PulseSpacing]
+           -> [(Int, [[(NodeName, RealNodeState)]], [NodeAlteration])]
+inputStrip mLInputNames lniBMap mRIC pSps = stripper <$> grpdIptIPs
+    where
+        stripper (a, inpts, c) = (a, filter stripper' inpts, c)
+            where
+                stripper' inpt = inputsHaveChanged M.! (fst <$> inpt)
+--      If a [NodeName] key is associated with a False, then it remains
+--      constant throughout. If True, then it changes as some point. 
+        inputsHaveChanged :: M.HashMap [NodeName] Bool
+        inputsHaveChanged = M.map (\hs -> HS.size hs > 1) gatheredHM
+        gatheredHM :: M.HashMap [NodeName] (HS.HashSet [Double])
+        gatheredHM = foldr changeCheck initialHM (sndOf3 <$> grpdIptIPs)
+        initialHM = maybe mempty (flip changeCheck mempty) grpdMRIC
+        grpdMRIC = groupInputs mLInputNames lniBMap <$> mRIC
+        changeCheck inpSts inputM = foldr chCk inputM inpSts
+            where
+                chCk inpt iM = M.insertWith HS.union ns (HS.singleton sts) iM
+                    where
+                        ns = fst <$> inpt
+                        sts = snd <$> inpt
+        grpdIptIPs = (fmap . BF.first) (groupInputs mLInputNames lniBMap) pSps
+
+-- Given an [[NodeName]] that represents the NodeName of the inputs of a
+-- ModelLayer and a RealInputCoord, produce the [[(Nodename, RealNodeState)]]
+-- that are the inputs actually set by that RealInputCoord. 
+groupInputs :: [[NodeName]]
+            -> LayerNameIndexBimap
+            -> RealInputCoord
+            -> [[(NodeName, RealNodeState)]]
+groupInputs inputNames lniBMap inputV = inputStates
+    where
+        inputStates = mapMaybe (grouper namedCoordL) inputNames
+--      This convoluted nonsense to separate out each input is necessary to keep
+--      the correct node order from the [[DMNode]] inputs. That then lets us
+--      determine what level that input is set to. 
+        grouper iVL ns = traverse (grouper' iVL) ns
+        grouper' vL n = L.find ((== n) . fst) vL
+        namedCoordL :: [(NodeName, RealNodeState)]
+        namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
+
+nAltTPrep :: NodeAlteration -> T.Text
+nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> tShow nlS <> "@" <>
+    tShow nlP
+nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tShow gP
+    where
+        shND NudgeUp = "up"
+        shND NudgeDown = "down"
+
+-- Given a RealInputCoord, which environmental inputs are being set, and to
+-- which real-valued levels? Presumes that the RealInputCoord is properly formed
+-- and belongs to the [[DMNode]] (inputs) and LayerNameIndexBimap in question. 
+inputCoordText :: [(NodeName, RealNodeState)] -> T.Text
+inputCoordText [] = ""
+inputCoordText [(nN, nS)] = nN <> ":" <> tShow nS
+inputCoordText ipts = nN <> ":" <> tShow nS
+    where (nN, nS) = fromMaybe (L.last ipts) (L.find ((> 0) . snd) ipts)
 

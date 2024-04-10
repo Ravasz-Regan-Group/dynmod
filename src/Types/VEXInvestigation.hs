@@ -77,24 +77,6 @@ data VEXInputPulse = VEXInPt
     , vexInputDuration :: Duration
     } deriving (Eq, Show)
 
-data NodeAlteration = NodeLock NodeName NodeState LockProbability
-                    | GradientNudge NodeName
-                                    NudgeDirection
-                                    NudgeProbability
-                    deriving (Eq, Show, Ord)
-
-isNodeLock :: NodeAlteration -> Bool
-isNodeLock (NodeLock _ _ _) = True
-isNodeLock (GradientNudge _ _ _) = False
-
--- isGradientNudge :: NodeAlteration -> Bool
--- isGradientNudge (GradientNudge _ _ _) = True
--- isGradientNudge (NodeLock _ _ _) = False
-
-data NudgeDirection = NudgeUp
-                    | NudgeDown
-                    deriving (Eq, Show, Ord, Enum)
-
 -- Scans
 data VEXScan = VEXScan
     ScanKind
@@ -357,8 +339,6 @@ vexErrorPrep (LoopStopPhenotypes loopPhNames) = "LoopStopPhenotypes" <>
 
 -- Base types needed in all of Types.DMInvestigation
 
-type RealNodeState = Double
-
 data InitialEnvironment = InEnv
     { initCoord :: [(NodeName, NodeState)] -- Every input, pinned
 -- BarcodeFilter to set the starting Attractor(s) for the experiment. 
@@ -369,30 +349,6 @@ data ExperimentStep = SynchronousExpStepper
                     | NoisyExpStepper Probability
                     | AsynchronousExpStepper
                     deriving (Eq, Show, Ord)
-
--- DefaultD is a default duration, and may be altered by the length of the
--- Attractor that the pulse starts in. UserD is specified by the user, and may
--- not be so altered. 
-type Duration = GeneralDuration Int
-
-durationMagnitude :: Duration -> Int
-durationMagnitude (DefaultD i) = i
-durationMagnitude (UserD i) = i
-
-type LockProbability = Probability
--- NudgeDirection is its own sum type, but we need nudging to be fast-ish
--- when we alter NodeStates in the middle of a DMExperiment, so:
--- False = NudgeDown
--- True  = NudgeUp
-type BoolNudgeDirection = Bool
-type NudgeProbability = Probability
-
-data GeneralDuration a = DefaultD a | UserD a
-                       deriving (Eq, Ord, Read, Show)
-
-instance Functor GeneralDuration where
-    fmap f (DefaultD x) = DefaultD $ f x
-    fmap f (UserD x) = UserD $ f x
 
 type ExperimentReps = Int
 

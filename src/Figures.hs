@@ -112,9 +112,6 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
                 figs :: [[Diagram B]]
                 figs = (zipWith . zipWith) padder expGuides phenotypeBCFigss
                 padder eGfig phBCFigs = vsep 5.0 (alignR <$> (eGfig:phBCFigs))
-                expGuides :: [[Diagram B]]
-                expGuides = (fmap . fmap)
-                    (expGuideDia mL exMeta (stripHt) . snd) avgTmlnPSs
                 phenotypeBCFigss :: [[[Diagram B]]]
                 phenotypeBCFigss = (fmap . fmap) phBCRunDia avgTmlnPSs
                 phBCRunDia (tmLns, pIs) = phRunDia cMap mM bc pIs <$> phTmLns
@@ -130,12 +127,18 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
             [] -> Nothing
             phCHNodeNs -> Just $ vsep 5.0 <$> phBChartFigs
                 where
-                    phBChartFigs :: [[Diagram B]]
-                    phBChartFigs = phBChartDia cMap switchMap exMeta phCHNodeNs
-                                            <<$>> (phBarChartStats <$> repRs)
+                  phBChartFigs :: [[Diagram B]]
+                  phBChartFigs = (uncurry phBCF) <<$>> (zipZip pulseSpcs pSts)
+                    where
+                      phBCF = phBChartDia cMap mL switchMap exMeta phCHNodeNs
+                      pSts = phBarChartStats <$> repRs
+        zipZip = (zipWith . zipWith) (,)
         switchMap = M.fromList nonEmptySwPhNs
         nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
         nonEmptySwPhs = snd <<$>> (filter (not . null . snd . snd) mM)
+        expGuides :: [[Diagram B]]
+        expGuides = (fmap . fmap) (expGuideDia mL exMeta stripHt) pulseSpcs
+        pulseSpcs = (fmap . fmap) snd avgTmlnPSs
         -- Integrate the [[PulseSpacing]] with the RealExpSpreadResults. 
         avgTmlnPSs :: [[(RealExpSpreadResults, [PulseSpacing])]]
         avgTmlnPSs = (uncurry zip) <$> avgRepRs

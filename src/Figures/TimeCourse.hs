@@ -20,7 +20,6 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
 import qualified Data.HashMap.Strict as M
-import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
 import qualified Data.Colour as C
 import Data.List.Split (splitPlaces)
@@ -28,8 +27,6 @@ import Diagrams.Prelude
 import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
 import qualified Data.List as L
-import qualified Data.Bifunctor as BF
-import Data.Maybe (fromMaybe, mapMaybe)
 
 
 bcRunFigLegendDia :: ColorMap -> Barcode -> Diagram B
@@ -379,52 +376,6 @@ expGuideDia mL exMeta stripHt pSps = expTypeText ||| pulseDia
         expTypeText = tText' stripHt (tShow expKnd <> " ")
         expKnd = tcExpKind exMeta
 
--- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
--- for display. 
-inputStrip :: [[NodeName]]
-           -> LayerNameIndexBimap
-           -> Maybe RealInputCoord
-           -> [PulseSpacing]
-           -> [(Int, [[(NodeName, RealNodeState)]], [NodeAlteration])]
-inputStrip mLInputNames lniBMap mRIC pSps = stripper <$> grpdIptIPs
-    where
-        stripper (a, inpts, c) = (a, filter stripper' inpts, c)
-            where
-                stripper' inpt = inputsHaveChanged M.! (fst <$> inpt)
---      If a [NodeName] key is associated with a False, then it remains
---      constant throughout. If True, then it changes as some point. 
-        inputsHaveChanged :: M.HashMap [NodeName] Bool
-        inputsHaveChanged = M.map (\hs -> HS.size hs > 1) gatheredHM
-        gatheredHM :: M.HashMap [NodeName] (HS.HashSet [Double])
-        gatheredHM = foldr changeCheck initialHM (sndOf3 <$> grpdIptIPs)
-        initialHM = maybe mempty (flip changeCheck mempty) grpdMRIC
-        grpdMRIC = groupInputs mLInputNames lniBMap <$> mRIC
-        changeCheck inpSts inputM = foldr chCk inputM inpSts
-            where
-                chCk inpt iM = M.insertWith HS.union ns (HS.singleton sts) iM
-                    where
-                        ns = fst <$> inpt
-                        sts = snd <$> inpt
-        grpdIptIPs = (fmap . BF.first) (groupInputs mLInputNames lniBMap) pSps
-
--- Given an [[NodeName]] that represents the NodeName of the inputs of a
--- ModelLayer and a RealInputCoord, produce the [[(Nodename, RealNodeState)]]
--- that are the inputs actually set by that RealInputCoord. 
-groupInputs :: [[NodeName]]
-            -> LayerNameIndexBimap
-            -> RealInputCoord
-            -> [[(NodeName, RealNodeState)]]
-groupInputs inputNames lniBMap inputV = inputStates
-    where
-        inputStates = mapMaybe (grouper namedCoordL) inputNames
---      This convoluted nonsense to separate out each input is necessary to keep
---      the correct node order from the [[DMNode]] inputs. That then lets us
---      determine what level that input is set to. 
-        grouper iVL ns = traverse (grouper' iVL) ns
-        grouper' vL n = L.find ((== n) . fst) vL
-        namedCoordL :: [(NodeName, RealNodeState)]
-        namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
-
 pulseSpacingDia :: Double
                 -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
                 -> Diagram B
@@ -442,21 +393,3 @@ pulseSpacingDia stripHt (pW, inputLs, nAlts) =
         (locks, nudges) = L.partition isNodeLock nAlts
         hDiv = hrule (fromIntegral pW) # lw ultraThin
 
-nAltTPrep :: NodeAlteration -> T.Text
-nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> tpsh nlS <> "@" <> tpsh nlP
-nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tpsh gP
-    where
-        shND NudgeUp = "up"
-        shND NudgeDown = "down"
-
--- Given a RealInputCoord, which environmental inputs are being set, and to
--- which real-valued levels? Presumes that the RealInputCoord is properly formed
--- and belongs to the [[DMNode]] (inputs) and LayerNameIndexBimap in question. 
-inputCoordText :: [(NodeName, RealNodeState)] -> T.Text
-inputCoordText [] = ""
-inputCoordText [(nN, nS)] = nN <> ":" <> tpsh nS
-inputCoordText ipts = nN <> ":" <> tpsh nS
-    where (nN, nS) = fromMaybe (L.last ipts) (L.find ((> 0) . snd) ipts)
-
-tpsh :: Show a => a -> T.Text
-tpsh = T.pack . show

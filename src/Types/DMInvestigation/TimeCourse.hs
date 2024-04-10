@@ -53,9 +53,6 @@ data InputPulse = InputPulse { realInputCoord :: RealInputCoord
                              } deriving (Eq, Show)
 type InputPulseF = Attractor -> [[InputPulse]]
 
--- Set an environmental input (or inputs) to a particular value. Real
--- values will be stochastically set on each time-step. 
-type RealInputCoord = U.Vector (NodeIndex, RealNodeState)
 
 type TimeCourseResult = (TCExpMeta, [AttractorResult])
 -- The commented and real AttractorResults are equivalent. 
@@ -64,9 +61,6 @@ type AttractorResult = (Barcode, RepResults)
 type RepResults = ([ExpSpreadResults], [[PulseSpacing]])
 type ExpSpreadResults =  [AttBatch]
 type AttBatch = [Timeline]
-
--- The spacing between pulses, along with any input changes or node alterations.
-type PulseSpacing = (Int, RealInputCoord, [NodeAlteration])
 
 type Timeline = B.Vector (AnnotatedLayerVec, [PhenotypeName])
 type AnnotatedLayerVec = U.Vector (NodeState, WasForced)
