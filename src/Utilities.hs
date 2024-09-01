@@ -169,8 +169,7 @@ sortWithOrder = sortWithOrderOn id
 sortWithOrderOn :: (Ord a, Ord b, Hash.Hashable b)
                 => (a -> b) -> [b] -> [a] -> [a]
 sortWithOrderOn f order = L.sortOn (getOrder . f)
-    where
-        getOrder k = M.lookupDefault (-1) k $ mkOrderHashMap order
+    where getOrder k = M.lookupDefault (-1) k $ mkOrderHashMap order
 
 mkOrderHashMap :: (Ord a, Hash.Hashable a) => [a] -> M.HashMap a Int
 mkOrderHashMap xs = M.fromList (zip xs ([1..] :: [Int]))

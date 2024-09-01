@@ -1341,6 +1341,14 @@ vexKeyword = [ "DMMSFile"
              , "PhenotypeTimeCourse"
              , "AvgBarChartNodes"
              , "AvgBarChartSwitches"
+             , "Max_T"
+             , "Relevant_T"
+             , "StopPhenotypes"
+             , "ScanSwitches"
+             , "EnvironmentalScan"
+             , "KDOEScan"
+             , "X_Axis"
+             , "ManualPRNGSeed"
              ]
 
 vexPredefined ::[T.Text]
@@ -1355,4 +1363,8 @@ vexPredefined = [ "LayerParameters"
                 , "KDOE"
                 , "KDOEAtTransition"
                 , "Figures"
+                , "Scan"
+                , "EnvKDOEScan"
+                , "TwoDEnvScan"
+                , "ThreeDEnvScan"
                 ]

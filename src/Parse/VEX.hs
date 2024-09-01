@@ -42,16 +42,21 @@ parens = between (symbol "(") (symbol ")")
 number :: Parser Scientific
 number = lexeme LE.scientific
 
--- | 'integer' parses an Int. (Note that this does not parse signs!)
+-- | 'integer' parses an unsigned Int.
 
 integer :: Parser Int
 integer = lexeme LE.decimal
 
+signedInteger :: Parser Int
+signedInteger = LE.signed sc integer
 
 -- | 'colon' parses a colon.
 
 colon :: Parser T.Text
 colon = symbol ":"
+
+cInt :: Parser Int
+cInt = colon >> integer
 
 -- | 'comma' parses a comma.
 
@@ -72,6 +77,14 @@ identifier name = lexeme $ rword name >> colon >> (p >>= check)
                 then fail $ "Keyword " ++ show x ++ " cannot be a "
                     ++ (T.unpack name)
                 else return x
+
+multiIdentifier :: T.Text -> Parser [T.Text]
+multiIdentifier name = lexeme $ rword name >>
+    (try
+        (colon >>
+            (sepBy1 variable comma)
+        )
+    )
 
 -- Parse an assignment
 variable :: Parser T.Text
@@ -177,20 +190,10 @@ inputSpaceDiagramParse :: Parser ISFSpec
 inputSpaceDiagramParse = between (symbol "InputSpaceDiagram{")
                                  (symbol "InputSpaceDiagram}")
     (runPermutation $ ISFSpec
-         <$> toPermutationWithDefault [] axesOrderParse
+         <$> toPermutationWithDefault [] (multiIdentifier "AxesOrder")
          <*> toPermutationWithDefault Nothing (Just <$> barCodeFilterParse)
          <*> toPermutationWithDefault [] (coordParse "PinnedInputs")
                   
-    )
-
--- Parser the order of axes for the input space diagram. 
-axesOrderParse :: Parser [NodeName]
-axesOrderParse = lexeme $ rword "AxesOrder" >>
-    (try
-        (colon >>
-            (sepBy1 variable comma
-            )
-        )
     )
 
 -- Parse a BarcodeFilter. BarcodeFilters are optional, so if this parser
@@ -229,24 +232,29 @@ excludeBCwAllParse = ExcludeBarCodesWithAll <$>
 phenotypeSetParse :: Parser (NodeName, PhenotypeName)
 phenotypeSetParse = (,) <$> variable <*> (colon >> variable)
 
--- Parse a VEXExperiment. 
+-- Parse a VEXTimeCourse. 
 experimentParse :: Parser VEXExperiment
-experimentParse =  (VXTC <$> generalExpParse)
-               <|> (VXTC <$> pulse1Parse)
-               <|> (VXTC <$> kdoeParse)
-               <|> (VXTC <$> kdoeAtTransitionParse)
+experimentParse = (VXTC <$> timecourseParse)
+              <|> (TXSC <$> scanParse)
 
--- Parse a general experiment. 
-generalExpParse :: Parser VEXTimeCourse
-generalExpParse = between (symbol "GeneralExperiment{")
+timecourseParse :: Parser VEXTimeCourse
+timecourseParse = generalTCParse
+              <|> pulse1Parse
+              <|> kdoeTCParse
+              <|> kdoeAtTransitionParse
+
+-- Parse a general TimeCourse. 
+generalTCParse :: Parser VEXTimeCourse
+generalTCParse = between (symbol "GeneralExperiment{")
                           (symbol "GeneralExperiment}")
     (runPermutation $
-        GeneralExp <$> toPermutation (identifier "ExperimentName")
-                   <*> toPermutation startingModelStateParse
-                   <*> toPermutation modelStepTypeParse
-                   <*> toPermutation (some pulseParse)
-                   <*> toPermutationWithDefault 1 expRepsParse
-                   <*> toPermutationWithDefault defFigKinds figKindsParse
+        GeneralTC <$> toPermutation (identifier "ExperimentName")
+                  <*> toPermutation startingModelStateParse
+                  <*> toPermutation modelStepTypeParse
+                  <*> toPermutation (some pulseParse)
+                  <*> toPermutationWithDefault 1 expRepsParse
+                  <*> toPermutationWithDefault defFigKinds figKindsParse
+                  <*> toPermutationWithDefault Nothing manualPRNGParse
         
     )
 
@@ -287,7 +295,7 @@ pulseParse = between (symbol "Pulse{") (symbol "Pulse}")
 coordParse :: T.Text -> Parser [(NodeName, NodeState)]
 coordParse rw = rword rw >> colon >>
     (sepBy1 
-        ((,) <$> variable <*> (colon >> integer))
+        ((,) <$> variable <*> cInt)
      comma)
 
 realCoordParse :: T.Text -> Parser [(NodeName, RealNodeState)]
@@ -306,7 +314,7 @@ nodeAlterationParse = try nodeLockParse <|> gradientNudgeParse
 
 nodeLockParse :: Parser NodeAlteration
 nodeLockParse = NodeLock <$> variable
-                         <*> (colon >> integer)
+                         <*> cInt
                          <*> (comma >> probParse)
 
 gradientNudgeParse :: Parser NodeAlteration
@@ -329,14 +337,12 @@ expRepsParse = rword "SampleSize" >> colon >> integer
 -- you only make one of per ModelMapping. 
 figKindsParse :: Parser FigKinds
 figKindsParse = between (symbol "Figures{") (symbol "Figures}")
-    (try
-        (runPermutation $
-            FigKinds <$> toPermutationWithDefault True nodeTimeCourseParse
-                     <*> toPermutationWithDefault False phTimeCourseParse
-                     <*> toPermutationWithDefault [] nodeAvgBChartParse
-                     <*> toPermutationWithDefault [] phAvgBChartParse
-        )
-    )
+    (try (runPermutation $ FigKinds
+        <$> toPermutationWithDefault True nodeTimeCourseParse
+        <*> toPermutationWithDefault False phTimeCourseParse
+        <*> toPermutationWithDefault [] (multiIdentifier "AvgBarChartNodes")
+        <*> toPermutationWithDefault [] (multiIdentifier "AvgBarChartSwitches")
+    ))
 
 -- Default FigKinds
 defFigKinds :: FigKinds
@@ -350,26 +356,9 @@ nodeTimeCourseParse = rword "NodeTimeCourse" >> colon >> boolParse
 phTimeCourseParse :: Parser DoPhenotypeTimeCourse
 phTimeCourseParse = rword "PhenotypeTimeCourse" >> colon >> boolParse
 
--- Which Nodes should we make average value bar charts for? Default to []
-nodeAvgBChartParse :: Parser AvgBChartNodes
-nodeAvgBChartParse = lexeme $ rword "AvgBarChartNodes" >>
-    (try
-        (colon >>
-            (sepBy1 variable comma
-            )
-        )
-    )
-
--- Which Switches should we make average value bar charts for? Default to []
-phAvgBChartParse :: Parser AvgBChartNodes
-phAvgBChartParse = lexeme $ rword "AvgBarChartSwitches" >>
-    (try
-        (colon >>
-            (sepBy1 variable comma
-            )
-        )
-    )
-
+manualPRNGParse :: Parser (Maybe Int)
+manualPRNGParse = Just <$> (lexeme $ rword "ManualPRNGSeed" >>
+    (try (colon >> signedInteger)))
 
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
@@ -386,6 +375,7 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
                <*> toPermutation flipParse
                <*> toPermutationWithDefault 1 expRepsParse
                <*> toPermutationWithDefault defFigKinds figKindsParse
+               <*> toPermutationWithDefault Nothing manualPRNGParse
         
     )
 
@@ -395,8 +385,8 @@ flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
 
 -- Parse a KDOE. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
-kdoeParse :: Parser VEXTimeCourse
-kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
+kdoeTCParse :: Parser VEXTimeCourse
+kdoeTCParse = between (symbol "KDOE{") (symbol "KDOE}")
     (runPermutation $
         KnockDOverE <$>
                  ((,) <$> toPermutationWithDefault (DefaultD 50)
@@ -409,6 +399,7 @@ kdoeParse = between (symbol "KDOE{") (symbol "KDOE}")
                        <*> toPermutation nodeAlterationsParse
                        <*> toPermutationWithDefault 1 expRepsParse
                        <*> toPermutationWithDefault defFigKinds figKindsParse
+                       <*> toPermutationWithDefault Nothing manualPRNGParse
         
     )
 
@@ -430,7 +421,138 @@ kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                        <*> toPermutation nodeAlterationsParse
                        <*> toPermutationWithDefault 1 expRepsParse
                        <*> toPermutationWithDefault defFigKinds figKindsParse
+                       <*> toPermutationWithDefault Nothing manualPRNGParse
         
     )
 
+-- Parse a VEXScan
+scanParse :: Parser VEXScan
+scanParse = between (symbol "Scan{") (symbol "Scan}") (
+    runPermutation $
+        VEXScan <$> toPermutation scanKindParse
+                <*> toPermutation startingModelStateParse
+                <*> toPermutationWithDefault [] (realCoordParse "InputFix")
+                <*> toPermutation maxTParse
+                <*> toPermutation relevantTParse
+                <*> toPermutation stopPhParse
+                <*> toPermutation modelStepTypeParse
+                <*> toPermutation ((multiIdentifier "ScanSwitches"))
+                <*> toPermutationWithDefault Nothing manualPRNGParse
+    )
+
+scanKindParse :: Parser ScanKind
+scanKindParse = (
+        (EnvSc <$> envScanParse)
+    <|> (KDOESc <$> kdoeScanParse)
+    <|> envKDOEScanParse
+    <|> twoDEnvScanParse
+    <|> threeDEnvScanParse
+    ) >>= scanKindCheck
+
+envScanParse :: Parser EnvScan
+envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
+    (   (try rangedEnvScanParse)
+    <|> wholeEnvScanParse
+    )))
+    where
+        rangedEnvScanParse = RangeESC <$> variable
+                                      <*> cInt
+                                      <*> (comma >> integer)
+                                      <*> (comma >> integer)
+        wholeEnvScanParse = WholeESC <$> variable <*> cInt
+
+kdoeScanParse :: Parser KDOEScan
+kdoeScanParse = lexeme $ rword "KDOEScan" >> (try (colon >>
+    (runPermutation $ KDOESC
+        <$> toPermutation nodeAlterationsParse
+        <*> toPermutation (flip (,) <$> (parens (sepBy1 ((,)
+                                        <$> variable
+                                        <*> (colon >> integer)) comma)) 
+                                    <*> (colon >> integer))
+    )))
+
+xAxisParse :: Parser XAxis
+xAxisParse = lexeme $ rword "X_Axis" >>
+    (colon >>
+        (   EnvX <$ rword "EnvX"
+        <|> KDOEX <$ rword "KDOEX"
+        )
+    )
+
+scanKindCheck :: ScanKind -> Parser ScanKind
+scanKindCheck x@(EnvSc _) = return x
+scanKindCheck (KDOESc kdoeScan) = KDOESc <$> (kdoeScanCheck kdoeScan)
+scanKindCheck (EnvKDOEScan envScan kdoeScan xAx) =
+    EnvKDOEScan <$> pure envScan
+                <*> kdoeScanCheck kdoeScan
+                <*> pure xAx
+scanKindCheck (TwoDEnvScan envScan1 envScan2 mKDOEScan) =
+    (\es mk -> TwoDEnvScan <$> (fst <$> es) <*> (snd <$> es) <*> mk)
+        (envScansCheck envScan1 envScan2) (traverse kdoeScanCheck mKDOEScan)
+scanKindCheck (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
+    (\es -> ThreeDEnvScan <$> (fstOf3 <$> es) <*> (sndOf3 <$> es)
+                          <*> (thdOf3 <$> es) <*> (pure nAlts))
+        (envScansCheck3 envScan1 envScan2 envScan3)
+
+kdoeScanCheck :: KDOEScan -> Parser KDOEScan
+kdoeScanCheck kdoeScan@(KDOESC nAlts (_, locknodes))
+    | sharedNAlts /= [] = fail $ show $
+        KDOESharedNodesInSteppedAndAlts sharedNAlts
+    | otherwise = return kdoeScan
+    where
+        sharedNAlts = L.intersect (nodeAltName <$> nAlts) (fst <$> locknodes)
+
+envScansCheck :: EnvScan -> EnvScan -> Parser (EnvScan, EnvScan)
+envScansCheck envScan1 envScan2
+    | envScanInputName envScan1 == envScanInputName envScan2 = fail $ show $ 
+        DuplicateEnvScanNodeInScan (envScanInputName envScan1)
+    | otherwise = return (envScan1, envScan2)
+
+envScansCheck3 :: EnvScan -> EnvScan -> EnvScan
+               -> Parser (EnvScan, EnvScan, EnvScan)
+envScansCheck3 envScan1 envScan2 envScan3 = do
+    (envSc1, envSc2) <- envScansCheck envScan1 envScan2
+    (_, envSc3) <- envScansCheck envScan2 envScan3
+    (_, _) <- envScansCheck envScan1 envScan3
+    return (envSc1, envSc2, envSc3)
+
+envKDOEScanParse :: Parser ScanKind
+envKDOEScanParse = between (symbol "EnvKDOEScan{") (symbol "EnvKDOEScan}") (
+    runPermutation $
+        EnvKDOEScan <$> toPermutation envScanParse
+                    <*> toPermutation kdoeScanParse
+                    <*> toPermutation xAxisParse
+    )
+
+twoDEnvScanParse :: Parser ScanKind
+twoDEnvScanParse = between (symbol "TwoDEnvScan{") (symbol "TwoDEnvScan}") (
+    runPermutation $ TwoDEnvScan
+        <$> toPermutation envScanParse
+        <*> toPermutation envScanParse
+        <*> toPermutationWithDefault Nothing (Just <$> kdoeScanParse)
+    )
+
+threeDEnvScanParse :: Parser ScanKind
+threeDEnvScanParse = between (symbol "ThreeDEnvScan{") (symbol "ThreeDEnvScan}")
+    (runPermutation $ ThreeDEnvScan
+        <$> toPermutation envScanParse
+        <*> toPermutation envScanParse
+        <*> toPermutation envScanParse
+        <*> toPermutation nodeAlterationsParse
+    )
+
+
+stopPhParse :: Parser [(NodeName, PhenotypeName)]
+stopPhParse = lexeme $ rword "StopPhenotypes" >>
+    (try
+        (colon >>
+            (sepBy1 ((,) <$> variable <*> (colon >> variable)) comma)
+        )
+    )
+
+maxTParse :: Parser Int
+maxTParse = (lexeme . try) $ rword "Max_T" >> cInt
+
+relevantTParse :: Parser Int
+relevantTParse = (lexeme . try) $ rword "Relevant_T" >> cInt
 

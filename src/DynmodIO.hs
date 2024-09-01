@@ -208,26 +208,102 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                     expTense
                         | numExp == 1 = " experiment. "
                         | otherwise = " experiments. "
+--                 let tmlnLengthsss =  tmlnLF <$> invRs
+--                 PS.pPrint tmlnLengthsss
                 putStrLn $ "Ran " <> show numExp <> expTense
                 putStrLn "Generating figures..."
                 let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets) invRs
                 writeVexFigs dmmsPath lRFigs
 
-writeVexFigs
-    :: Path Abs File
-    -> [([(TCExpMeta, [(Barcode, BCExpFigures)])], Maybe (Diagram B))]
-    -> IO ()
+tmlnLF :: LayerResult -> [[[Int]]]
+tmlnLF lR = (fmap tmlnLF' . layerResultERs) lR
+
+tmlnLF' :: ExperimentResult -> [[Int]]
+tmlnLF' (TCExpRes _) = [[0]]
+tmlnLF' (ScanExpRes (_, scanRs)) = (tmlnLF'' . snd) <$> scanRs
+
+tmlnLF'' :: ScanResult -> [Int]
+tmlnLF'' (SKREnv tmlnss) = (sum . (fmap length)) <$> tmlnss
+tmlnLF'' _ = [0]
+
+writeVexFigs :: Path Abs File
+             -> [([ExperimentFigures], Maybe (Diagram B))]
+             -> IO ()
 writeVexFigs fP layerFigs = mapM_ (writeLayerFig fP) layerFigs
     where
         writeLayerFig f (expPairs, m5DDia) = do
-            mapM_ (writeExpFig f) expPairs
+            mapM_ (writeExpFigs f) expPairs
             mapM_ (writeFiveDFig f) m5DDia
 
-writeExpFig
-    :: Path Abs File
-    -> (TCExpMeta, [(Barcode, BCExpFigures)])
-    -> IO ()
-writeExpFig f (dmExpMeta, bcExpFigs) = do
+writeExpFigs :: Path Abs File -> ExperimentFigures -> IO ()
+writeExpFigs f (TCExpFigs tcFigs) = writeTCExpFig f tcFigs
+writeExpFigs f (ScanExpFigs scFigs) = writeScExpFigs f scFigs
+
+writeScExpFigs :: Path Abs File
+               -> (SCExpMeta, [(Barcode, [ScanExpFigure])])
+               -> IO ()
+writeScExpFigs f (scExpMt, bcExpFigs) = do
+    let dirStem = parent f
+--         expDetails = scExpDetails scExpMt
+        expType = scMetaScanKind scExpMt
+        expName = scExpName scExpMt
+    dirExp <- parseRelDir "_EXP"
+    dirCat <- case expType of
+        (MetaEnvSc _ _) -> parseRelDir "EnvScan"
+        (MetaKDOESc _ _) -> parseRelDir "KDOE_Scan"
+        (MetaEnvKDOEScan _ _ _) -> parseRelDir "Env_KDOE_Scan"
+        (MetaTwoDEnvScan _ _ _) -> parseRelDir "TwoDEnvScan"
+        (MetaThreeDEnvScan _ _ _) -> parseRelDir "ThreeDEnvScan"
+    dirExpName <- parseRelDir (T.unpack expName)
+    let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
+    mapM_ (writeScanExpFigures dirFull scExpMt) bcExpFigs
+
+-- This is a simple write to disk of the Diagram Bs for now, until I have a
+-- better idea of what they look like. 
+writeScanExpFigures :: Path Abs Dir
+                    -> SCExpMeta
+                    -> (Barcode, [ScanExpFigure])
+                    -> IO ()
+writeScanExpFigures f scExpMt (bc, figs) = do
+    let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+        bcPatternStr = "bc" ++ T.unpack bcPatterns
+    bcDir <- parseRelDir bcPatternStr
+    let fPath = f </> bcDir
+    mapM_ (writeScanExpFigure fPath scExpMt bc) figs
+
+writeScanExpFigure :: Path Abs Dir
+                   -> SCExpMeta
+                   -> Barcode
+                   -> ScanExpFigure
+                   -> IO ()
+writeScanExpFigure f scExpMt bc fig = case fig of
+    EnvScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
+    KDOEScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
+    EnvKDOESc figs -> mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..] figs)
+    TwoDEnvScWWOKDOE htmaps ->
+        mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..] htmaps)
+    ThreeDEnvSc heatmapBlockFigs -> mapM_ (uncurry (simpleSCWrite f scExpMt))
+        (zip [0..] heatmapBlockFigs)
+
+simpleSCWrite :: Path Abs Dir -> SCExpMeta -> Int -> Diagram B -> IO ()
+simpleSCWrite f _ i dia = do
+    relFileName <- parseRelFile (show i)
+    relFileNameWExt <- addExtension ".pdf" relFileName
+    let absFileNameWExt = (f </> relFileNameWExt) :: Path Abs File
+        fPath = toFilePath absFileNameWExt
+    ensureDir f
+    renderCairo fPath (mkWidth 1600) dia
+
+-- Again, this is a simple write to disk of the Diagram Bs for now. 
+writeBaseScanFig :: Path Abs Dir -> SCExpMeta -> Barcode -> BaseScanFigs -> IO ()
+writeBaseScanFig f scExpMt _ (BSFgs stFig tisPhsFigs) = do
+    let figs = stFig:tisPhsFigs
+    mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..(length tisPhsFigs)] figs)
+
+writeTCExpFig :: Path Abs File
+              -> (TCExpMeta, [(Barcode, BCExpFigures)])
+              -> IO ()
+writeTCExpFig f (dmExpMeta, bcExpFigs) = do
     let dirStem = parent f
         expDetails = tcExpDetails dmExpMeta
         expType = tcExpKind dmExpMeta
@@ -254,15 +330,15 @@ writeExpFig f (dmExpMeta, bcExpFigs) = do
         phBChFig = (traverse . traverse) phenotypeBCAvgBarFigs bcExpFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNTC) expDetails) tcFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHTC) expDetails) phFigs
-    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNBCH) expDetails) nBChFig
-    (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHBCH) expDetails) phBChFig
+    (mapM_ . mapM_) (wrExpBCFigNBC (dirFull </> dirNBCH) expDetails) nBChFig
+    (mapM_ . mapM_) (wrExpBCFigPhBC (dirFull </> dirPHBCH) expDetails) phBChFig
 
 writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
 writeExpBCFig dirFull expDetails (bc, expDias) = do
     ensureDir dirFull
     case expDias of
         [] -> do 
-            putStrLn "No figures for Barcode: "
+            putStrLn "No Timecourse figures for Barcode: "
             PS.pPrint bc
         [expDia] -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
@@ -698,9 +774,150 @@ inputPP dMM = do
         layerT = (T.unpack . T.intercalate "\n") layerTs
     putStrLn "Model layers and their inputs:"
     putStrLn layerT
-        
-        
-        
-        
-        
-        
+
+
+
+-- For now we will keep both the averages and the vectors of NodeState values
+-- that they came from. They will be written out with the figure, to be
+-- available for additional analysis. Eventually this will be replaced by the
+-- ability to do statistics across experiments internally. 
+wrExpBCFigNBC :: Path Abs Dir
+        -> T.Text
+        -> (Barcode, [(Diagram B, [[[(NodeName, U.Vector RealNodeState)]]])])
+        -> IO ()
+wrExpBCFigNBC dirFull expDetails (bc, expDiasWData) = do
+    ensureDir dirFull
+    case expDiasWData of
+        [] -> do 
+            putStrLn "No node bar chart figures for Barcode: "
+            PS.pPrint bc
+        [(expDia, nodeVecs)] -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                formattedData = formatNBCData nodeVecs
+            relFileName <- parseRelFile rFString
+            relFileNameWExt <- addExtension ".pdf" relFileName
+            dataFileNameWExt <- addExtension ".csv" relFileName
+            let absFileNameWExt = dirFull </> relFileNameWExt
+                absDataFileNameWExt = dirFull </> dataFileNameWExt
+                fPath = toFilePath absFileNameWExt
+            renderCairo fPath (mkWidth 1600) expDia
+            RW.writeFile absDataFileNameWExt formattedData
+        expDs -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
+                rFStrings = (rFString <>) <$> intBStrs
+                fStrDiaPairs = zip rFStrings expDs
+            mapM_ (writeAttAlteredExpBCFigNBC dirFull) fStrDiaPairs
+
+-- Format DMNode time course Timeline data to be machine readable
+formatNBCData :: [[[(NodeName, U.Vector RealNodeState)]]] -> T.Text
+formatNBCData pairedVecsss = (T.intercalate "\n" . (fmap (uncurry fDataF)))
+  (zip ((T.pack . show) <$> [(0 :: Int)..]) (pairedVecsss))
+  where
+    fDataF i pairedVecss = "Chart " <> i <> ":\n" <> body
+      where
+        body = (T.intercalate "\n" . (fmap (uncurry fDataF')))
+          (zip ((T.pack . show) <$> [(0 :: Int)..]) (pairedVecss))
+        fDataF' j pairedVecs = "Pulse " <> j <> ":\n" <> body'
+          where
+            body' = T.intercalate "\n" $ fDataF'' <$> pairedVecs
+            fDataF'' (nN, nVec) = nN <> ", " <> 
+              (T.intercalate ", " . fmap (T.pack . show) . U.toList) nVec
+ 
+writeAttAlteredExpBCFigNBC
+    :: Path Abs Dir
+    -> (String, (Diagram B, [[[(NodeName, U.Vector RealNodeState)]]]))
+    -> IO ()
+writeAttAlteredExpBCFigNBC dirFull (rFString, (expDia, nodeVecs)) = do
+    relFileName <- parseRelFile rFString
+    relFileNameWExt <- addExtension ".pdf" relFileName
+    dataFileNameWExt <- addExtension ".csv" relFileName
+    let absFileNameWExt = dirFull </> relFileNameWExt
+        absDataFileNameWExt = dirFull </> dataFileNameWExt
+        fPath = toFilePath absFileNameWExt
+        formattedData = formatNBCData nodeVecs
+    renderCairo fPath (mkWidth 1600) expDia
+    RW.writeFile absDataFileNameWExt formattedData
+    
+
+-- For now we will keep both the averages and the vectors of Phenotype
+-- prevalence that they came from. They will be written out with the figure, to
+-- be available for additional analysis. Eventually this will be replaced by the
+-- ability to do statistics across experiments internally. 
+wrExpBCFigPhBC :: Path Abs Dir
+               -> T.Text
+               -> (Barcode, [(Diagram B,
+                        [[(NodeName, [[(PhenotypeName, U.Vector Double)]])]])])
+               -> IO ()
+wrExpBCFigPhBC dirFull expDetails (bc, expDiasWData) = do
+    ensureDir dirFull
+    case expDiasWData of
+        [] -> do 
+            putStrLn "No Phenotype bar chart figures for Barcode: "
+            PS.pPrint bc
+        [(expDia, phVecs)] -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                formattedData = formatPhBCData phVecs
+            relFileName <- parseRelFile rFString
+            relFileNameWExt <- addExtension ".pdf" relFileName
+            dataFileNameWExt <- addExtension ".csv" relFileName
+            let absFileNameWExt = dirFull </> relFileNameWExt
+                absDataFileNameWExt = dirFull </> dataFileNameWExt
+                fPath = toFilePath absFileNameWExt
+            renderCairo fPath (mkWidth 1600) expDia
+            RW.writeFile absDataFileNameWExt formattedData
+        expDs -> do
+            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
+                rFStrings = (rFString <>) <$> intBStrs
+                fStrDiaPairs = zip rFStrings expDs
+            mapM_ (writeAttAlteredExpBCFigPhBC dirFull) fStrDiaPairs
+
+-- Format DMNode time course Phenotype data to be machine readable
+formatPhBCData :: [[(NodeName, [[(PhenotypeName, U.Vector Double)]])]] -> T.Text
+formatPhBCData pairss = (T.intercalate "\n" . (fmap (uncurry fDataF)))
+  (zip ((T.pack . show) <$> [(0 :: Int)..]) (pairss))
+  where
+    fDataF i pairs = "Chart " <> i <> ":\n" <> body
+      where
+        body = (T.intercalate "\n" . (fmap (uncurry fDataF')))
+            (zip ((T.pack . show) <$> [(0 :: Int)..]) (byPulseData pairs))
+        fDataF' j phD = "Pulse " <> j <> ":\n" <> body'
+          where
+            body' = T.intercalate "\n" $ fDataF'' <$> phD
+            fDataF'' (swN, phs) = swN <> ":\n" <> body''
+              where
+                body'' = T.intercalate "\n" $ fDataF''' <$> phs
+                fDataF''' (phN, avgs) = phN <> ", " <> T.intercalate ", "
+                       ((fmap (T.pack . show) . U.toList) avgs)
+                  
+
+-- Rearrange Phenotype Barchart data so that it is ordered first by Pulse, 
+-- rather than Switch. 
+byPulseData :: [(NodeName, [[(PhenotypeName, U.Vector Double)]])]
+            -> [[(NodeName, [(PhenotypeName, U.Vector Double)])]]
+byPulseData pairs = zip swNames <$> phData
+    where (swNames, phData) = (fmap L.transpose . unzip) pairs
+
+
+writeAttAlteredExpBCFigPhBC
+  :: Path Abs Dir
+  -> (String, (Diagram B, [[(NodeName, [[(PhenotypeName, U.Vector Double)]])]]))
+  -> IO ()
+writeAttAlteredExpBCFigPhBC dirFull (rFString, (expDia, phVecs)) = do
+    relFileName <- parseRelFile rFString
+    relFileNameWExt <- addExtension ".pdf" relFileName
+    dataFileNameWExt <- addExtension ".csv" relFileName
+    let absFileNameWExt = dirFull </> relFileNameWExt
+        absDataFileNameWExt = dirFull </> dataFileNameWExt
+        fPath = toFilePath absFileNameWExt
+        formattedData = formatPhBCData phVecs
+    renderCairo fPath (mkWidth 1600) expDia
+    RW.writeFile absDataFileNameWExt formattedData 
+
+
+

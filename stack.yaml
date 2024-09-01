@@ -19,8 +19,7 @@
 # resolver: https://example.com/snapshots/2018-01-01.yaml
 # resolver: lts-15.10 -  return to this if 16.31 fails on Windows
 # resolver: lts-19.31
-resolver: lts-21.14
-# resolver: lts-22.11
+resolver: lts-21.25
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.

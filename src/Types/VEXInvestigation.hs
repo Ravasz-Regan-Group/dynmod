@@ -40,12 +40,13 @@ data VEXExperiment = VXTC VEXTimeCourse
 -- TimeCourses
 data VEXTimeCourse =
 -- A parsed GeneralExperiment{}.
-    GeneralExp T.Text -- Experiment name
+    GeneralTC T.Text -- Experiment name
                InitialEnvironment
                ExperimentStep
               [VEXInputPulse]
                ExperimentReps
                FigKinds
+               ManualSeed
 -- A parsed Pulse1{}.
     | Pulse1 (Duration, Duration) -- t_0 and t_end
               InitialEnvironment
@@ -53,6 +54,7 @@ data VEXTimeCourse =
              (NodeName, RealNodeState)
               ExperimentReps
               FigKinds
+              ManualSeed
 -- A parsed KDOE{}.
     | KnockDOverE (Duration, Duration) -- t_0 and t_end
                    InitialEnvironment
@@ -60,6 +62,7 @@ data VEXTimeCourse =
                   [NodeAlteration]
                    ExperimentReps
                    FigKinds
+                   ManualSeed
 -- A parsed KDOEAtTransition
     | KDOEAtTransition (Duration, Duration) -- t_0 and t_end
                         InitialEnvironment
@@ -68,8 +71,12 @@ data VEXTimeCourse =
                        [NodeAlteration]
                         ExperimentReps
                         FigKinds
+                        ManualSeed
     deriving (Eq, Show)
 
+-- An integer suppllied when the user wants to manually specify an experiment's
+-- RPNG seed for reproducibility purposes. 
+type ManualSeed = Maybe Int
 
 data VEXInputPulse = VEXInPt
     { vexRealInputCoord :: [(NodeName, RealNodeState)]
@@ -81,14 +88,14 @@ data VEXInputPulse = VEXInPt
 data VEXScan = VEXScan
     ScanKind
     InitialEnvironment
-    (Maybe [(NodeName, RealNodeState)]) -- Start runs at real-valued inputs. 
+    [(NodeName, RealNodeState)]-- Start runs at real-valued inputs. 
     Max_N
     Relevant_N
     -- StopPhenotypes: Stop a run and restart if you hit one. 
-    [(ScanSwitch, PhenotypeName)]
+    [(NodeName, PhenotypeName)]
     ExperimentStep
     [ScanSwitch]
-    {-[CycleErrors]-}
+    ManualSeed
     deriving (Eq, Show)
 
 -- Maximum length of a given run. 
@@ -113,7 +120,7 @@ type ScanSwitch = NodeName
 data ScanKind =
       EnvSc EnvScan
     | KDOESc KDOEScan
-    | EnvKDOEScan EnvScan KDOEScan X_Axis
+    | EnvKDOEScan EnvScan KDOEScan XAxis
     | TwoDEnvScan EnvScan EnvScan (Maybe KDOEScan)
     | ThreeDEnvScan EnvScan EnvScan EnvScan [NodeAlteration]
     deriving (Eq, Show)
@@ -121,15 +128,24 @@ data ScanKind =
 -- In the list of 2D figures produced in a EnvKDOEScan, which variable is the
 -- x-axis in each figure. The other will then be the variable which increments
 -- in each figure. Defaults to KDOEX
-data X_Axis = EnvX
-            | KDOEX
+data XAxis = EnvX
+           | KDOEX
             deriving (Eq, Show)
 
-data EnvScan = ESC NodeName  -- Input DMNode to scan over
-                   NodeState -- Start State
-                   NodeState -- End State
-                   ScanSteps -- Steps to get there
-                   deriving (Eq, Show)
+data EnvScan =
+-- NodeName of the first DMNode in an input [[DMNode]]
+    RangeESC NodeName
+-- Start state, which might be any of the whole range of the input, and so not
+-- necessarily a valid NodeState. 
+             Int
+             Int -- End state, ditto
+             ScanSteps -- Steps to get there
+  | WholeESC NodeName ScanSteps -- Scan over the whole input range. 
+             deriving (Eq, Show)
+
+envScanInputName :: EnvScan -> NodeName
+envScanInputName (RangeESC nName _ _ _) = nName
+envScanInputName (WholeESC nName _) = nName
 
 -- All of the DMNodes in the ScanSteps Tuple will be gradually locked to the
 -- specified states in sync, over the number of steps specified, starting at 0%
@@ -185,7 +201,10 @@ data VEXInvestigationInvalid =
     | UnknownOrNonPhenotypedSwitchesInPHBarChart [NodeName]
     | NonInputNodeInInputScan NodeName
     | UnknownNodeInInputScan NodeName
-    | InValidInputScanInputs [(NodeName, NodeState)] T.Text
+    | DuplicateEnvScanNodeInScan NodeName
+    | InputScanNodeNotTopLevel NodeName
+    | InValidInputScanStart NodeName Int (Int, Int)
+    | InValidInputScanEnd NodeName Int (Int, Int)
     | KDOEScanLocksRepeat [NodeName]
     | UnknownNodesInKDOEScanLocks [NodeName]
     | InputsInKDOEScanLocks [NodeName]
@@ -301,9 +320,16 @@ vexErrorPrep (NonInputNodeInInputScan nName) =
     "NonInputNodeInInputScan: " <> nName
 vexErrorPrep (UnknownNodeInInputScan nName) =
     "UnknownNodeInInputScan: " <> nName
-vexErrorPrep (InValidInputScanInputs badPairs properPairText) =
-    "InValidInputScanInputs: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+vexErrorPrep (DuplicateEnvScanNodeInScan nName) =
+    "DuplicateEnvScanNodeInScan: " <> nName
+vexErrorPrep (InputScanNodeNotTopLevel nName) =
+    "InputScanNodeNotTopLevel: " <> nName
+vexErrorPrep (InValidInputScanStart nName startSt rnge) =
+    "InValidInputScanStart: " <> nName <> ": " <> tShow startSt <>
+        "; actual range: " <> tShow rnge
+vexErrorPrep (InValidInputScanEnd nName startSt rnge) =
+    "InValidInputScanEnd: " <> nName <> ": " <> tShow startSt <>
+        "; actual range: " <> tShow rnge
 vexErrorPrep (KDOEScanLocksRepeat nNms) =
     "KDOEScanLocksRepeat" <> T.intercalate ", " nNms
 vexErrorPrep (UnknownNodesInKDOEScanLocks nNms) =
@@ -333,8 +359,8 @@ vexErrorPrep (UnknownPhenotypesInStopPhenotype badPairs) =
         T.intercalate ", " (tShow <$> badPairs)
 vexErrorPrep (MismatchedStopPhenotypes mismatches) =
     "MismatchedStopPhenotypes: " <> T.intercalate ", " (tShow <$> mismatches)
-vexErrorPrep (LoopStopPhenotypes loopPhNames) = "LoopStopPhenotypes" <> 
-    " Only point phenotypes may be stop conditions" <>
+vexErrorPrep (LoopStopPhenotypes loopPhNames) = "LoopStopPhenotypes: " <> 
+    "Only point phenotypes may be stop conditions: " <>
     T.intercalate ", " (tShow <$> loopPhNames)
 
 -- Base types needed in all of Types.DMInvestigation

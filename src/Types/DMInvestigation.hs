@@ -9,6 +9,7 @@ module Types.DMInvestigation
     , textInputOptions
     , TCExpMeta(..)
     , TCExpKind(..)
+    , SCExpMeta(..)
     , VEXInvestigation
     , VEXLayerExpSpec(..)
     , ISFSpec(..)
@@ -21,6 +22,7 @@ module Types.DMInvestigation
     , ExperimentStep(..)
     , VEXInputPulse(..)
     , NodeAlteration(..)
+    , nodeAltName
     , isNodeLock
     , RealInputCoord
     , RealNodeState
@@ -36,7 +38,6 @@ module Types.DMInvestigation
     , DoPhenotypeTimeCourse
     , AvgBChartNodes
     , AvgBChartSwitches
-    , AttractorResult
     , RepResults
     , ExpSpreadResults
     , Timeline
@@ -49,6 +50,22 @@ module Types.DMInvestigation
     , PulseSpacing
     , runInvestigation
     , pickStates
+    , envScanInputName
+    , VEXScan(..)
+    , ScanSwitch
+    , ScanKind(..)
+    , EnvScan(..)
+    , KDOEScan(..)
+    , XAxis(..)
+    , ScanResult(..)
+    , DMScan(..)
+    , MetaScanKind(..)
+    , SCExpKind(..)
+    , IntEnvScan
+    , IntKDOEScan
+    , ScanVariation
+    , mkDMScan
+    , runScan
     ) where
 
 import Utilities
@@ -59,15 +76,11 @@ import Types.DMInvestigation.TimeCourse
 import Types.DMInvestigation.Scan
 import Types.VEXInvestigation
 import Data.Validation
-import qualified Data.Vector.Unboxed as U
-import Data.Vector.Instances()
-import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
-import qualified Data.Bimap as BM
-import qualified Control.Parallel.Strategies as P
 import System.Random
 import qualified Data.List as L
+import Data.Maybe (fromMaybe)
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -89,8 +102,8 @@ data LayerResult = LayerResult
     , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
     } deriving (Eq, Show)
 
-data ExperimentResult = TCExpRes TimeCourseResult
-                      | ScanExpRes ScanResult
+data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
+                      | ScanExpRes (SCExpMeta, [(Barcode, ScanResult)])
                       deriving (Eq, Show)
 
 data DMExperiment = TCDMEx DMTimeCourse
@@ -248,8 +261,8 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- style. First filter the attractors available. 
 -- Note that when running an experiment, it should be run n times for
 -- each attractor in the set, where n is the length of the attractor, starting
--- at the next in the loop each time. AttractorResults are then combined if
--- their Barcodes are identical. 
+-- at the next in the loop each time. (Barcode, RepResults or ScanResult)s are
+-- then combined if their Barcodes are identical. 
 runExperiment :: (LayerNameIndexBimap, [Phenotype])
               -> (Attractor -> (Barcode, Attractor))
               -> HS.HashSet Attractor
@@ -260,107 +273,20 @@ runExperiment phData layerBCG attSet gen ex = case ex of
     TCDMEx tcExp -> (newGen, TCExpRes (expMeta, attResults))
         where
             (newGen, attResults) =
-                L.mapAccumL (runAttractor phData tcExp) gen filteredAtts
-            filteredAtts = tcAttFilter tcExp $ layerBCG <$> attList
-            attList = HS.toList attSet
+                L.mapAccumL (runTimeCourse phData tcExp) expGen filteredAtts
             expMeta = tcExpMeta tcExp
---     ScDMex scanExp ->
-
-runAttractor :: (LayerNameIndexBimap, [Phenotype])
-             -> DMTimeCourse
-             -> StdGen
-             -> (Barcode, Attractor)
-             -> (StdGen, AttractorResult)
-runAttractor (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
-    where
-        bundledRs = (annIplResultReps, pSpacess)
-        annIplResultReps = (fmap . fmap . fmap) zipper iplResultReps
-        iplResultReps = P.parMap P.rdeepseq unpacker seeds
-        unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
-        rIPLF = runInputPulseList att pulseF
-        pSpacess = pulseSpacing attL lniBMap <<$>> iPulsess
-        seeds = zip gens $ L.repeat iPulsess
-        (gens, newGen) = genGen ((expReps . tcExpMeta) tcEx) gen
-        iPulsess = inputPulseF tcEx $ att
-        pulseF = pulseFold attL (tcExpStepper tcEx)
-        attL = length att 
-        zipper ptl = B.zip ptl $
-            phenotypeMatch lniBMap phs (B.map (fst . U.unzip) ptl)
-
--- Produce the duration of an InputPulse, along with any input changes or node
--- alterations. 
-pulseSpacing :: Int -> LayerNameIndexBimap -> InputPulse -> PulseSpacing
-pulseSpacing attL lniBMap ipls = (pSpacing, realInputCoord ipls, nodeAltChanges)
-    where
-        nodeAltChanges = (fmap nAlts . intNodeAlterations) ipls
-        nAlts (IntNodeLock nI nS lP) = NodeLock (lniBMap BM.!> nI) nS lP
-        nAlts (IntGradientNudge nI _ bND nP) =
-            GradientNudge (lniBMap BM.!> nI) nudgeD nP
-            where nudgeD | bND = NudgeUp | otherwise = NudgeDown
-        pSpacing = (pSpace . inputDuration) ipls
-        pSpace (DefaultD dur) = max dur attL
-        pSpace (UserD dur) = dur
-
-
--- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
--- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline
--- in its own unfoldr step. 
-runInputPulseList :: Attractor
-                  -> ((StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine))
-                  -> StdGen
-                  -> [InputPulse]
-                  -> (StdGen, [PTimeLine])
-runInputPulseList att pulseF gen iPulses =
-    L.mapAccumL (runLayerVec iPulses pulseF) gen lVecList
-    where
-        runLayerVec iPs pF g lV = B.tail <$> (L.foldl' pF (g, tmlnSeed) iPs)
-            where
-                tmlnSeed = B.singleton $ U.map (\x -> (x, True)) lV
-        lVecList = B.toList att
-
--- L.foldl' function to consume an InputPulse and add to a Timeline, with
--- various types of steppers. 
-pulseFold :: Int -> ExpStepper
-          -> (StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine)
-pulseFold attL sTPR (gen, tmLn) iPulse = case sTPR of
-    (SD stepper) -> (newGen, tmLn <> newTmLn)
+            filteredAtts = tcAttFilter tcExp $ layerBCG <$> attList
+            expGen = fromMaybe gen (manualTCPRNGSeed tcExp)
+    ScDMex scanExp -> (newGen, ScanExpRes (expMeta, attResults))
         where
-            newTmLn = B.unfoldrExactN iDur sdUnfolder (intInputPrLV, uGen)
-            sdUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
-                where
-                    seedVec = (fst . U.unzip) anVec
-                    (anVec, aNewGen) =
-                        expStepPrime justRealICoords nAlts aGen nextVec
-                    nextVec = stepper aVec
-    (SN stepper) -> (newGen, tmLn <> newTmLn)
-        where
-            newTmLn = B.unfoldrExactN iDur snUnfolder (intInputPrLV, uGen)
-            snUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
-                where
-                    seedVec = (fst . U.unzip) anVec
-                    (anVec, aNewGen) =
-                        expStepPrime justRealICoords nAlts inputGen nextVec
-                    (nextVec, inputGen) = stepper aVec aGen
-    (AD stepper) -> (newGen, tmLn <> newTmLn)
-        where
-            newTmLn = B.unfoldrExactN iDur adUnfolder (intInputPrLV, uGen)
-            adUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
-                where
-                    seedVec = (fst . U.unzip) anVec
-                    (anVec, aNewGen) =
-                        expStepPrime justRealICoords nAlts inputGen nextVec
-                    (nextVec, inputGen) = stepper aVec aGen
+            (newGen, attResults) =
+                L.mapAccumL (runScan phData scanExp) expGen filteredAtts
+            filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
+            expMeta = scExpMeta scanExp
+            expGen = fromMaybe gen (manualSCPRNGSeed scanExp)
     where
-        (newGen, uGen) = split gen
-        intInputPrLV = U.update startVec roundedIntICoords
-        roundedIntICoords = U.map (round <$>) justIntICoords
-        (justIntICoords, justRealICoords) = U.partition (isInt 7 . snd) iCoords
-        iCoords = realInputCoord iPulse
-        startVec = (fst . U.unzip . B.last) tmLn
-        nAlts = intNodeAlterations iPulse
-        iDur = case inputDuration iPulse of
-            DefaultD d -> max d attL
-            UserD d -> d
+        attList = HS.toList attSet
+
 
 -- Check the validity of any LimitedTo inputs. 
 samplingVal :: ModelLayer -> Sampling
@@ -379,6 +305,9 @@ samplingVal mL (ReadAndSample sParams f) =
         (rN, nN) = (randomN sParams, noisyN sParams)
         (nP, lims) = (noisyP sParams, limitedInputs sParams)
 
+-- The convention is to denote the limits on an inputs which are composed of
+-- multiple boolean DMNodes by referring only to its highest level NodeName. 
+-- e.g. refer to the levels of [GF_High, GF] by GF_High 0, 1, or 2
 limitedInputsV :: ModelLayer -> [(NodeName, [Int])]
                -> Validation [VEXInvestigationInvalid] [(NodeName, [Int])]
 limitedInputsV mL lims

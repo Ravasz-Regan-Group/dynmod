@@ -53,6 +53,7 @@ library
       Figures.TimeCourse
       Figures.BarCharts
   other-modules:
+      Figures.Scan
       Parse.Attractor
       Parse.VEX
       Text.LaTeX.DynMod.Extra

@@ -15,6 +15,8 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
+import qualified Control.Parallel.Strategies as P
+import System.Random
 import Data.Maybe (mapMaybe, fromJust)
 
 data DMTimeCourse = TCExp {
@@ -30,6 +32,7 @@ data DMTimeCourse = TCExp {
 -- pulse, where L is the Attractor's length. inputPulseF generates those runs.
 -- There will be more of these sorts of experiments in the future. 
     , inputPulseF :: InputPulseF -- Attractor -> [[InputPulse]]
+    , manualTCPRNGSeed :: Maybe StdGen
     }
 
 data TCExpMeta = TCEMeta {
@@ -54,12 +57,13 @@ data InputPulse = InputPulse { realInputCoord :: RealInputCoord
 type InputPulseF = Attractor -> [[InputPulse]]
 
 
-type TimeCourseResult = (TCExpMeta, [AttractorResult])
--- The commented and real AttractorResults are equivalent. 
--- type AttractorResult = (Barcode, ([[[Timeline]]], [[PulseSpacing]]))
-type AttractorResult = (Barcode, RepResults)
+-- The commented and real RepResults are equivalent. 
+-- type RepResults = ([[[Timeline]]], [[PulseSpacing]])
+-- Run the experiment the number of times specified. 
 type RepResults = ([ExpSpreadResults], [[PulseSpacing]])
+-- Run the experiment over the spread of InputPulses. 
 type ExpSpreadResults =  [AttBatch]
+-- Run the experiment starting at each point in the Attractor. 
 type AttBatch = [Timeline]
 
 type Timeline = B.Vector (AnnotatedLayerVec, [PhenotypeName])
@@ -95,15 +99,18 @@ data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
 
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
-mkTimeCourse mM mL (GeneralExp exNm inEnv expStep vexPlss exReps fkds) =
+mkTimeCourse mM mL (GeneralTC exNm inEnv expStep vexPlss exReps fkds
+                                                                mPRMNGSeed) =
     TCExp <$> mkTCExpMeta mM mL exNm exNm initialCs exReps GenExp fkds
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper expStep mL)
           <*> (const <$> listedPulses)
+          <*> pure (mkStdGen <$> mPRMNGSeed)
         where
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
-mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
+mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
+                                                                mPRMNGSeed)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
@@ -111,6 +118,7 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
               <*> mkAttFilter mM mL inEnv
               <*> pure (mkStepper SynchronousExpStepper mL)
               <*> (const <$> listedPulses)
+              <*> pure (mkStdGen <$> mPRMNGSeed)
         where
             expM = mkTCExpMeta mM mL expName expDetails initialCs exReps P1 fkds
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
@@ -128,11 +136,13 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds)
                 "-" <> tShow dur <> "_wInputs_" <> textInputs
             textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
             initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
-mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
+mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
+                                                                mPRMNGSeed) =
     TCExp <$> expM
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper SynchronousExpStepper mL)
           <*> (const <$> listedPulses)
+          <*> pure (mkStdGen <$> mPRMNGSeed)
     where
         expM = mkTCExpMeta mM mL expName expDetails initialCs exReps KDOE fkds
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
@@ -146,8 +156,8 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds) =
         expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
         textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
         initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
-mkTimeCourse mM mL
-   (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps fkds)
+mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts 
+                                                    exReps fkds mPRMNGSeed)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
         Failure [KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)]
     | otherwise =
@@ -155,6 +165,7 @@ mkTimeCourse mM mL
               <*> mkAttFilter mM mL inEnv
               <*> pure (mkStepper SynchronousExpStepper mL)
               <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
+              <*> pure (mkStdGen <$> mPRMNGSeed)
         where
             expM =
                 mkTCExpMeta mM mL expNm expDtls initialCs exReps KDOEAtTr fkds
@@ -566,17 +577,10 @@ inputOptions inPtNDs = inputOpt <$> inPtNDs
     where
         inputOpt :: [DMNode] -> [(NodeName, Int)]
         inputOpt [] = []
-        inputOpt [n] = L.unfoldr nOpts 0
-            where
-                nOpts i
-                    | i <= nRange = Just (iEntry, i + 1)
-                    | otherwise = Nothing
-                        where
-                            iEntry = (nName, i)
-                (nName, nRange) = nodeRange n
+        inputOpt [n] = zip (repeat nName) [0..nRange]
+            where (nName, nRange) = nodeRange n
         inputOpt ns = (head rNS, 0):(zip rNS $ L.repeat 1)
-            where
-                rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
+            where rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
 
 -- Pretty print the possible integer pinnings for environmental inputs. 
 textInputOptions :: [[DMNode]] -> T.Text
@@ -584,13 +588,9 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
     where
         txtInputOpt :: [DMNode] -> T.Text
         txtInputOpt [] = T.empty
-        txtInputOpt [n] = T.intercalate "\n" $ nName:(L.unfoldr nOpts 0)
+        txtInputOpt [n] = T.intercalate "\n" $ nName:(iLine <$> [0..nRange])
             where
-                nOpts i
-                    | i <= nRange = Just (iLine, i + 1)
-                    | otherwise = Nothing
-                        where
-                            iLine = "    " <> nName <> ":" <> tShow i
+                iLine i = "    " <> nName <> ":" <> tShow i
                 (nName, nRange) = nodeRange n
         txtInputOpt ns = T.intercalate "\n" $ nName:("    " <> nName <> ":0"):
                  (otherOpts <$> rNS)
@@ -598,4 +598,154 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
                 nName = head rNS
                 rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
                 otherOpts nN = "    " <> nN <> ":1"
+
+runTimeCourse :: (LayerNameIndexBimap, [Phenotype])
+             -> DMTimeCourse
+             -> StdGen
+             -> (Barcode, Attractor)
+             -> (StdGen, (Barcode, RepResults))
+runTimeCourse (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
+    where
+        bundledRs = (annIplResultReps, pSpacess)
+        annIplResultReps = (fmap . fmap . fmap) zipper iplResultReps
+        iplResultReps = P.parMap P.rdeepseq unpacker seeds
+        unpacker (g, ipss) = snd $ L.mapAccumL rIPLF g ipss
+        rIPLF = runInputPulseList att pulseF
+        pSpacess = pulseSpacing attL lniBMap <<$>> iPulsess
+        seeds = zip gens $ L.repeat iPulsess
+        (gens, newGen) = genGen ((expReps . tcExpMeta) tcEx) gen
+        iPulsess = inputPulseF tcEx $ att
+        pulseF = pulseFold attL (tcExpStepper tcEx)
+        attL = length att 
+        zipper ptl = B.zip ptl $
+            phenotypeMatch lniBMap phs (B.map (fst . U.unzip) ptl)
+
+-- Produce the duration of an InputPulse, along with any input changes or node
+-- alterations. 
+pulseSpacing :: Int -> LayerNameIndexBimap -> InputPulse -> PulseSpacing
+pulseSpacing attL lniBMap ipls = (pSpacing, realInputCoord ipls, nodeAltChanges)
+    where
+        nodeAltChanges = (fmap nAlts . intNodeAlterations) ipls
+        nAlts (IntNodeLock nI nS lP) = NodeLock (lniBMap BM.!> nI) nS lP
+        nAlts (IntGradientNudge nI _ bND nP) =
+            GradientNudge (lniBMap BM.!> nI) nudgeD nP
+            where nudgeD | bND = NudgeUp | otherwise = NudgeDown
+        pSpacing = (pSpace . inputDuration) ipls
+        pSpace (DefaultD dur) = max dur attL
+        pSpace (UserD dur) = dur
+
+
+-- We drop the seed AnnotatedLayerVec (tmlnSeed) on each Timeline because this
+-- way we can alter, step, and annotate each AnnotatedLayerVec in the Timeline
+-- in its own unfoldr step. 
+runInputPulseList :: Attractor
+                  -> ((StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine))
+                  -> StdGen
+                  -> [InputPulse]
+                  -> (StdGen, [PTimeLine])
+runInputPulseList att pulseF gen iPulses =
+    L.mapAccumL (runLayerVec iPulses pulseF) gen lVecList
+    where
+        runLayerVec iPs pF g lV = B.tail <$> (L.foldl' pF (g, tmlnSeed) iPs)
+            where
+                tmlnSeed = B.singleton $ U.map (\x -> (x, True)) lV
+        lVecList = B.toList att
+
+-- L.foldl' function to consume an InputPulse and add to a Timeline, with
+-- various types of steppers. 
+pulseFold :: Int -> ExpStepper
+          -> (StdGen, PTimeLine) -> InputPulse -> (StdGen, PTimeLine)
+pulseFold attL sTPR (gen, tmLn) iPulse = case sTPR of
+    (SD stepper) -> (newGen, tmLn <> newTmLn)
+        where
+            newTmLn = B.unfoldrExactN iDur sdUnfolder (intInputPrLV, uGen)
+            sdUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
+                where
+                    seedVec = (fst . U.unzip) anVec
+                    (anVec, aNewGen) =
+                        expStepPrime justRealICoords nAlts aGen nextVec
+                    nextVec = stepper aVec
+    (SN stepper) -> (newGen, tmLn <> newTmLn)
+        where
+            newTmLn = B.unfoldrExactN iDur snUnfolder (intInputPrLV, uGen)
+            snUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
+                where
+                    seedVec = (fst . U.unzip) anVec
+                    (anVec, aNewGen) =
+                        expStepPrime justRealICoords nAlts inputGen nextVec
+                    (nextVec, inputGen) = stepper aVec aGen
+    (AD stepper) -> (newGen, tmLn <> newTmLn)
+        where
+            newTmLn = B.unfoldrExactN iDur adUnfolder (intInputPrLV, uGen)
+            adUnfolder (aVec, aGen) = (anVec, (seedVec, aNewGen))
+                where
+                    seedVec = (fst . U.unzip) anVec
+                    (anVec, aNewGen) =
+                        expStepPrime justRealICoords nAlts inputGen nextVec
+                    (nextVec, inputGen) = stepper aVec aGen
+    where
+        (newGen, uGen) = split gen
+        intInputPrLV = U.update startVec roundedIntICoords
+        roundedIntICoords = U.map (round <$>) justIntICoords
+        (justIntICoords, justRealICoords) = U.partition (isInt 7 . snd) iCoords
+        iCoords = realInputCoord iPulse
+        startVec = (fst . U.unzip . B.last) tmLn
+        nAlts = intNodeAlterations iPulse
+        iDur = case inputDuration iPulse of
+            DefaultD d -> max d attL
+            UserD d -> d
+
+-- Prime a LayerVec with any alterations that a continuous Input setting or
+-- mutated DMNode might require, and return it with the vector that denotes
+-- which nodes were altered. 
+expStepPrime :: RealInputCoord
+             -> [IntNodeAlteration]
+             -> StdGen
+             -> LayerVec
+             -> (AnnotatedLayerVec, StdGen)
+expStepPrime iCoord nAlts gen lVec = (U.zip alteredVec wasForcedVec, newGen)
+    where
+        wasForcedVec = (U.replicate vecSize False) U.// wasForcedList
+        wasForcedList = const True <<$>> alteredList
+        alteredVec = coordFixedVec U.// alteredList
+        (alteredList, newGen) = foldr (nodeAlter coordFixedVec) ([], nGen) nAlts
+        (coordFixedVec, nGen) = coordFix iCoord lVec gen
+        vecSize = U.length lVec
+
+nodeAlter :: LayerVec
+          -> IntNodeAlteration
+          -> ([(NodeIndex, NodeState)], StdGen)
+          -> ([(NodeIndex, NodeState)], StdGen)
+nodeAlter _ (IntNodeLock nIndex nState lProb) (fixedPairs, gen)
+    | lProb >= rand = ((nIndex, nState):fixedPairs, newGen)
+    | otherwise = (fixedPairs, newGen)
+    where
+        (rand, newGen) = uniformR (0, 1) gen
+nodeAlter lVec (IntGradientNudge nIndex nRangeT nDirec nProb) (fixedPairs, gen)
+    | (nProb >= rand) && nDirec && (cState < nRangeT) =
+        (bumpedUp:fixedPairs, newGen)
+    | (nProb >= rand) && (not nDirec) && (cState > 0) =
+        (bumpedDown:fixedPairs, newGen)
+    | otherwise = (fixedPairs, newGen)
+    where
+        bumpedDown = (nIndex, cState - 1)
+        bumpedUp = (nIndex, cState + 1)
+        (rand, newGen) = uniformR (0, 1) gen
+        cState = lVec U.! nIndex
+
+-- Fix an integer value for a real-valued input coordinate. 
+coordFix :: RealInputCoord -> LayerVec -> StdGen -> (LayerVec, StdGen)
+coordFix iCoord lVec gen = (U.update lVec fixedVec, newGen)
+    where
+        (fixedVec, newGen) = U.foldr' setInput (U.empty, gen) iCoord
+        setInput (nIndex, realNState) (aVec, aGen)
+            | realNState >= rand =
+                (U.cons (nIndex, ceiling realNState) aVec, uGen)
+            | otherwise = (U.cons (nIndex, floor realNState) aVec, uGen)
+            where
+                (rand, uGen) = uniformR iRange aGen
+                iRange = ( (fromInteger . floor) realNState
+                         , (fromInteger . ceiling) realNState)
+
+
 

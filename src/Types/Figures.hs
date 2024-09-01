@@ -24,6 +24,8 @@ module Types.Figures
     , mkBarcode
     , ColorMap
     , mkColorMap
+    , PhColorMap
+    , mkPhColorMap
     , phTCBlend
     , gradientPick
     , attMatch
@@ -38,6 +40,8 @@ module Types.Figures
     , groupInputs
     , nAltTPrep
     , inputCoordText
+    , BarcodeResult
+    , resCombine
     ) where    
 
 import Types.DMModel
@@ -61,8 +65,18 @@ import qualified Data.Bifunctor as BF
 
 type SVGText = T.Text
 type ColorMap = M.HashMap NodeName LocalColor
+type PhColorMap = M.HashMap PhenotypeName LocalColor
 type PUCGradient = B.Vector LocalColor
 type StdDev = Double
+
+-- BarcodeResult a combines results from TimeCourses or Scans by equality on
+-- Barcodes, because all of the (Barcode, RepResults or ScanResult)s for a given
+-- Barcode will be turned into figures in one PDF file. 
+type BarcodeResult a = (Barcode, [a])
+
+resCombine :: [(Barcode, a)] -> [BarcodeResult a]
+resCombine ars = M.toList $ M.fromListWith (<>) preppedArs
+    where preppedArs = pure <<$>> ars
 
 type RealNodeState = Double
 
@@ -118,19 +132,27 @@ type PulseSpacing = (Int, RealInputCoord, [NodeAlteration])
 -- slices of a timeline, of the form (a, b) | b >= a >= 0
 type ThreadSlice = (Int, Int)
 
+
 mkColorMap :: DMModel -> ColorMap
 mkColorMap dmm = M.fromList nameColorPairs
     where
         nameColorPairs = (\n -> (nodeName n, nodeColor n)) <$> nodesMetas
         nodesMetas = nodeMeta <$> ((concat . modelNodes) dmm)
 
+mkPhColorMap :: ModelMapping -> ColorMap -> PhColorMap
+mkPhColorMap mM cMap = (M.fromList . concatMap phBlendF) nonEmptyPhs
+    where
+        phBlendF (nN, phs) = zip (phenotypeName <$> phs) cBlends
+            where
+                cBlends = phTCBlend 0.85 (cMap M.! nN) (L.length phs)
+        nonEmptyPhs = ((fmap . fmap) snd . (filter ((/= []) . snd . snd))) mM
 
 -- Pick a color from one of the perceptually uniform color gradients in
 -- Constants. 
 gradientPick :: RealFrac a => PUCGradient
-                             -> (a, a)
-                             -> a
-                             -> Maybe LocalColor
+             -> (a, a)
+             -> a
+             -> Maybe LocalColor
 gradientPick pucGr (low, high) pick
     | low >= high = Nothing
     | pick < low = Nothing

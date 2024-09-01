@@ -1153,10 +1153,11 @@ commaCheck r = case T.last r of
 -- Types.Simulation.
 -- Checks on internal ModelLayer issues. 
 mkModelLayer :: ModelLayer -> Validation [ModelInvalid] ModelLayer
-mkModelLayer mL =
-    biasNodeNameCheck mL *>
-    biasNodeStateCheck mL *>
-    pure mL
+mkModelLayer mL = case biasNodeNameCheck mL of
+    Success bnnML -> case biasNodeStateCheck bnnML of
+        Success bnsML -> Success bnsML
+        Failure bnsErrs -> Failure bnsErrs
+    Failure bnnErrs -> Failure bnnErrs
 
 -- Do the BiasOrders have unknown NodeNames?
 biasNodeNameCheck :: ModelLayer -> Validation [ModelInvalid] ModelLayer
