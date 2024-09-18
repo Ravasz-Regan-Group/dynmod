@@ -281,7 +281,7 @@ writeScanExpFigure :: Path Abs Dir
 writeScanExpFigure f scExpMt bc fig = case fig of
     EnvScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
     KDOEScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
-    EnvKDOESc figs -> mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..] figs)
+    EnvKDOESc envKDOEFig -> simpleSCWrite f scExpMt 0 envKDOEFig
     TwoDEnvScWWOKDOE htmaps ->
         mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..] htmaps)
     ThreeDEnvSc heatmapBlockFigs -> mapM_ (uncurry (simpleSCWrite f scExpMt))

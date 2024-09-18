@@ -28,7 +28,7 @@ import GHC.IO (unsafePerformIO)
 
 data ScanExpFigure = EnvScFig BaseScanFigs
                    | KDOEScFig BaseScanFigs
-                   | EnvKDOESc [Diagram B]
+                   | EnvKDOESc (Diagram B)
                    | TwoDEnvScWWOKDOE [Diagram B]
                    | ThreeDEnvSc [Diagram B]
 
@@ -45,7 +45,7 @@ scRunDia :: PhColorMap
 scRunDia phCMap mM exMeta scRes = case scRes of
     (SKREnv scBundle) -> EnvScFig $ baseScDia phCMap switchMap exMeta scBundle
     (SKRKDOE scBundle) -> KDOEScFig $ baseScDia phCMap switchMap exMeta scBundle
-    (SKREnvKDOE scBundles) -> EnvKDOESc figs
+    (SKREnvKDOE scBundles) -> EnvKDOESc (hsep 5 figs)
         where
             figs = zipWith stackBaseDias baseFigs offAxisPairs
             offAxisPairs = zip (repeat offAxisTitle) offAxisRange
