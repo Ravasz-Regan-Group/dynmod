@@ -64,12 +64,16 @@ scRunDia phCMap mM exMeta scRes = case scRes of
             (offAxisTitle, offAxisRange) =
                 (last . scanXAxisData . scMetaScanKind) exMeta
             hmFigs = scHeatMapDias switchMap exMeta <$> scBundless
-    (SKRThreeEnv scBundless) -> ThreeDEnvSc $
-        scDifferenceHeatMapDia switchMap exMeta scBundless
+--  Take care to distinguish between when [WildTypeVsMutantAlt] are [] and not. 
+    (SKRThreeEnv scBundless) -> case snd scBundless of
+        Just scbs -> ThreeDEnvSc $ scDifferenceHeatMapDia switchMap exMeta sPair
+            where sPair = (fst scBundless, scbs)
+        Nothing -> ThreeDEnvSc $ sc3DHeatMapDia switchMap exMeta plainBundless
+            where plainBundless = fst scBundless
     where
         switchMap = M.fromList nonEmptySwPhNs
         nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
-        nonEmptySwPhs = snd <<$>> (filter (not . null . snd . snd) mM)
+        nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
 
 labelMutantHMDias :: [Diagram B] -> (String, Double) -> [Diagram B]
 labelMutantHMDias hmFigs (offAxisTitle, stepDouble) = labelMutantHMD <$> hmFigs
@@ -278,16 +282,12 @@ scDifferenceHeatMapDia :: M.HashMap ScanSwitch [PhenotypeName]
 scDifferenceHeatMapDia switchMap exMeta scBsPair = figs
     where
         figs = scDiffHMBlock rangeData <$> phVals
-        phVals :: [(PhenotypeName, ([[[Double]]], [[[Double]]], [[[Double]]]))]
         phVals = zipWith3 phValsF (fst phValuessPair) (snd phValuessPair)
                                                             diffPhValues
         phValsF x y z = (fst x, (snd x, snd y, snd z))
-        diffPhValues :: [(PhenotypeName, [[[Double]]])]
         diffPhValues = uncurry (zipWith diffF) phValuessPair
         diffF (phN, vs) (_, mVs) = (phN, (zipWith . zipWith . zipWith) (-)
             vs mVs)
-        phValuessPair ::
-            ([(PhenotypeName, [[[Double]]])], [(PhenotypeName, [[[Double]]])])
         phValuessPair = isoBimap phValuesF bareValuessPair
         phValuesF = zip phNames . L.transpose . fmap L.transpose .
             (fmap . fmap) L.transpose
@@ -319,6 +319,37 @@ scDiffHMBlock range3Data (phN, (plainD, mutantD, diffD)) = fig
         rowTitles = (T.pack . ((zTitle ++ "@") ++) . show) <$> zRange
         (range2Data, (zTitle, zRange)) = range3Data
         
+sc3DHeatMapDia :: M.HashMap ScanSwitch [PhenotypeName]
+               -> SCExpMeta
+               -> [[[[Timeline]]]]
+               -> [Diagram B]
+sc3DHeatMapDia switchMap exMeta scBs = sc3DBlock rangeData <$> phValuess
+    where
+        phValuess = phValuesF bareValuess
+        phValuesF = zip phNames . L.transpose . fmap L.transpose .
+            (fmap . fmap) L.transpose
+        bareValuess = bValuesF trimmedSCBs
+        bValuesF = (fmap . fmap . fmap) (phDistribution phNames)
+        phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
+        trimmedSCBs = trimmer scBs
+        trimmer = (fmap . fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
+        rangeData = case (take 3 . scanXAxisData . scMetaScanKind) exMeta of
+            [] -> ((blankR, blankR), blankR)
+            [x] -> ((x,x),x)
+            [x,y] -> ((x,y),y)
+            x:y:z:_ -> ((x,y),z)
+        blankR = ("blank", [0 :: Double, 1])
+        stopPhNames = (fmap fst . stopPhenotypes) exMeta
+
+sc3DBlock :: (((String,[Double]),(String,[Double])),(String, [Double]))
+          -> (PhenotypeName, [[[Double]]])
+          -> Diagram B
+sc3DBlock range3Data (phN, plainD) = vsep 2 [phTitle, plainDRow]
+    where
+        phTitle = tText' 5 phN
+        plainDRow = hsep 5 $ scHeatMapDia range2Data <$> (zip rowTitles plainD)
+        rowTitles = (T.pack . ((zTitle ++ "@") ++) . show) <$> zRange
+        (range2Data, (zTitle, zRange)) = range3Data
 
 
 tText' :: Double -> T.Text -> Diagram B

@@ -36,6 +36,7 @@ data DMScan = Sc {
     , scExpMeta :: SCExpMeta
     , maxRunSteps :: Max_N
     , requiredSteps :: Relevant_N
+    , scanNodeAlts :: [IntNodeAlteration] -- Optional, static node alterations
 --    Select the relevant Attractors from those of the whole layer. 
     , scAttFilter :: [(Barcode, Attractor)] -> [(Barcode, Attractor)]
     , scExpStepper :: ExpStepper
@@ -78,9 +79,7 @@ data IntEnvScan = IntESC FixedVec --[[DMNode]] input start state
                          ScanSteps -- Steps to get there
                          deriving (Eq, Show)
 
-data IntKDOEScan = IntKDOESC [IntNodeAlteration]
-                             (ScanSteps, [(NodeIndex, NodeState)])
-                             deriving (Eq, Show)
+type IntKDOEScan = (ScanSteps, [(NodeIndex, NodeState)])
 
 data ScanVariation = SCVar { scanVrealIC :: RealInputCoord
                            , scanVRNAlts :: [IntNodeAlteration]
@@ -91,13 +90,13 @@ data ScanResult = SKREnv [[Timeline]]
                 | SKREnvKDOE [[[Timeline]]]
                 | SKRTwoEnvWithoutKDOE [[[Timeline]]]
                 | SKRTwoEnvWithKDOE [[[[Timeline]]]]
-                | SKRThreeEnv ([[[[Timeline]]]], [[[[Timeline]]]])
+                | SKRThreeEnv ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
                   deriving (Eq, Show)
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
        -> Validation [VEXInvestigationInvalid] DMScan
 mkDMScan mM mL
-  (VEXScan scKnd inEnv iFix maxN relN stopPhs exStep scSws mPRMNGSeed) =
+  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep scSws mPRMNGSeed) =
     case mkSCExpKind mL scKnd of
     Failure errs -> Failure errs
     Success intScKnd ->
@@ -105,6 +104,7 @@ mkDMScan mM mL
            <*> mkSCExpMeta mM inPts expName expDetails scSws stopPhs scKnd
            <*> pure maxN
            <*> pure relN
+           <*> mkIntNodeAlterations mL nAlts
            <*> mkAttFilter mM mL inEnv
            <*> pure (mkStepper exStep mL)
            <*> (traverse (mkRealInputCoordinate mL) mIFix)
@@ -185,15 +185,14 @@ mkIntEnvScan mL (WholeESC nName sSteps)
 
 mkIntKDOEScan :: ModelLayer -> KDOEScan
               -> Validation [VEXInvestigationInvalid] IntKDOEScan
-mkIntKDOEScan mL (KDOESC nAlts (scSteps, nodeLocks))
+mkIntKDOEScan mL (scSteps, nodeLocks)
     | (not . null) lockRepeats = Failure [KDOEScanLocksRepeat lockRepeats]
     | (not . null) nonPresentLocks =
         Failure [UnknownNodesInKDOEScanLocks nonPresentLocks]
     | (not . null) inputLocks = Failure [InputsInKDOEScanLocks inputLocks]
     | (not . null) oobLocks =
         Failure [InvalidKDOEScanLocks oobLocks properLocks]
-    | otherwise = IntKDOESC <$> (mkIntNodeAlterations mL nAlts)
-                            <*> pure (scSteps, intNodeLocks)
+    | otherwise = Success (scSteps, intNodeLocks)
     where
         intNodeLocks = (BF.first (lniBMap BM.!)) <$> nodeLocks
         LayerSpecs lniBMap _ _ _ = layerPrep mL
@@ -237,6 +236,8 @@ mkMetaScanKind inPts sc = case sc of
         MetaThreeDEnvScan (mkMetaEnvSc inPts envScan1)
                           (mkMetaEnvSc inPts envScan2)
                           (mkMetaEnvSc inPts envScan3)
+    where
+        mkMetaKDOESc (scStps, lockNodes) = (lockNodes, mkSteps 0 1 scStps)
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of
 -- mkMetaScanKind!
@@ -247,11 +248,6 @@ mkMetaEnvSc inPts envScan = case envScan of
         where
             inputTop = (inputDegrees ((fromJust . L.find ipFF) inPts)) - 1
             ipFF = (== nName) . nodeName . nodeMeta . head
-
--- This presumes that mkSCExpKind has passed. Do not use outside of
--- mkMetaScanKind!
-mkMetaKDOESc :: KDOEScan -> ([(NodeName, NodeState)], [Double])
-mkMetaKDOESc (KDOESC _ (scStps, lockNodes)) = (lockNodes, mkSteps 0 1 scStps)
 
 validateSCSwitches :: ModelMapping -> [ScanSwitch]
              -> Validation [VEXInvestigationInvalid] [ScanSwitch]
@@ -331,8 +327,10 @@ mkEnvName :: EnvScan -> T.Text
 mkEnvName envScan = "EnvScan_" <> envScanInputName envScan
 
 mkKDOEName :: KDOEScan -> T.Text
-mkKDOEName (KDOESC _ (_, nodeLocks)) = "KDOEScan_" <> nLocksT
-    where nLocksT = T.intercalate "," (tShow <$> nodeLocks)
+mkKDOEName (_, nodeLocks) = "KDOEScan_" <> nLocksT
+    where
+        nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
+        lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
 
 mkScDetails :: ScanKind -> T.Text
 mkScDetails (EnvSc soloEnv)  = mkEnvDetails soloEnv
@@ -359,13 +357,11 @@ mkEnvDetails (WholeESC nName scSteps) = "WholeESC_" <> nName <> "_over_" <>
     tShow scSteps
 
 mkKDOEDetails :: KDOEScan -> T.Text
-mkKDOEDetails (KDOESC nAlts (scSteps, nodeLocks)) = "KDOEScan_" <> nLocksT <>
-    "_over_" <> tShow scSteps <> kAltDetails
+mkKDOEDetails (scSteps, nodeLocks) = "KDOEScan_" <> nLocksT <>
+    "_over_" <> tShow scSteps
     where
-        kAltDetails
-            | L.null nAlts = ""
-            | otherwise = "_wAlts_" <> kdoeName nAlts
-        nLocksT = T.intercalate "," (tShow <$> nodeLocks)
+        nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
+        lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
 
 runScan :: (LayerNameIndexBimap, [Phenotype])
         -> DMScan
@@ -375,10 +371,12 @@ runScan :: (LayerNameIndexBimap, [Phenotype])
 runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
   IntEnvSc intEnv -> (newGen, (bc, SKREnv res))
     where            
-      (newGen, res) = L.mapAccumL rVarF gen (mkEnvVars intEnv)
+      (newGen, res) = L.mapAccumL rVarF gen envVars
+      envVars = mkEnvVars intEnv
   IntKDOESc intKDOE -> (newGen, (bc, SKRKDOE res))
     where
-      (newGen, res) = L.mapAccumL rVarF gen (mkKDOEVars intKDOE)
+      (newGen, res) = L.mapAccumL rVarF gen kdoeVars
+      kdoeVars = mkKDOEVars intKDOE
   IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
     where
       (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
@@ -401,8 +399,10 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
   IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
     (newGen, (bc, SKRThreeEnv (res, resWMutations)))
     where
-        (newGen, resWMutations) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
-            rVarF resWMutationsGen varsWMutations
+        (newGen, resWMutations)
+            | L.null intNAlts = (resWMutationsGen, Nothing)
+            | otherwise = fmap Just $ (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+                rVarF resWMutationsGen varsWMutations
         (resWMutationsGen, res) =
             (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
         varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
@@ -446,15 +446,10 @@ mkKDOEVars :: IntKDOEScan -> [ScanVariation]
 mkKDOEVars intKDOE = zipWith SCVar (repeat U.empty) (mkIntNAltss intKDOE)
 
 mkIntNAltss :: IntKDOEScan -> [[IntNodeAlteration]]
-mkIntNAltss (IntKDOESC intNAlts (scSteps, stNAlts)) =
-    zipWith (<>) (L.repeat intNAlts) steppedNAlts
+mkIntNAltss (scSteps, stNAlts) = rangeInserter stNAlts <$> rnge
     where
-        steppedNAlts :: [[IntNodeAlteration]]
-        steppedNAlts = rangeInserter rnge <$> stNAlts
-        rangeInserter :: [LockProbability]
-                      -> (NodeIndex, NodeState)
-                      -> [IntNodeAlteration]
-        rangeInserter stps (nI, nSt) = IntNodeLock nI nSt <$> stps
+        rangeInserter iAlts lockProb = sequenceA primedFs lockProb
+            where primedFs = (uncurry IntNodeLock) <$> iAlts
         rnge = mkSteps 0 1 scSteps
 
 mkSteps :: Int -> Int -> Int -> [Double]
@@ -486,7 +481,7 @@ runVariation :: (LayerNameIndexBimap, [Phenotype])
              -> StdGen
              -> ScanVariation
              -> (StdGen, [Timeline])
-runVariation (lniBMap, phs) scanEx att gen (SCVar rIC iNAlts) = (newGen, res)
+runVariation (lniBMap, phs) scanEx att gen (SCVar rIC actNAlts) = (newGen, res)
   where
     res = L.unfoldr scanResUnfoldF unFSeed
     unFSeed = (0, expGen)
@@ -543,6 +538,7 @@ runVariation (lniBMap, phs) scanEx att gen (SCVar rIC iNAlts) = (newGen, res)
                     (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
                     (nVec, iGen) = (flip stepper aGen) lVec
                     lVec = (fst . U.unzip) iALV
+          iNAlts = (scanNodeAlts scanEx) <> actNAlts
           tmlnSeed = (initLVec, relStAcc, 0, tmlnGen, False)
           (initLVec, nG) = mkInitAnnoLayerVec mRIC att initLVGen
           (tmlnGen, initLVGen) = split g

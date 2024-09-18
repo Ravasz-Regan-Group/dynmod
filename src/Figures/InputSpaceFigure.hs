@@ -402,7 +402,7 @@ attESpaceFigLegend cMap mMap = hsep 1.0 evenedBlocks
         maxBlockHeight = maximum phSizes
         phSizes :: [Double]
         phSizes = (fromIntegral . length . snd . snd) <$> nonEmptyPhs
-        nonEmptyPhs = filter (not . null . snd . snd) mMap
+        nonEmptyPhs = nonEmptyPhenotypes mMap
         lScale = 2.0 :: Double
 
 switchLegend :: ColorMap -> Double -> Switch -> Diagram B

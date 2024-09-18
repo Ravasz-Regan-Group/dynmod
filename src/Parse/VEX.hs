@@ -427,10 +427,11 @@ kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
 
 -- Parse a VEXScan
 scanParse :: Parser VEXScan
-scanParse = between (symbol "Scan{") (symbol "Scan}") (
+scanParse = (between (symbol "Scan{") (symbol "Scan}") (
     runPermutation $
         VEXScan <$> toPermutation scanKindParse
                 <*> toPermutation startingModelStateParse
+                <*> toPermutationWithDefault [] nodeAlterationsParse
                 <*> toPermutationWithDefault [] (realCoordParse "InputFix")
                 <*> toPermutation maxTParse
                 <*> toPermutation relevantTParse
@@ -438,16 +439,15 @@ scanParse = between (symbol "Scan{") (symbol "Scan}") (
                 <*> toPermutation modelStepTypeParse
                 <*> toPermutation ((multiIdentifier "ScanSwitches"))
                 <*> toPermutationWithDefault Nothing manualPRNGParse
-    )
+    )) >>= scanCheck
 
 scanKindParse :: Parser ScanKind
-scanKindParse = (
-        (EnvSc <$> envScanParse)
-    <|> (KDOESc <$> kdoeScanParse)
-    <|> envKDOEScanParse
-    <|> twoDEnvScanParse
-    <|> threeDEnvScanParse
-    ) >>= scanKindCheck
+scanKindParse = (EnvSc <$> envScanParse)
+            <|> (KDOESc <$> kdoeScanParse)
+            <|> envKDOEScanParse
+            <|> twoDEnvScanParse
+            <|> threeDEnvScanParse
+
 
 envScanParse :: Parser EnvScan
 envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
@@ -463,13 +463,9 @@ envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
 
 kdoeScanParse :: Parser KDOEScan
 kdoeScanParse = lexeme $ rword "KDOEScan" >> (try (colon >>
-    (runPermutation $ KDOESC
-        <$> toPermutation nodeAlterationsParse
-        <*> toPermutation (flip (,) <$> (parens (sepBy1 ((,)
-                                        <$> variable
-                                        <*> (colon >> integer)) comma)) 
-                                    <*> (colon >> integer))
-    )))
+    (flip (,) <$> (parens (sepBy1 ((,) <$> variable
+                                       <*> (colon >> integer)) comma)) 
+              <*> (colon >> integer))))
 
 xAxisParse :: Parser XAxis
 xAxisParse = lexeme $ rword "X_Axis" >>
@@ -479,42 +475,70 @@ xAxisParse = lexeme $ rword "X_Axis" >>
         )
     )
 
-scanKindCheck :: ScanKind -> Parser ScanKind
-scanKindCheck x@(EnvSc _) = return x
-scanKindCheck (KDOESc kdoeScan) = KDOESc <$> (kdoeScanCheck kdoeScan)
-scanKindCheck (EnvKDOEScan envScan kdoeScan xAx) =
-    EnvKDOEScan <$> pure envScan
-                <*> kdoeScanCheck kdoeScan
-                <*> pure xAx
-scanKindCheck (TwoDEnvScan envScan1 envScan2 mKDOEScan) =
-    (\es mk -> TwoDEnvScan <$> (fst <$> es) <*> (snd <$> es) <*> mk)
-        (envScansCheck envScan1 envScan2) (traverse kdoeScanCheck mKDOEScan)
-scanKindCheck (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
-    (\es -> ThreeDEnvScan <$> (fstOf3 <$> es) <*> (sndOf3 <$> es)
-                          <*> (thdOf3 <$> es) <*> (pure nAlts))
-        (envScansCheck3 envScan1 envScan2 envScan3)
+scanCheck :: VEXScan -> Parser VEXScan
+scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
+    exStep scSws mPRMNGSeed) =
+    VEXScan <$> scanKindCheck nAlts scKnd
+            <*> pure inEnv
+            <*> pure nAlts
+            <*> pure iFix
+            <*> pure maxN
+            <*> pure relN
+            <*> pure stopPhs
+            <*> pure exStep
+            <*> pure scSws
+            <*> pure mPRMNGSeed
+    
 
-kdoeScanCheck :: KDOEScan -> Parser KDOEScan
-kdoeScanCheck kdoeScan@(KDOESC nAlts (_, locknodes))
+scanKindCheck :: [NodeAlteration] -> ScanKind -> Parser ScanKind
+scanKindCheck _ x@(EnvSc _) = return x
+scanKindCheck nAlts (KDOESc kdoeSc) = KDOESc <$> (kdoeScanCheck nAlts kdoeSc)
+scanKindCheck nAlts (EnvKDOEScan envScan kdoeScan xAx) =
+    EnvKDOEScan <$> pure envScan
+                <*> kdoeScanCheck nAlts kdoeScan
+                <*> pure xAx
+scanKindCheck nAlts (TwoDEnvScan envScan1 envScan2 mKDOEScan)
+    | envScansCheck envScan1 envScan2 =
+        TwoDEnvScan <$> pure envScan1
+                    <*> pure envScan2
+                    <*> traverse (kdoeScanCheck nAlts) mKDOEScan
+    | otherwise = fail $ show $
+        DuplicateEnvScanNodeInScan (envScanInputName envScan1)
+scanKindCheck nAlts (ThreeDEnvScan envScan1 envScan2 envScan3 vsNAlts) =
+    case envScansCheck envScan1 envScan2 of
+        False -> fail $ show $ DuplicateEnvScanNodeInScan
+            (envScanInputName envScan1)
+        True -> case envScansCheck envScan1 envScan3 of
+            False -> fail $ show $ DuplicateEnvScanNodeInScan
+                (envScanInputName envScan1)
+            True -> case envScansCheck envScan2 envScan3 of 
+                False -> fail $ show $ DuplicateEnvScanNodeInScan
+                    (envScanInputName envScan2)
+                True -> ThreeDEnvScan <$> pure envScan1
+                                      <*> pure envScan2
+                                      <*> pure envScan3
+                                      <*> nAltsCh
+                    where
+                        nAltsCh
+                            | (not . L.null) sharedNAlts = fail $ show $
+                                KDOESharedNodesIn3DVSAndAlts sharedNAlts
+                            | otherwise = pure vsNAlts
+                                where
+                                    sharedNAlts = L.intersect
+                                        (nodeAltName <$> nAlts)
+                                        (nodeAltName <$> vsNAlts)
+    
+kdoeScanCheck :: [NodeAlteration] -> KDOEScan -> Parser KDOEScan
+kdoeScanCheck nAlts (scSteps, locknodes)
     | sharedNAlts /= [] = fail $ show $
         KDOESharedNodesInSteppedAndAlts sharedNAlts
-    | otherwise = return kdoeScan
+    | otherwise = return (scSteps, locknodes)
     where
         sharedNAlts = L.intersect (nodeAltName <$> nAlts) (fst <$> locknodes)
 
-envScansCheck :: EnvScan -> EnvScan -> Parser (EnvScan, EnvScan)
-envScansCheck envScan1 envScan2
-    | envScanInputName envScan1 == envScanInputName envScan2 = fail $ show $ 
-        DuplicateEnvScanNodeInScan (envScanInputName envScan1)
-    | otherwise = return (envScan1, envScan2)
-
-envScansCheck3 :: EnvScan -> EnvScan -> EnvScan
-               -> Parser (EnvScan, EnvScan, EnvScan)
-envScansCheck3 envScan1 envScan2 envScan3 = do
-    (envSc1, envSc2) <- envScansCheck envScan1 envScan2
-    (_, envSc3) <- envScansCheck envScan2 envScan3
-    (_, _) <- envScansCheck envScan1 envScan3
-    return (envSc1, envSc2, envSc3)
+envScansCheck :: EnvScan -> EnvScan -> Bool
+envScansCheck envScan1 envScan2 = not
+    (envScanInputName envScan1 == envScanInputName envScan2)
 
 envKDOEScanParse :: Parser ScanKind
 envKDOEScanParse = between (symbol "EnvKDOEScan{") (symbol "EnvKDOEScan}") (
@@ -538,9 +562,14 @@ threeDEnvScanParse = between (symbol "ThreeDEnvScan{") (symbol "ThreeDEnvScan}")
         <$> toPermutation envScanParse
         <*> toPermutation envScanParse
         <*> toPermutation envScanParse
-        <*> toPermutation nodeAlterationsParse
+        <*> toPermutation wildTypeVsMutantParse
     )
 
+wildTypeVsMutantParse :: Parser [WildTypeVsMutantAlt]
+wildTypeVsMutantParse = lexeme $ rword "WildTypeVsMutant" >>
+    (colon >>
+        (many (parens nodeAlterationParse))
+    )
 
 stopPhParse :: Parser [(NodeName, PhenotypeName)]
 stopPhParse = lexeme $ rword "StopPhenotypes" >>

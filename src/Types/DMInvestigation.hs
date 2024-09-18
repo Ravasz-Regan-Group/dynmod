@@ -22,6 +22,7 @@ module Types.DMInvestigation
     , ExperimentStep(..)
     , VEXInputPulse(..)
     , NodeAlteration(..)
+    , WildTypeVsMutantAlt
     , nodeAltName
     , isNodeLock
     , RealInputCoord
@@ -55,7 +56,7 @@ module Types.DMInvestigation
     , ScanSwitch
     , ScanKind(..)
     , EnvScan(..)
-    , KDOEScan(..)
+    , KDOEScan
     , XAxis(..)
     , ScanResult(..)
     , DMScan(..)

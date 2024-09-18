@@ -508,7 +508,7 @@ mkFigKinds mM mL (FigKinds ntcB phtcB nNs sNs) =
             sns -> Failure $ [UnknownOrNonPhenotypedSwitchesInPHBarChart sns]
         layerNNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
         switchNames = fst <$> nonEmptyPhs
-        nonEmptyPhs = filter (not . null . snd . snd) mM
+        nonEmptyPhs = nonEmptyPhenotypes mM
 
 
 mkIntNodeAlterations :: ModelLayer -> [NodeAlteration]

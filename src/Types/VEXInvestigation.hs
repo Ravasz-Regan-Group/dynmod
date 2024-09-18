@@ -88,6 +88,7 @@ data VEXInputPulse = VEXInPt
 data VEXScan = VEXScan
     ScanKind
     InitialEnvironment
+    [NodeAlteration]
     [(NodeName, RealNodeState)]-- Start runs at real-valued inputs. 
     Max_N
     Relevant_N
@@ -122,8 +123,11 @@ data ScanKind =
     | KDOESc KDOEScan
     | EnvKDOEScan EnvScan KDOEScan XAxis
     | TwoDEnvScan EnvScan EnvScan (Maybe KDOEScan)
-    | ThreeDEnvScan EnvScan EnvScan EnvScan [NodeAlteration]
+    | ThreeDEnvScan EnvScan EnvScan EnvScan [WildTypeVsMutantAlt]
     deriving (Eq, Show)
+
+-- To distinguish from the Scan's regular node alterations
+type WildTypeVsMutantAlt = NodeAlteration
 
 -- In the list of 2D figures produced in a EnvKDOEScan, which variable is the
 -- x-axis in each figure. The other will then be the variable which increments
@@ -150,9 +154,7 @@ envScanInputName (WholeESC nName _) = nName
 -- All of the DMNodes in the ScanSteps Tuple will be gradually locked to the
 -- specified states in sync, over the number of steps specified, starting at 0%
 -- and ending at 100%. 
-data KDOEScan = KDOESC [NodeAlteration]
-                       (ScanSteps, [(NodeName, NodeState)])
-                       deriving (Eq, Show)
+type KDOEScan = (ScanSteps, [(NodeName, NodeState)])
 
 type ScanSteps = Int -- The number of steps from min to max in a Scan. 
 
@@ -210,6 +212,7 @@ data VEXInvestigationInvalid =
     | InputsInKDOEScanLocks [NodeName]
     | InvalidKDOEScanLocks [(NodeName, NodeState)] T.Text
     | KDOESharedNodesInSteppedAndAlts [NodeName]
+    | KDOESharedNodesIn3DVSAndAlts [NodeName]
     | ScanSwitchRepeats [NodeName]
     | UnknownSwitchesInScan [NodeName]
     | NonPhenotypedSwitchesInScan [NodeName]
@@ -341,6 +344,9 @@ vexErrorPrep (InvalidKDOEScanLocks badPairs properPairText) =
         T.intercalate ", " (tShow <$> badPairs) <> properPairText
 vexErrorPrep (KDOESharedNodesInSteppedAndAlts sharedNodeAlts) =
     "KDOESharedNodesInSteppedAndAlts: " <>
+        T.intercalate ", " sharedNodeAlts
+vexErrorPrep (KDOESharedNodesIn3DVSAndAlts sharedNodeAlts) =
+    "KDOESharedNodesIn3DVSAndAlts: " <>
         T.intercalate ", " sharedNodeAlts
 vexErrorPrep (ScanSwitchRepeats nNms) = "ScanSwitchRepeats: " <>
     T.intercalate ", " nNms

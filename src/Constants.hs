@@ -1349,6 +1349,7 @@ vexKeyword = [ "DMMSFile"
              , "KDOEScan"
              , "X_Axis"
              , "ManualPRNGSeed"
+             , "WildTypeVsMutant"
              ]
 
 vexPredefined ::[T.Text]

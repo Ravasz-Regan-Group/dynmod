@@ -94,6 +94,7 @@ module Types.DMModel
     , assignsToTTable
     , tTInputOutput
     , dmmsNodes
+    , nonEmptyPhenotypes
     , modelNodes'
     , modelEdges'
     , modelCiteKeys
@@ -1564,3 +1565,8 @@ dmmsNodes mg = zip strippedNS namedES
         nMap = Map.fromList ns
         ns = Gr.labNodes mg
         es = Gr.labEdges mg
+
+-- Give me only those Switches from the ModelMapping whose Phenotypes are not
+-- empty. 
+nonEmptyPhenotypes :: ModelMapping -> [Switch]
+nonEmptyPhenotypes = filter (not . null . snd . snd)

@@ -154,11 +154,12 @@ bcRunDia cMap mM mL exMeta (bc, repRs) = (bc, expFgs)
                       phBCF = phBChartDia cMap mL switchMap exMeta phCHNodeNs
                       pSts :: [[[M.HashMap PhenotypeName
                                         (U.Vector Double, (Double, StdDev))]]]
-                      pSts = phBarChartStats <$> repRs
+                      pSts = phBarChartStats allPhNs <$> repRs
         zipZip = (zipWith . zipWith) (,)
         switchMap = M.fromList nonEmptySwPhNs
+        allPhNs = concatMap snd nonEmptySwPhNs
         nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
-        nonEmptySwPhs = snd <<$>> (filter (not . null . snd . snd) mM)
+        nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
         expGuides :: [[Diagram B]]
         expGuides = (fmap . fmap) (expGuideDia mL exMeta stripHt) pulseSpcs
         pulseSpcs = (fmap . fmap) snd avgTmlnPSs
@@ -278,9 +279,9 @@ statsCalc tmlns = B.fromList $ (varianceF . U.fromList) <$> averagedLs
 -- cells in some experiment. Each element in the resultant list represents
 -- statistics over an ExpSpreadResult, since they represent running the
 -- experiment with different NodeAlteration timings. 
-phBarChartStats :: RepResults
+phBarChartStats :: [PhenotypeName] -> RepResults
     -> [[M.HashMap PhenotypeName (U.Vector Double, (Double, StdDev))]]
-phBarChartStats (exSpRs, pSPss) = phStatsCalc <<$>> preppedStates
+phBarChartStats allPhNs (exSRs, pSPss) = phStatsCalc allPhNs <<$>> preppedStates
     where
         preppedStates = (L.transpose . mconcat) <$> splitByIpSpPhNs
         splitByIpSpPhNs :: [[[[B.Vector [PhenotypeName]]]]]
@@ -288,11 +289,12 @@ phBarChartStats (exSpRs, pSPss) = phStatsCalc <<$>> preppedStates
         pulseIntss = (fstOf3 . unzip3) <$> pSPss
         tpPhNames = L.transpose justPhenotypes
         justPhenotypes :: [[[B.Vector [PhenotypeName]]]]
-        justPhenotypes = (fmap . fmap . fmap . B.map) snd exSpRs
+        justPhenotypes = (fmap . fmap . fmap . B.map) snd exSRs
 
-phStatsCalc :: [B.Vector [PhenotypeName]]
+phStatsCalc :: [PhenotypeName]
+            -> [B.Vector [PhenotypeName]]
             -> M.HashMap PhenotypeName (U.Vector Double, (Double, StdDev))
-phStatsCalc phVecs = M.map varianceF phListMap
+phStatsCalc allPhNs phVecs = M.map varianceF phListMap
     where
 -- For now we will keep both the averages and the vectors of Phenotype
 -- prevalence that they came from. They will be written out with the figure, to
@@ -301,18 +303,22 @@ phStatsCalc phVecs = M.map varianceF phListMap
         varianceF v = (v, meanVarianceUnb v)
         phListMap = M.map U.fromList (L.foldr unionF accMap consdFOPhMaps)
         unionF fOPhMp accM = M.foldrWithKey (M.insertWith (<>)) accM fOPhMp
-        accMap = M.fromList $ zip allPhs $ L.repeat []
-        consdFOPhMaps = fmap (M.map (:[])) filledOutPhMaps
---      Make sure every map contains every PhenotypeName, so all of the Vectors
---      are the same length. 
-        filledOutPhMaps = (\phM -> L.foldl' finisher phM allPhs) <$> phFMaps
-            where finisher phMp phN = M.insertWith (flip const) phN 0.0 phMp
-        allPhs = HS.toList $ L.foldl' (flip HS.insert) HS.empty flatPHList
-        flatPHList = (mconcat . concatMap B.toList) phVecs
-        phFMaps = phenotypeFraction <$> phVecs
+        accMap = M.fromList $ zip allPhNs $ L.repeat []
+        consdFOPhMaps = fmap (M.map pure) filledOutPhMaps
+        filledOutPhMaps = phenotypeFraction allPhNs <$> phVecs
+        
 
-phenotypeFraction :: B.Vector [PhenotypeName] -> M.HashMap PhenotypeName Double
-phenotypeFraction phVec = M.map (/divisor) (B.foldl' insertF M.empty phVec)
+-- Make sure every map contains every PhenotypeName, so all of the Vectors are
+-- the same length. 
+phenotypeFraction :: [PhenotypeName]
+                  -> B.Vector [PhenotypeName]
+                  -> M.HashMap PhenotypeName Double
+phenotypeFraction allPhNs phVec = M.union presentMaps blankMaps
     where
-        insertF cMp phNs = L.foldl' (\m n -> M.insertWith (+) n 1.0 m ) cMp phNs
+        blankMaps :: M.HashMap PhenotypeName Double
+        blankMaps = M.fromList $ zip allPhNs $ repeat 0.0
+        presentMaps :: M.HashMap PhenotypeName Double
+        presentMaps = M.map (/divisor) (B.foldl' insertF M.empty phVec)
+        insertF cMp phNs = L.foldl' insertF' cMp phNs
+        insertF' mp phN = M.insertWith (+) phN 1.0 mp
         divisor = (fromIntegral . B.length) phVec :: Double

@@ -145,7 +145,7 @@ mkPhColorMap mM cMap = (M.fromList . concatMap phBlendF) nonEmptyPhs
         phBlendF (nN, phs) = zip (phenotypeName <$> phs) cBlends
             where
                 cBlends = phTCBlend 0.85 (cMap M.! nN) (L.length phs)
-        nonEmptyPhs = ((fmap . fmap) snd . (filter ((/= []) . snd . snd))) mM
+        nonEmptyPhs = ((fmap . fmap) snd . nonEmptyPhenotypes) mM
 
 -- Pick a color from one of the perceptually uniform color gradients in
 -- Constants. 
@@ -264,7 +264,7 @@ mkBarcode cM mM lniBMap att = (bc, att)
         bc = (uncurry (mkBar lniBMap att)) <$> colorSwitchPairs
         colorSwitchPairs = (\(sN, ps) -> (cM M.! sN, (sN, ps))) <$> nameSPairs
         nameSPairs = (\(nName, (_, phs)) -> (nName, phs)) <$> nonEmptyPhs
-        nonEmptyPhs = filter ((/= []) . snd . snd) mM
+        nonEmptyPhs = nonEmptyPhenotypes mM
 
 
 -- Make a single Bar in a Barcode. 
