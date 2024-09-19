@@ -735,13 +735,16 @@ data ModelLayerInvalid =
                     NodeRefdNodesMismatch NodeRefdNodesMismatch
                   | StatesRefdStatesMisMatch StatesRefdStatesMisMatch
                   | NodeInlinkMismatch NodeInlinkMismatch
+--                   The InLink's LinkAffect is mismatched with its actual
+--                   behavior. This is the correct one. 
+                  | NodeInLinkLinkEffectMismatch LinkEffect
                   | NodeNamesRepeated NodeNamesRepeated
                   | NodeDimensionsInconsistent NodeDimensionsInconsistent
      deriving (Show, Eq)
 type NodeRefdNodesMismatch = [NodeName] -- Nodes in NodeExprs that are not in
                                         -- any node
 type StatesRefdStatesMisMatch = [(NodeName, ([NodeState], [NodeState]))]
-type NodeInlinkMismatch = ([NodeName], [NodeName])
+type NodeInlinkMismatch = [NodeName]
 type NodeNamesRepeated = [NodeName]
 type NodeDimensionsInconsistent = [Int]
 

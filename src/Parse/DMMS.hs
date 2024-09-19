@@ -318,6 +318,7 @@ modelGraphParse = between (symbol "ModelGraph{") (symbol "ModelGraph}") $
     >>= nodeUniqueCheck
     >>= nodeStateCheck
     >>= nodeLinkCheck
+    >>= (traverse linkEffectCheck)
     >>= coordDimensionCheck
     >>= modelGraphAssembler
     >>= nonBinaryMultiInputNodesCheck
@@ -436,16 +437,62 @@ tableMaxAdjust maxima n = DMNode nMeta newGate
 -- actual DMNode with that NodeName
 nodeLinkCheck :: [(DMNode, [(NodeName, DMLink)])]
               -> Parser [(DMNode, [(NodeName, DMLink)])]
-nodeLinkCheck nodesWLinks = case lSet == nSet of
-    True  -> return nodesWLinks
-    False -> fail $ show $ err
+nodeLinkCheck nodesWLinks
+    | orphanLinkNamesSet == Set.empty = return nodesWLinks
+    | otherwise = fail $ show $
+        NodeInlinkMismatch (Set.toList orphanLinkNamesSet)
     where
-      nSet = Set.fromList dmNodeNames
-      lSet = Set.fromList dmNodeNames
-      dmNodeNames = (nodeName . nodeMeta . fst) <$> nodesWLinks
-      err = NodeInlinkMismatch (nList, lList)
-      nList = L.sort $ Set.toList nSet
-      lList = L.sort $ Set.toList lSet
+      orphanLinkNamesSet = lSet `Set.difference` nSet
+      lSet = (Set.fromList . fmap fst . concatMap snd) nodesWLinks
+      nSet = Set.fromList $ (nodeName . nodeMeta . fst) <$> nodesWLinks
+
+-- For each boolean DMNode, check that DMLinks of that DMNode whose LinkEffect
+-- is Activation or Repression, that InLink is actually activating or repressing
+-- . 
+linkEffectCheck :: (DMNode, [(NodeName, DMLink)])
+                -> Parser (DMNode, [(NodeName, DMLink)])
+linkEffectCheck (dmNode, linksWNNs)
+    | isNodeBoolean dmNode = return (dmNode, linksWNNs)
+    | otherwise = (,) <$> pure dmNode <*> checkedInLs
+        where
+            isNodeBoolean = (>2) . length . gateAssigns . nodeGate
+            nName = (nodeName . nodeMeta) dmNode
+            gOrder = (gateOrder . nodeGate) dmNode
+            tTable = (gateTable . nodeGate) dmNode
+            checkedInLs = traverse lEffectChF linksWNNs
+            lEffectChF :: (NodeName, DMLink) -> Parser (NodeName, DMLink)
+            lEffectChF (nNm, dmLink)
+                | linkMax > 1 = return (nNm, dmLink)
+                | otherwise = case linkEffect dmLink of
+                    Activation
+                        | aligned > misAligned -> return (nNm, dmLink)
+                        | aligned == misAligned -> fail $
+                            errorF Activation Context_Dependent
+                        | aligned < misAligned -> fail $
+                            errorF Activation Repression
+                    Repression
+                        | aligned < misAligned -> return (nNm, dmLink)
+                        | aligned == misAligned -> fail $
+                            errorF Repression Context_Dependent
+                        | aligned > misAligned -> fail $
+                            errorF Repression Activation
+                    _ -> return (nNm, dmLink)
+                where
+                    errorF incLE corLE = "The " <> T.unpack nNm <>
+                        " InLink " <> "for the " <> T.unpack nName <> " Node has\
+                        \ LinkEffect " <> show incLE <> ", but its actual\
+                        \ behavior is " <> show corLE
+                    misAligned = (length . filter (not . pairEq)) lInputPairs
+                    aligned = (length . filter pairEq) lInputPairs
+                    pairEq (i, j) = i == j
+                    lInputPairs = (fmap . B.first) (U.! lIndex) tTPairs
+                    tTPairs = Map.toList tTable
+                    linkMax = (maximum . fmap (U.! lIndex) .  Map.keys) tTable
+                    lIndex = (fromJust . L.elemIndex nNm) gOrder
+            
+            
+            
+            
 
 -- Check that all of the NodeCoordinates in a given layer are of the same
 -- dimension, or empty. If they are, fill the empty ones with appropriately
