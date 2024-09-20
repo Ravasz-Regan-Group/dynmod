@@ -102,13 +102,15 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
         layout =
             layout_title .~ (T.unpack . scExpName) exMeta
           $ layout_title_style . font_size .~ 24
+          $ layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
+          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
           $ layout_x_axis . laxis_title .~ xTitle
           $ layout_legend .~ legend
           $ layout_plots .~ [plotBars barsStopD]
           $ def
             where
                 legend = Just $
-                    legend_label_style . font_size .~ 12
+                    legend_label_style . font_size .~ 24
                   $ def
         barsStopD =
             plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
@@ -142,13 +144,15 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
         layout =
             layout_title .~ (T.unpack layoutTitle)
           $ layout_title_style . font_size .~ 24
+          $ layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
+          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
           $ layout_x_axis . laxis_title .~ xTitle
           $ layout_legend .~ legend
           $ layout_plots .~ [plotBars barsPhDist]
           $ def
             where
                 legend = Just $
-                    legend_label_style . font_size .~ 12
+                    legend_label_style . font_size .~ 24
                   $ def
         barsPhDist =
             plot_bars_titles .~ (T.unpack <$> phNs)

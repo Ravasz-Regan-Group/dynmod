@@ -736,7 +736,7 @@ data ModelLayerInvalid =
                   | StatesRefdStatesMisMatch StatesRefdStatesMisMatch
                   | NodeInlinkMismatch NodeInlinkMismatch
 --                   The InLink's LinkAffect is mismatched with its actual
---                   behavior. This is the correct one. 
+--                   behavior. This LinkEffect is the correct one. 
                   | NodeInLinkLinkEffectMismatch LinkEffect
                   | NodeNamesRepeated NodeNamesRepeated
                   | NodeDimensionsInconsistent NodeDimensionsInconsistent
