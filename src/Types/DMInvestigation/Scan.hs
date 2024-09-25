@@ -384,6 +384,8 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
       variations = case xAx of
         KDOEX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
         EnvX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
+--         EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
+--         KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
   IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
     (newGen, (bc, SKRTwoEnvWithoutKDOE res))
     where
