@@ -112,6 +112,7 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
           $ layout_title_style . font_size .~ 12
           $ layout_x_axis . laxis_override .~ axisGridHide
           $ layout_y_axis . laxis_override .~ axisGridHide
+          $ layout_x_axis . laxis_generate .~ autoIndexAxis xPlotLabels
           $ layout_x_axis . laxis_title .~ xTitle
           $ layout_x_axis . laxis_title_style . font_size .~ 16
           $ layout_legend .~ legend
@@ -123,7 +124,7 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
                   $ def
         barsStopD =
             plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
-          $ plot_bars_values .~ (zip xPlotIndices plotValues)
+          $ plot_bars_values .~ addIndexes plotValues
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> stopDColors)
           $ def
@@ -134,6 +135,7 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
                         stopPhNames
         xPlotIndices :: [PlotIndex]
         xPlotIndices = fromValue <$> xRange
+        xPlotLabels = show <$> xRange
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
         stopDs = stopDistribution stopPhNames <$> stopDurationss
@@ -159,6 +161,7 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
 --           $ layout_axes_styles . axis_label_style . font_size .~ 48
           $ layout_x_axis . laxis_override .~ axisGridHide
           $ layout_y_axis . laxis_override .~ axisGridHide
+          $ layout_x_axis . laxis_generate .~ autoIndexAxis xPlotLabels
           $ layout_x_axis . laxis_title .~ xTitle
           $ layout_x_axis . laxis_title_style . font_size .~ 16
           $ layout_legend .~ legend
@@ -170,13 +173,14 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
                   $ def
         barsPhDist =
             plot_bars_titles .~ (T.unpack <$> phNs)
-          $ plot_bars_values .~ (zip xPlotIndices plotValues)
+          $ plot_bars_values .~ addIndexes plotValues
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> phNColors)
           $ def
             where
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
+        xPlotLabels = show <$> xRange
         plotValues = phDistribution phNs <$> trScanRuns
         layoutTitle = scExpName exMeta <> ", Time In: " <> scSw
         xPlotIndices :: [PlotIndex]
@@ -375,7 +379,8 @@ scHeatMapDias switchMap exMeta scanRunss = scHeatMapDia rangeData <$> phValues
             [x] -> (x, x)
             x:y:_ -> (x, y)
         phValues :: [(PhenotypeName, [[Double]])]
-        phValues = zip phNames $ (L.transpose . fmap L.transpose) bareValues
+        phValues =  (zip phNames . L.transpose . fmap L.transpose) bareValues
+        bareValues :: [[[Double]]]
         bareValues = phDistribution phNames <<$>> trScanRunss
         phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
         trScanRunss = (fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
@@ -387,20 +392,17 @@ scHeatMapDia :: ((String, [Double]), (String, [Double]))
              -> Diagram B
 scHeatMapDia rangeData (titleT, hmValues) = P.renderAxis $ P.r2Axis &~ do
     let ((xTitle, xRange), (yTitle, yRange)) = rangeData 
---         xStepSize = abs $ (xRange L.!! 1) - (xRange L.!! 0)
---         yStepSize = abs $ (yRange L.!! 1) - (yRange L.!! 0)
+        xStepSize = abs $ last xRange / (fromIntegral . length) xRange
+        yStepSize = abs $ (yRange L.!! 1) - (yRange L.!! 0)
     P.display P.colourBar
     P.titleText .= T.unpack titleT
     P.axisExtend .= P.noExtend
-    P.axisColourMap .= P.viridis
+--     P.axisColourMap .= P.plasma
     P.xLabel .= xTitle
-    P.xMin .= Just (head xRange)
-    P.xMax .= Just (last xRange)
     P.yLabel .= yTitle
-    P.yMin .= Just (head yRange)
-    P.yMax .= Just (last yRange)
-    P.heatMap' hmValues
---         $ P.heatMapSize .= V2 xStepSize yStepSize
+    P.heatMap hmValues $ do
+        P.heatMapSize .= V2 xStepSize yStepSize
+        P.heatMapLimits .= (Just (0, 1))
 
 
 scDifferenceHeatMapDia :: M.HashMap ScanSwitch [PhenotypeName]
