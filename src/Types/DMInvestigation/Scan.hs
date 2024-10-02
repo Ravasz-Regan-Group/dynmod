@@ -31,6 +31,7 @@ import Data.Maybe (mapMaybe, fromJust)
 import System.Random
 
 
+
 data DMScan = Sc {
       scanKind :: SCExpKind
     , scExpMeta :: SCExpMeta
@@ -380,12 +381,9 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
   IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
     where
       (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
-      variations :: [[ScanVariation]]
       variations = case xAx of
-        KDOEX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
-        EnvX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
---         EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
---         KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
+        EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
+        KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
   IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
     (newGen, (bc, SKRTwoEnvWithoutKDOE res))
     where
@@ -455,7 +453,7 @@ mkIntNAltss (scSteps, stNAlts) = rangeInserter stNAlts <$> rnge
         rnge = mkSteps 0 1 scSteps
 
 mkSteps :: Int -> Int -> Int -> [Double]
-mkSteps sSt eSt nSts = (init spreadL) <> [endSt, endSt]
+mkSteps sSt eSt nSts = (init spreadL) <> [endSt]
     where
         spreadL = [startSt,listSpacer..endSt]
         listSpacer = startSt + ((endSt - startSt)/(scanStps - 1))

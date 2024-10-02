@@ -26,6 +26,7 @@ import Data.List.Split (splitPlaces)
 import Diagrams.Prelude
 import Diagrams.Backend.Cairo
 import qualified Graphics.SVGFonts as F
+import Data.Maybe (mapMaybe)
 import qualified Data.List as L
 
 
@@ -112,8 +113,10 @@ nodeRunDia cMap mM mL (stripHt, swFWidth) bc pulseSps tmLn =
         nodeStripBlocks = (alignY 0 . vcat) <$>
             (splitPlaces switchLs nodeStrips)
         nnBlocks = nodeNameBlockDia switchLs stripHt switchNodeOrder
-        nodeStrips = nodeStripDia reordLNIBMap reordRTs stripHt <$> annTStrips
+        nodeStrips = nodeStripDia nodeAltMapss reordLNIBMap reordRTs stripHt <$>
+                                    annTStrips
         annTStrips = zip switchNodeOrder transposedRTmLn
+        nodeAltMapss = concatMap nodeAltMaps pulseSps
         transposedRTmLn = (L.transpose . B.toList . fmap U.toList) reordTmLn
         -- We want to striate the runs by Switch, so we will need these spacings
         switchLs = (L.length . fst . snd) <$> mM
@@ -129,6 +132,12 @@ nodeRunDia cMap mM mL (stripHt, swFWidth) bc pulseSps tmLn =
                 error $ "reordTmLn in TimeCourse.hs has: " <> show errs
         LayerSpecs lniBMap rangeTs _ _ = layerPrep mL
         switchNodeOrder = concatMap (fst . snd) mM
+
+nodeAltMaps :: PulseSpacing -> [M.HashMap NodeName NodeState]
+nodeAltMaps (dur, _, nAlts)= replicate dur $ M.fromList $ mapMaybe getLock nAlts
+    where
+        getLock (NodeLock nName lockState _) = Just (nName, lockState)
+        getLock _ = Nothing
 
 -- Mark where each new pulse begins. 
 pulseLine :: Double -> Int -> Diagram B
@@ -173,21 +182,27 @@ findBar :: Barcode -> Switch -> (Switch, Maybe PhenotypeName)
 findBar bc sw = (sw, phN)
     where phN = (L.find (\b -> switchName b == fst sw) bc) >>= barPhenotype
 
-nodeStripDia :: LayerNameIndexBimap
+nodeStripDia :: [M.HashMap NodeName NodeState]
+             -> LayerNameIndexBimap
              -> LayerRangeVec
              -> Double
              -> (NodeName, [(RealNodeState, AvgWasForced)])
              -> Diagram B
-nodeStripDia reordLNIBMap reordRTs stripHt (nName, annTLine) = timeStrip
+nodeStripDia nAltMaps reordLNIBMap reordRTs stripHt (nName, annTLine) =
+    timeStrip
     where
-        timeStrip = hcat $ nodeStateDia nRange stripHt <$> annTLine
+        timeStrip = hcat $ uncurry (nodeStateDia nRange stripHt nName) <$>
+            (zip nAltMaps annTLine)
         nRange = reordRTs U.! (reordLNIBMap BM.! nName)
 
 nodeStateDia :: (Int, Int)
              -> Double
+             -> NodeName
+             -> M.HashMap NodeName NodeState
              -> (RealNodeState, AvgWasForced)
              -> Diagram B
-nodeStateDia (rangeB, rangeT) stripHt (realNState, avgWForced) = dia
+nodeStateDia (rangeB, rangeT) stripHt nName nAltMap (realNState, avgWForced) =
+    dia
     where
 --        0 <= avgWForced <= 1 by construction, see averagedAttResults
         dia
@@ -198,12 +213,13 @@ nodeStateDia (rangeB, rangeT) stripHt (realNState, avgWForced) = dia
         alteredRect = rect 1 alteredStripHt # alteredCPick # lineWidth none 
         plainStripHt = stripHt * (1 - avgWForced)
         alteredStripHt = stripHt * avgWForced
-        plainCPick = case gradientPick plasmaCM fracRange realNState of
+        plainCPick = cPicker plasmaCM realNState
+        alteredCPick = case nAltMap M.!? nName of
+            Just lockState -> cPicker alteredNodeCM (fromIntegral lockState)
+            Nothing -> cPicker alteredNodeCM realNState
+        cPicker cM rnSt =  case gradientPick cM fracRange rnSt of
             Nothing -> fcA transparent
-            Just cp -> fillColor cp
-        alteredCPick = case gradientPick alteredNodeCM fracRange realNState of
-            Nothing -> fcA transparent
-            Just ca -> fillColor ca
+            Just aColor -> fillColor aColor
         fracRange = ((fromIntegral rangeB) :: Double, fromIntegral rangeT)
 
 runSwitchTCDia :: ColorMap

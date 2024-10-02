@@ -22,6 +22,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Vector as B
 import qualified Data.Text as T
 import qualified Data.List as L
+import Text.Printf (printf)
 import GHC.IO (unsafePerformIO)
 
 
@@ -45,14 +46,26 @@ scRunDia :: PhColorMap
 scRunDia phCMap mM exMeta scRes = case scRes of
     (SKREnv scBundle) -> EnvScFig $ baseScDia phCMap switchMap exMeta scBundle
     (SKRKDOE scBundle) -> KDOEScFig $ baseScDia phCMap switchMap exMeta scBundle
-    (SKREnvKDOE scBundles) -> EnvKDOESc $ hsep 30 $ realFigs
+    (SKREnvKDOE scBundles) -> EnvKDOESc $ frame 10 $ titleDia === diaBlock
         where
-            realFigs = zipWith stackEnvKDOEDias baseFigs offAxisPairs
-            offAxisPairs = zip (repeat offAxisTitle) offAxisRange
-            (offAxisTitle, offAxisRange) =
+            titleDia = center $ (text ((T.unpack . scExpName) exMeta)
+                # fontSize (local (0.015 * blockWidth))
+                # bold) <> strutY (0.03 * blockWidth)
+            blockWidth = Diagrams.Prelude.width diaBlock
+            diaBlock = (vsep 10 $ hsep 10 <$> diaArray) # center
+            diaArray = mkDia <<$>> strippedLayouts
+            mkDia = fst . runBackendR dEnv . toRenderable
+            dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
+            strippedLayouts = case swappedLayouts of
+                [] -> []
+                stoppedLs:lss -> stoppedLs:(stripLRows <$> lss)
+            swappedLayouts = L.transpose titledLayouts
+            titledLayouts =
+                zipWith (xTitleColumn exMeta offAxisTitle) offAxisRange bLayouts
+            (offAxisTitle, offAxisRange) = 
                 (last . scanXAxisData . scMetaScanKind) exMeta
-            baseFigs :: [[Diagram B]]
-            baseFigs = envKDOEBaseFigs phCMap switchMap exMeta <$> scBundles
+            bLayouts :: [[Layout PlotIndex Double]]
+            bLayouts = envKDOEVertLayout phCMap switchMap exMeta <$> scBundles
     (SKRTwoEnvWithoutKDOE scBundles) -> TwoDEnvScWWOKDOE $
         scHeatMapDias switchMap exMeta scBundles
     (SKRTwoEnvWithKDOE scBundless) -> TwoDEnvScWWOKDOE joinedFigs
@@ -76,12 +89,6 @@ scRunDia phCMap mM exMeta scRes = case scRes of
         nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
         nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
 
-stackEnvKDOEDias :: [Diagram B] -> (String, Double) -> Diagram B
-stackEnvKDOEDias fgs (offAT, stepDouble) = vsep 30 (textFig:fgs)
-    where
-        textFig = tText' 100 (T.pack offAT <> ": " <> tShow stepDouble) # center
-
-
 labelMutantHMDias :: [Diagram B] -> (String, Double) -> [Diagram B]
 labelMutantHMDias hmFigs (offAxisTitle, stepDouble) = labelMutantHMD <$> hmFigs
     where
@@ -99,31 +106,34 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
         scanSwsPairs = (zip scanSws . fmap (switchMap M.!)) scanSws
         scanSws = scExpSwitches exMeta
         stopDistFig = (fst . runBackendR dEnv . toRenderable) layout
-        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1200 1200
+        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
         layout =
             layout_title .~ (T.unpack . scExpName) exMeta
-          $ layout_title_style . font_size .~ 36
-          $ layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
+          $ layout_title_style . font_size .~ 12
+          $ layout_x_axis . laxis_override .~ axisGridHide
+          $ layout_y_axis . laxis_override .~ axisGridHide
           $ layout_x_axis . laxis_title .~ xTitle
-          $ layout_x_axis . laxis_title_style . font_size .~ 36
+          $ layout_x_axis . laxis_title_style . font_size .~ 16
           $ layout_legend .~ legend
           $ layout_plots .~ [plotBars barsStopD]
           $ def
             where
-                legend = Just $
-                    legend_label_style . font_size .~ 24
+                legend = Just 
+--                     legend_label_style . font_size .~ 12
                   $ def
         barsStopD =
             plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
-          $ plot_bars_values .~ (zip xRange plotValues)
+          $ plot_bars_values .~ (zip xPlotIndices plotValues)
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> stopDColors)
           $ def
             where
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
-        stopDColors = (fmap opaque . (CN.white:) . fmap (cMap M.!)) stopPhNames
+        stopDColors = (fmap opaque . (CN.whitesmoke:) . fmap (cMap M.!))
+                        stopPhNames
+        xPlotIndices :: [PlotIndex]
+        xPlotIndices = fromValue <$> xRange
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
         stopDs = stopDistribution stopPhNames <$> stopDurationss
@@ -142,24 +152,25 @@ timeInSwPhsDia :: ColorMap
 timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
     (fst . runBackendR dEnv . toRenderable) layout
     where
-        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1200 1200
+        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
         layout =
             layout_title .~ (T.unpack layoutTitle)
-          $ layout_title_style . font_size .~ 36
-          $ layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
+          $ layout_title_style . font_size .~ 12
+--           $ layout_axes_styles . axis_label_style . font_size .~ 48
+          $ layout_x_axis . laxis_override .~ axisGridHide
+          $ layout_y_axis . laxis_override .~ axisGridHide
           $ layout_x_axis . laxis_title .~ xTitle
-          $ layout_x_axis . laxis_title_style . font_size .~ 36
+          $ layout_x_axis . laxis_title_style . font_size .~ 16
           $ layout_legend .~ legend
           $ layout_plots .~ [plotBars barsPhDist]
           $ def
             where
-                legend = Just $
-                    legend_label_style . font_size .~ 24
+                legend = Just 
+--                     legend_label_style . font_size .~ 36
                   $ def
         barsPhDist =
             plot_bars_titles .~ (T.unpack <$> phNs)
-          $ plot_bars_values .~ (zip xRange plotValues)
+          $ plot_bars_values .~ (zip xPlotIndices plotValues)
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> phNColors)
           $ def
@@ -167,52 +178,47 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
         plotValues = phDistribution phNs <$> trScanRuns
---         trSwapped = trInit2 <> [trLast, trL2]
---         trInit2 = init trInit
---         trL2 = last trInit
---         trLast = last trScanRuns
---         trInit = init trScanRuns
         layoutTitle = scExpName exMeta <> ", Time In: " <> scSw
+        xPlotIndices :: [PlotIndex]
+        xPlotIndices = fromValue <$> xRange
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         phNColors = (opaque . (cMap M.!)) <$> phNs
 
-envKDOEBaseFigs :: PhColorMap
-                -> M.HashMap ScanSwitch [PhenotypeName]
-                -> SCExpMeta
-                -> [[Timeline]]
-                -> [Diagram B]
-envKDOEBaseFigs cMap switchMap exMeta scanRuns = stopDistFig:timeInSwFigs
+envKDOEVertLayout :: PhColorMap
+                   -> M.HashMap ScanSwitch [PhenotypeName]
+                   -> SCExpMeta
+                   -> [[Timeline]]
+                   -> [Layout PlotIndex Double]
+envKDOEVertLayout cMap switchMap exMeta scanRuns = stopPHlayout:timeInSwlayouts
     where
-        timeInSwFigs = simpleTISwPhsDia cMap exMeta trScanRuns <$> scanSwsPairs
+        timeInSwlayouts = envKDOELayout cMap exMeta trScanRuns <$> scanSwsPairs
         scanSwsPairs = (zip scanSws . fmap (switchMap M.!)) scanSws
         scanSws = scExpSwitches exMeta
-        stopDistFig = ((fst . runBackendR dEnv . toRenderable) layout) # center
-        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1200 1200
-        layout =
-            layout_title .~ (T.unpack . scExpName) exMeta
-          $ layout_title_style . font_size .~ 36
-          $ layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_x_axis . laxis_title .~ xTitle
-          $ layout_x_axis . laxis_title_style . font_size .~ 36
-          $ layout_legend .~ legend
+        stopPHlayout =
+            layout_legend .~ legend
           $ layout_plots .~ [plotBars barsStopD]
+          $ layout_x_axis . laxis_generate .~ autoIndexAxis xPlotLabels
+          $ layout_x_axis . laxis_override .~ axisGridHide
+          $ layout_y_axis . laxis_override .~ axisGridHide
           $ def
             where
                 legend = Just $
-                    legend_label_style . font_size .~ 24
+                    legend_margin .~ 10
+                  $ legend_orientation .~ LORows 2
                   $ def
         barsStopD =
             plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
-          $ plot_bars_values .~ (zip xRange plotValues)
+          $ plot_bars_values .~ addIndexes plotValues
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> stopDColors)
           $ def
             where
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
-        stopDColors = (fmap opaque . (CN.white:) . fmap (cMap M.!)) stopPhNames
-        (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
+        stopDColors = (fmap opaque . (CN.whitesmoke:) . fmap (cMap M.!))
+                    stopPhNames
+        xPlotLabels = show <$> xRange
+        xRange = (snd . head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
         stopDs = stopDistribution stopPhNames <$> stopDurationss
         stopDurationss = (zipWith . zipWith) (,) runDurationss stoppedAtPhss
@@ -221,38 +227,49 @@ envKDOEBaseFigs cMap switchMap exMeta scanRuns = stopDistFig:timeInSwFigs
         stoppedAtPhss = getStopPhs stopPhNames <<$>> scanRuns
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
-simpleTISwPhsDia :: ColorMap
-                 -> SCExpMeta
-                 -> [[Timeline]]
-                 -> (ScanSwitch, [PhenotypeName])
-                 -> Diagram B
-simpleTISwPhsDia cMap exMeta trScanRuns (_, phNs) =
-    ((fst . runBackendR dEnv . toRenderable) layout) # center
-    where
-        dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1200 1200
-        layout =
-            layout_y_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_x_axis . laxis_style . axis_label_style . font_size .~ 24
-          $ layout_legend .~ legend
-          $ layout_plots .~ [plotBars barsPhDist]
-          $ def
+envKDOELayout :: ColorMap
+              -> SCExpMeta
+              -> [[Timeline]]
+              -> (ScanSwitch, [PhenotypeName])
+              -> Layout PlotIndex Double
+envKDOELayout cMap exMeta trScanRuns (swName, phNs) = layout
+  where
+    layout =
+        layout_legend .~ legend
+      $ layout_y_axis . laxis_title .~ yTitle
+      $ layout_y_axis . laxis_title_style . font_size .~ 12
+      $ layout_x_axis . laxis_override .~ axisGridHide
+      $ layout_y_axis . laxis_override .~ axisGridHide
+      $ layout_x_axis . laxis_title .~ xTitle
+      $ layout_x_axis . laxis_title_style . font_size .~ 16
+      $ layout_x_axis . laxis_generate .~ autoIndexAxis xPlotLabels
+      $ layout_plots .~ [plotBars barsPhDist]
+      $ def
+        where
+          legend = Just $
+              legend_margin .~ 7
+            $ legend_orientation .~ LORows 2
+            $ def
+              
+          barsPhDist =
+              plot_bars_titles .~ (T.unpack <$> phNs)
+            $ plot_bars_values .~ addIndexes plotValues
+            $ plot_bars_style .~ BarsStacked
+            $ plot_bars_item_styles .~ (mkStyle <$> phNColors)
+            $ def
             where
-                legend = Just $
-                    legend_label_style . font_size .~ 24
-                  $ def
-        barsPhDist =
-            plot_bars_titles .~ (T.unpack <$> phNs)
-          $ plot_bars_values .~ (zip xRange plotValues)
-          $ plot_bars_style .~ BarsStacked
-          $ plot_bars_item_styles .~ (mkStyle <$> phNColors)
-          $ def
-            where
-                mkStyle c = (solidFillStyle c, bstyles)
-                bstyles = Just (solidLine 0.5 $ opaque black)
-        plotValues = phDistribution phNs <$> trScanRuns
-        xRange = (snd . head . scanXAxisData . scMetaScanKind) exMeta
-        phNColors = (opaque . (cMap M.!)) <$> phNs
-
+              mkStyle c = (solidFillStyle c, bstyles)
+              bstyles = Just (solidLine 0.5 $ opaque black)
+          xTitle = case scMetaScanKind exMeta of
+            MetaEnvKDOEScan _ _ xAx -> case xAx of
+              KDOEX -> xTitleBase
+              EnvX -> "% lock of " <> xTitleBase
+            _ -> ""
+          yTitle = T.unpack swName ++ ": % in Phenotypes"
+          plotValues = phDistribution phNs <$> trScanRuns
+          xPlotLabels = show <$> xRange
+          (xTitleBase, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
+          phNColors = (opaque . (cMap M.!)) <$> phNs
 
 -- What fraction of all the time steps in a [Timeline] is each Phenotype
 -- present? 
@@ -276,11 +293,11 @@ scanXAxisData (MetaEnvSc inptName spread) = [(T.unpack inptName, spread)]
 scanXAxisData (MetaKDOESc lockNodes spread) = [(T.unpack lockT, spread)]
     where
         lockT = (T.intercalate ", " . fmap lockF) lockNodes
-        lockF (nN, nSt) = nN <> ":" <>tShow nSt
+        lockF (nN, nSt) = nN <> ":" <> tShow nSt
 scanXAxisData (MetaEnvKDOEScan envD kdoeD xAx) = case xAx of
-    EnvX -> scanXAxisData (uncurry MetaEnvSc envD) <>
+    KDOEX -> scanXAxisData (uncurry MetaEnvSc envD) <>
         scanXAxisData (uncurry MetaKDOESc kdoeD)
-    KDOEX -> scanXAxisData (uncurry MetaKDOESc kdoeD) <>
+    EnvX -> scanXAxisData (uncurry MetaKDOESc kdoeD) <>
         scanXAxisData (uncurry MetaEnvSc envD)
 scanXAxisData (MetaTwoDEnvScan envD1 envD2 mkdD) = case mkdD of
     Nothing -> (scanXAxisData (uncurry MetaEnvSc envD1)) <>
@@ -320,6 +337,32 @@ trimPhStoppedTmln :: [PhenotypeName] -> Timeline -> Timeline
 trimPhStoppedTmln stopPHNs tmln = case getStopPhs stopPHNs tmln of
     [] -> tmln
     _  -> B.init tmln
+
+xTitleColumn :: SCExpMeta
+             -> String
+             -> Double
+             -> [Layout PlotIndex Double]
+             -> [Layout PlotIndex Double]
+xTitleColumn _ _ _ [] = []
+xTitleColumn exMeta xAxisName xAxisValue (layout:layouts) = titledLayout:layouts
+    where
+        titledLayout = (layout_title .~ titleString) $ layout
+        titleString = case scMetaScanKind exMeta of
+            MetaEnvKDOEScan _ _ xAx -> case xAx of
+                EnvX -> xAxisName <> ": " <> fpShow xAxisValue
+                KDOEX -> xAxisName <> "@" <> fpShow (100 * xAxisValue) <> "%"
+            _ -> ""
+        fpShow :: Double -> String
+        fpShow = printf "%.0f" 
+
+stripLRows :: [Layout PlotIndex Double]
+           -> [Layout PlotIndex Double]
+stripLRows [] = []
+stripLRows (leftL:lss) = leftL:(stripper <$> lss)
+    where
+        stripper layout = layout_y_axis . laxis_title .~ ""
+                        $ layout
+
 
 scHeatMapDias :: M.HashMap ScanSwitch [PhenotypeName]
               -> SCExpMeta
@@ -443,3 +486,6 @@ tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
                                       # fillColor black
                                       # lineWidth none
                                       # center
+                                      # bold
+
+
