@@ -1,11 +1,11 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
 name:           dynmod
-version:        0.7.5.0
+version:        0.8.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/dynmod#readme>
 homepage:       https://github.com/Ravasz-Regan-Group/dynmod#readme
 bug-reports:    https://github.com/Ravasz-Regan-Group/dynmod/issues
@@ -29,12 +29,7 @@ library
       Input
       Parse
       Parse.DMMS
-      Parse.UI
-      Parse.GML
       Types
-      Types.DMModel
-      Types.Simulation
-      Types.GML
       Compare
       Visualize
       ReadWrite
@@ -48,19 +43,24 @@ library
       Properties.LayerCharacteristics
       Properties.Attractors
       Figures
-      Figures.AttHeatMap
-      Figures.InputSpaceFigure
-      Figures.TimeCourse
-      Figures.BarCharts
   other-modules:
+      Figures.AttHeatMap
+      Figures.BarCharts
+      Figures.InputSpaceFigure
       Figures.Scan
+      Figures.TimeCourse
       Parse.Attractor
+      Parse.GML
+      Parse.UI
       Parse.VEX
       Text.LaTeX.DynMod.Extra
       Types.DMInvestigation
       Types.DMInvestigation.Scan
       Types.DMInvestigation.TimeCourse
+      Types.DMModel
       Types.Figures
+      Types.GML
+      Types.Simulation
       Types.VEXInvestigation
       Paths_dynmod
   hs-source-dirs:

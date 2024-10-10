@@ -1,5 +1,5 @@
 name:                dynmod
-version:             0.7.5.0
+version:             0.8.0.0
 github:              "Ravasz-Regan-Group/dynmod"
 license:             BSD3
 author:              "Peter Regan"
@@ -30,12 +30,7 @@ library:
   - Input
   - Parse
   - Parse.DMMS
-  - Parse.UI
-  - Parse.GML
   - Types
-  - Types.DMModel
-  - Types.Simulation
-  - Types.GML
   - Compare
   - Visualize
   - ReadWrite
@@ -49,10 +44,6 @@ library:
   - Properties.LayerCharacteristics
   - Properties.Attractors
   - Figures
-  - Figures.AttHeatMap
-  - Figures.InputSpaceFigure
-  - Figures.TimeCourse
-  - Figures.BarCharts
   ghc-options:
   - -Wall
   - -O2
