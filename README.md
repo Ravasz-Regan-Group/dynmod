@@ -72,7 +72,7 @@ other associated programs) by running:
     
     update_dynmod() {
         rm -r dynmod
-        git clone https://github.com/Ravasz-Regan-Group/dynmod
+        git clone https://github.com/Ravasz-Regan-Group/dynmod
         cd dynmod
         stack install
     }

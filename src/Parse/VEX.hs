@@ -97,9 +97,10 @@ variable = (lexeme . try) (p >>= check)
 
 -- Parse an identified FilePath
 identifiedFilePathParse :: T.Text -> Parser FilePath
-identifiedFilePathParse name = lexeme $ rword name >> colon >> p
+identifiedFilePathParse name = lexeme $ rword name >> colon >> (stripF <$> p)
     where
         p = (:) <$> letterChar <*> manyTill printChar eol
+        stripF = T.unpack . T.strip . T.pack
 
 
 -- Parse a VEX file. 
@@ -287,7 +288,7 @@ pulseParse :: Parser VEXInputPulse
 pulseParse = between (symbol "Pulse{") (symbol "Pulse}")
     (runPermutation $
         VEXInPt <$> toPermutation (realCoordParse "InputFix")
-                <*> toPermutation nodeAlterationsParse
+                <*> toPermutationWithDefault [] nodeAlterationsParse
                 <*> (toPermutation (durationParse "Duration"))
         
     )
@@ -575,7 +576,7 @@ stopPhParse :: Parser [(NodeName, PhenotypeName)]
 stopPhParse = lexeme $ rword "StopPhenotypes" >>
     (try
         (colon >>
-            (sepBy1 ((,) <$> variable <*> (colon >> variable)) comma)
+            (sepBy ((,) <$> variable <*> (colon >> variable)) comma)
         )
     )
 

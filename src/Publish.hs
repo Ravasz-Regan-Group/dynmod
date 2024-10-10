@@ -1,6 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Publish (mkPublish, prettyPublish, isUnescaped) where
+module Publish
+    ( mkPublish
+    , prettyPublish
+    , isUnescaped
+    ) where
 
 import Types.DMModel
 import Utilities
@@ -10,7 +14,8 @@ import qualified Data.Text as T
 import qualified Data.HashSet as Set
 import qualified Data.HashMap.Strict as Map
 import Data.Validation
-import Data.Maybe (fromJust)
+import qualified Data.Bifunctor as BF
+import Data.Maybe (fromJust, mapMaybe)
 import qualified Data.List as L
 
 
@@ -49,15 +54,18 @@ nTypePrep errs
   | numErrs == 0 = ""
   | otherwise    = errorText <> (sPShowNoColor nodes)
     where
-        nodes = (\(UndefinedNodeType x) -> x) <$> nTypeErrs
         errorText =" A NodeType must be one of:\n" <> typesList <> presentText
         presentText
           | numErrs == 1 = "\n This Node's NodeType is undefined:\n"
           | otherwise    = "\n The following Nodes have undefined NodeTypes:\n"
-        numErrs = length nTypeErrs
+        numErrs = length nodes
+        nodes = mapMaybe undefinedNodeType errs
         typesList = sPShowNoColor optionList
         optionList = tail [minBound :: NodeType ..]
-        nTypeErrs = filter isUndefinedNodeType errs
+
+undefinedNodeType :: PubInvalid -> Maybe T.Text
+undefinedNodeType (UndefinedNodeType x) = Just x
+undefinedNodeType _                     = Nothing
 
 isUndefinedNodeType :: PubInvalid -> Bool
 isUndefinedNodeType (UndefinedNodeType _) = True
@@ -139,7 +147,7 @@ isOrphanedModelCites _                      = False
 -- in a working model needs to be nailed down at that point. 
 mkPublish :: (DMModel, CitationDictionary)
           -> Validation [PubInvalid] (DMModel, CitationDictionary)
-mkPublish (dmM, cts) = (,) <$> (mkPublishModel dmM)
+mkPublish (dmM, cts) = (,) <$> (mkPublishModel dmM <* mkPublishNodeOverlap dmM)
                            <*> (mkPublishCiteDict mKeys cts)
     where mKeys = modelCiteKeys dmM
 
@@ -350,5 +358,34 @@ mkOriginPublish :: GateOrigin -> NodeName -> Validation [PubInvalid] GateOrigin
 mkOriginPublish gO nM
     | gO == DMMSTruthTable = Failure [GateFromTable nM]
     | otherwise = Success gO
-    
-   
+
+-- Check whether any node's coordinates overlaps with any other. We use 30 as
+-- the cutoff because that is the default display size in yEd. 
+mkPublishNodeOverlap :: DMModel -> Validation [PubInvalid] DMModel 
+mkPublishNodeOverlap dmM
+    | L.null overLNs = Success dmM
+    | otherwise = Failure [OverlappingNodes overLNs]
+    where
+        overLNs = overlappingNodes mNodes
+        mNodes = (mconcat . modelNodes) dmM
+
+-- Which DMNodes in a list overlap with each other?
+overlappingNodes :: [DMNode] -> [((NodeName, NodeName), Double)]
+overlappingNodes [] = []
+overlappingNodes (_:[]) = []
+overlappingNodes (n:ns) = nInsert <> (overlappingNodes ns)
+    where
+        nInsert :: [((NodeName, NodeName), Double)]
+        nInsert = (BF.first ((,) (nName n))) <$> overLaps
+        overLaps = filter (\(_, d) -> d <= 30) $ tracker n <$> ns
+        tracker n1 n2 = (nName n2, nodeDistance n1 n2)
+        nName = nodeName . nodeMeta
+
+-- What is the distance between two DMNodes? If the two are of different
+-- dimensions, cut the larger one. 
+nodeDistance :: DMNode -> DMNode -> Double
+nodeDistance n1 n2 = (sqrt . U.sum) $ U.zipWith zipper (coord n1) (coord n2)
+    where
+        zipper :: Double -> Double -> Double
+        zipper u w = (u - w)^^(2 :: Int)
+        coord = nodeCoordinate . nodeMeta

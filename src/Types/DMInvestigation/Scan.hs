@@ -31,7 +31,6 @@ import Data.Maybe (mapMaybe, fromJust)
 import System.Random
 
 
-
 data DMScan = Sc {
       scanKind :: SCExpKind
     , scExpMeta :: SCExpMeta
@@ -127,9 +126,9 @@ mkSCExpKind mL (EnvKDOEScan envScan kdoeScan xAx) =
                    <*> mkIntKDOEScan mL kdoeScan
                    <*> pure xAx
 mkSCExpKind mL (TwoDEnvScan envScan1 envScan2 mKDOESc) =
-    IntTwoDEnvScan <$> mkIntEnvScan mL envScan1
-                   <*> mkIntEnvScan mL envScan2
-                   <*> (traverse (mkIntKDOEScan mL) mKDOESc)
+        IntTwoDEnvScan <$> mkIntEnvScan mL envScan1
+                       <*> mkIntEnvScan mL envScan2
+                       <*> (traverse (mkIntKDOEScan mL) mKDOESc)
 mkSCExpKind mL  (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
     IntThreeDEnvScan <$> mkIntEnvScan mL envScan1
                      <*> mkIntEnvScan mL envScan2
@@ -388,14 +387,14 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
     (newGen, (bc, SKRTwoEnvWithoutKDOE res))
     where
         (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
-        variations = fmap (envSpread intEnv2) (mkEnvVars intEnv1)
+        variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
   IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
     (newGen, (bc, SKRTwoEnvWithKDOE res))
     where
         (newGen, res) = (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
         vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
-        tier2 = fmap (envSpread intEnv2) tier1
-        tier1 = mkEnvVars intEnv1
+        tier2 = fmap (envSpread intEnv1) tier1
+        tier1 = mkEnvVars intEnv2
   IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
     (newGen, (bc, SKRThreeEnv (res, resWMutations)))
     where
@@ -406,9 +405,9 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
         (resWMutationsGen, res) =
             (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
         varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
-        vars = (fmap . fmap) (envSpread intEnv3) tier2
+        vars = (fmap . fmap) (envSpread intEnv1) tier2
         tier2 = fmap (envSpread intEnv2) tier1
-        tier1 = mkEnvVars intEnv1
+        tier1 = mkEnvVars intEnv3
   where
     rVarF = runVariation lInfo scanEx att
 

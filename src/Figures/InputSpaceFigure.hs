@@ -41,8 +41,9 @@ attractorESpaceFigure :: ColorMap
                       -> InputBundle
                       -> Diagram B
 attractorESpaceFigure cMap mMap lniBMap atts iBundle =
-    frame 3.0 $ figureDia === legendDia
+    frame 3.0 $ figureDia === (scale (0.75 * sFactor) legendDia)
     where
+        sFactor = width figureDia / width legendDia
         figureDia
             | L.null dimList =
                 let bcCluster = mkBCCluster atts
@@ -318,14 +319,14 @@ penteractLabels xNames yNames zNames wNames vNames unitScale = finalLs
         finalLs = xyzwLabels <> vLabels
         vLabels = mconcat $ zipWith place vTexts shiftedNPts
         shiftedNPts = (flip (.+^) vLabelDisp) <$> vPts
-        vLabelDisp = (unitScale / (-2)) ^& 0
+        vLabelDisp = (unitScale * (-0.75)) ^& (unitScale / 2)
         vPts = dimSpread (gridEdges vNames) displacement $ p2 (0,0)
         displacement = 0 ^& (unitScale * 2 * largestLinedDim)
         largestLinedDim = (fromIntegral . maximum . (gridEdges <$>))
             [xNames, yNames, zNames]
-        vTexts = variableText' <$> vNames
+        vTexts = textF <$> vNames
+        textF = rotateBy (1/4) . variableText (unitScale/8.0)
         xyzwLabels = tesseractLabels xNames yNames zNames wNames unitScale
-        variableText' t = variableText (unitScale/8.0) t # alignR
 
 tesseractLabels :: [NodeName] -> [NodeName] -> [NodeName] -> [NodeName]
                 -> Double -> Diagram B
@@ -349,21 +350,19 @@ cubeLabels xNames yNames zNames unitScale = xyLabels <> zLabels
         zLabelDisp = ((1/8) *^ displacement) ^+^ ((unitScale / 8) ^& 0)
         zPts = dimSpread (gridEdges zNames) displacement $ p2 (0,0)
         displacement = unitScale *^ cubeVector
-        zTexts = variableText' <$> zNames
+        zTexts = (alignL . variableText (unitScale/8.0)) <$> zNames
         xyLabels = squareLabels xNames yNames unitScale
-        variableText' t = variableText (unitScale/8.0) t # alignL
 
 squareLabels :: [NodeName] -> [NodeName] -> Double -> Diagram B
 squareLabels xNames yNames unitScale = xLabels <> (mconcat yLabels)
     where
         yLabels = zipWith place yTexts shiftedYPts
         shiftedYPts = (flip (.+^) yLabelDisp) <$> yPts
-        yLabelDisp = (unitScale / (-5)) ^& 0
+        yLabelDisp = (unitScale / (-2.9)) ^& 0
         yPts = dimSpread (gridEdges yNames) displacement $ p2 (0,0)
         displacement = 0 ^& unitScale
-        yTexts = variableText'  <$> yNames
+        yTexts = (alignR . variableText (unitScale/8.0)) <$> yNames
         xLabels = lineLabels xNames unitScale
-        variableText' t = variableText (unitScale/8.0) t # alignR
 
 lineLabels :: [NodeName] -> Double -> Diagram B
 lineLabels xNames unitScale = mconcat $ zipWith place texts shiftedPts
@@ -379,20 +378,13 @@ gridEdges xs = length xs - 1
 cubeVector :: V2 Double
 cubeVector = 0.32 ^& 0.44
 
-
--- tText' :: T.Text -> Diagram B
--- tText' t = F.svgText def (T.unpack t) # F.fit_height 4
---                                       # F.set_envelope
---                                       # fillColor black
---                                       # lineWidth none
---                                       # center
-
 variableText :: Double -> T.Text -> Diagram B
 variableText h t = F.svgText def (T.unpack t) # F.fit_height h
                                               # F.set_envelope
                                               # fillColor black
                                               # lineWidth none
                                               # center
+
 
 attESpaceFigLegend :: ColorMap -> ModelMapping -> Diagram B
 attESpaceFigLegend cMap mMap = hsep 1.0 evenedBlocks

@@ -26,7 +26,6 @@ import Text.Printf (printf)
 import GHC.IO (unsafePerformIO)
 
 
-
 data ScanExpFigure = EnvScFig BaseScanFigs
                    | KDOEScFig BaseScanFigs
                    | EnvKDOESc (Diagram B)
@@ -133,8 +132,6 @@ baseScDia cMap switchMap exMeta scanRuns = BSFgs stopDistFig timeInSwFigs
                 bstyles = Just (solidLine 0.5 $ opaque black)
         stopDColors = (fmap opaque . (CN.whitesmoke:) . fmap (cMap M.!))
                         stopPhNames
-        xPlotIndices :: [PlotIndex]
-        xPlotIndices = fromValue <$> xRange
         xPlotLabels = show <$> xRange
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
@@ -183,8 +180,6 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) =
         xPlotLabels = show <$> xRange
         plotValues = phDistribution phNs <$> trScanRuns
         layoutTitle = scExpName exMeta <> ", Time In: " <> scSw
-        xPlotIndices :: [PlotIndex]
-        xPlotIndices = fromValue <$> xRange
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         phNColors = (opaque . (cMap M.!)) <$> phNs
 
@@ -283,13 +278,14 @@ phDistribution :: [PhenotypeName]
 phDistribution switchPhNs scanRun = snd <$> presPhList
     where
         presPhList = (sortWithOrderOn fst switchPhNs . M.toList) presPhMap
-        presPhMap = M.map (\x -> fromIntegral x / divisor) rMap
-        rMap = L.foldl' foldF mapAccum allStepps
-        mapAccum = M.fromList $ zip switchPhNs $ repeat (0 :: Int)
+        presPhMap = M.map (/ divisor) rMap
+        rMap = L.foldl' foldF mapAccum allSteps
+        mapAccum :: M.HashMap PhenotypeName Double
+        mapAccum = M.fromList $ zip switchPhNs $ repeat 0
         foldF phMap (_, presentPhNs) = L.foldl' foldF' phMap presentPhNs
             where foldF' phM phN = M.adjust (+1) phN phM
-        allStepps = B.concat scanRun
-        divisor = ((fromIntegral . sum . fmap B.length) scanRun) :: Double
+        divisor = ((fromIntegral . B.length) allSteps) :: Double
+        allSteps = B.concat scanRun
 
 -- Pull out what being scanned over, and the range of the scan. 
 scanXAxisData :: MetaScanKind -> [(String, [Double])]
@@ -392,17 +388,18 @@ scHeatMapDia :: ((String, [Double]), (String, [Double]))
              -> Diagram B
 scHeatMapDia rangeData (titleT, hmValues) = P.renderAxis $ P.r2Axis &~ do
     let ((xTitle, xRange), (yTitle, yRange)) = rangeData 
-        xStepSize = abs $ last xRange / (fromIntegral . length) xRange
-        yStepSize = abs $ (yRange L.!! 1) - (yRange L.!! 0)
+        xStepSize = (last xRange - head xRange) / (fromIntegral . length) xRange
+        yStepSize = (last yRange - head yRange) / (fromIntegral . length) yRange
     P.display P.colourBar
     P.titleText .= T.unpack titleT
     P.axisExtend .= P.noExtend
---     P.axisColourMap .= P.plasma
     P.xLabel .= xTitle
     P.yLabel .= yTitle
     P.heatMap hmValues $ do
+        P.heatMapStart .= mkP2 (head xRange) (head yRange)
         P.heatMapSize .= V2 xStepSize yStepSize
         P.heatMapLimits .= (Just (0, 1))
+    P.colourBarRange .= (0,1)
 
 
 scDifferenceHeatMapDia :: M.HashMap ScanSwitch [PhenotypeName]

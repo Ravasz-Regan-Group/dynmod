@@ -763,6 +763,7 @@ data PubInvalid =   UndefinedNodeType UndefinedNodeType
                   | OrphanedModelCites OrphanedModelCites
                   | ExcessDictCites ExcessDictCites
                   | GateFromTable GateFromTable
+                  | OverlappingNodes [((NodeName, NodeName), Double)]
     deriving (Show, Eq, Ord)
 
  -- The name of the piece missing a description, and its associated type. 

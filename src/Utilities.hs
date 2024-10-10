@@ -266,3 +266,11 @@ allUnique = all ( (==) 1 . length) . L.group . L.sort
 
 tShow :: Show a => a -> T.Text
 tShow = T.pack . show
+
+-- Very naively, make some guess as to how wide given T.Text would be printed, 
+-- by counting capital letters. Take a lower case m as the base. 
+-- textWidth :: T.Text -> Double
+-- textWidth t = T.length t + (capitalBonus * capitalCount)
+--     where
+--         capitalCount = (T.length . T.filter isUpper) t
+--         capitalBonus = 140/120

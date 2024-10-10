@@ -13,9 +13,9 @@ import Types.Figures
 import Utilities
 import Diagrams.Prelude
 import Diagrams.Backend.Cairo
-import qualified Graphics.SVGFonts as F
 import Graphics.Rendering.Chart hiding (scale)
 import Graphics.Rendering.Chart.Backend.Diagrams
+import qualified Graphics.SVGFonts as F
 import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
 import qualified Data.Vector.Unboxed as U
@@ -184,13 +184,6 @@ phBChArrange minRowSize dias
 expLabelDia :: Double -> T.Text -> Diagram B
 expLabelDia stripHt exName = tText' stripHt exName # center
 
-tText' :: Double -> T.Text -> Diagram B
-tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
-                                      # F.set_envelope
-                                      # fillColor black
-                                      # lineWidth none
-                                      # center
-
 bChartExpGuide :: ModelLayer
                -> TCExpMeta
                -> [PulseSpacing]
@@ -212,9 +205,11 @@ bChartExpGuide mL exMeta pSps = pulseDia
 bCHpulseSpacingDia :: Double
                    -> (Int, [[(NodeName, RealNodeState)]], [NodeAlteration])
                    -> Diagram B
-bCHpulseSpacingDia stripHt (pW, inputLs, nAlts) =
-    tText' stripHt iptSetT === hDiv === vcat (tText' stripHt <$> nAltTexts)
+bCHpulseSpacingDia stripHt (_, inputLs, nAlts) = iptSetDia === hDv === nAltsDia
     where
+        hDv = hrule (width iptSetDia) # lw ultraThin
+        nAltsDia = vcat $ tText' stripHt <$> nAltTexts
+        iptSetDia = tText' stripHt iptSetT
         iptSetT = T.intercalate ", " $ inputCoordText <$> inputLs
         nAltTexts
             | L.null nudges && L.null locks = []
@@ -224,7 +219,14 @@ bCHpulseSpacingDia stripHt (pW, inputLs, nAlts) =
         nudgeText = "Nudge: " <> T.intercalate ", "  (nAltTPrep <$> locks)
         lockText = "Lock: " <> T.intercalate ", "  (nAltTPrep <$> locks)
         (locks, nudges) = L.partition isNodeLock nAlts
-        hDiv = hrule (fromIntegral pW) # lw ultraThin
+--         hDiv = hrule (fromIntegral pW) # lw ultraThin
+
+tText' :: Double -> T.Text -> Diagram B
+tText' tHt t = F.svgText def (T.unpack t) # F.fit_height tHt
+                                      # F.set_envelope
+                                      # fillColor black
+                                      # lineWidth none
+                                      # center
 
 -- Make a [T.Text] of the changing inputs in each PulseSpacing of a
 -- [PulseSpacing]. 
