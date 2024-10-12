@@ -137,17 +137,20 @@ data XAxis = EnvX
             deriving (Eq, Show)
 
 data EnvScan =
+-- Specify directly which input levels to scan. 
 -- NodeName of the first DMNode in an input [[DMNode]]
-    RangeESC NodeName
--- Start state, which might be any of the whole range of the input, and so not
+    StepSpecESC NodeName [Double]
+  | RangeESC NodeName
+-- Start state, which might be any on the whole range of the input, and so not
 -- necessarily a valid NodeState. 
-             Int
-             Int -- End state, ditto
+             Double
+             Double -- End state, ditto
              ScanSteps -- Steps to get there
   | WholeESC NodeName ScanSteps -- Scan over the whole input range. 
              deriving (Eq, Show)
 
 envScanInputName :: EnvScan -> NodeName
+envScanInputName (StepSpecESC nName _) = nName
 envScanInputName (RangeESC nName _ _ _) = nName
 envScanInputName (WholeESC nName _) = nName
 
@@ -205,8 +208,9 @@ data VEXInvestigationInvalid =
     | UnknownNodeInInputScan NodeName
     | DuplicateEnvScanNodeInScan NodeName
     | InputScanNodeNotTopLevel NodeName
-    | InValidInputScanStart NodeName Int (Int, Int)
-    | InValidInputScanEnd NodeName Int (Int, Int)
+    | InValidInputScanStart NodeName Double (Int, Int)
+    | InValidInputScanEnd NodeName Double (Int, Int)
+    | InvalidInputScanValues NodeName [Double] (Int, Int)
     | KDOEScanLocksRepeat [NodeName]
     | UnknownNodesInKDOEScanLocks [NodeName]
     | InputsInKDOEScanLocks [NodeName]
@@ -332,6 +336,9 @@ vexErrorPrep (InValidInputScanStart nName startSt rnge) =
         "; actual range: " <> tShow rnge
 vexErrorPrep (InValidInputScanEnd nName startSt rnge) =
     "InValidInputScanEnd: " <> nName <> ": " <> tShow startSt <>
+        "; actual range: " <> tShow rnge
+vexErrorPrep (InvalidInputScanValues nName oobSteps rnge) =
+    "InvalidInputScanValues: " <> nName <> ": " <> tShow oobSteps <>
         "; actual range: " <> tShow rnge
 vexErrorPrep (KDOEScanLocksRepeat nNms) =
     "KDOEScanLocksRepeat" <> T.intercalate ", " nNms

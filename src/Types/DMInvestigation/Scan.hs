@@ -74,10 +74,11 @@ data SCExpKind =
     | IntThreeDEnvScan IntEnvScan IntEnvScan IntEnvScan [IntNodeAlteration]
     deriving (Eq, Show)
 
-data IntEnvScan = IntESC FixedVec --[[DMNode]] input start state
-                         FixedVec -- [[DMNode]] input end state
+data IntEnvScan = IntESC RealInputCoord --[[DMNode]] input start state
+                         RealInputCoord -- [[DMNode]] input end state
                          ScanSteps -- Steps to get there
-                         deriving (Eq, Show)
+                | IntStepSpecESC [RealInputCoord]
+                deriving (Eq, Show)
 
 type IntKDOEScan = (ScanSteps, [(NodeIndex, NodeState)])
 
@@ -140,20 +141,41 @@ mkSCExpKind mL  (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
 -- e.g. refer to the levels of [GF_High, GF] by GF_High 0, 1, or 2
 mkIntEnvScan :: ModelLayer -> EnvScan
              -> Validation [VEXInvestigationInvalid] IntEnvScan
+mkIntEnvScan mL (StepSpecESC nName stepValues)
+    | notElem nName mlNodeNames = Failure [UnknownNodeInInputScan nName]
+    | notElem nName inputNodeNames = Failure [NonInputNodeInInputScan nName]
+    | notElem nName topLevelNames = Failure [InputScanNodeNotTopLevel nName]
+    | (not . L.null) oobSteps =
+        Failure [InvalidInputScanValues nName oobSteps (0, inputTop)]
+    | otherwise = IntStepSpecESC <$> preppedRICs
+    where
+        preppedRICs = traverse (mkRealInputCoordinate mL) preppedSteps
+        preppedSteps = (pure . (,) nName) <$> (L.sort stepValues)
+        oobSteps = filter oobF stepValues
+        oobF x = not $ (x >= 0) && (x <= fromIntegral inputTop)
+        inputTop = inputDegrees inputStack - 1
+        inputStack = (fromJust . L.find ipFF) inPts
+        ipFF = (== nName) . nodeName . nodeMeta . head
+        topLevelNames = (nodeName . nodeMeta) <$> topLevels
+--      Here we take advantage of the fact that inputs calls soleSelfLoops on
+--      the LayerGraph as the seeds for finding the layer inputs, so they will
+--      always be the head of the input lists. 
+        topLevels = head <$> inPts
+        inputNodeNames = mconcat $ (nodeName . nodeMeta) <<$>> inPts
+        inPts = (inputs . modelGraph) mL
+        mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
 mkIntEnvScan mL (RangeESC nName startSt endSt sSteps)
     | notElem nName mlNodeNames = Failure [UnknownNodeInInputScan nName]
     | notElem nName inputNodeNames = Failure [NonInputNodeInInputScan nName]
     | notElem nName topLevelNames = Failure [InputScanNodeNotTopLevel nName]
     | not inbStart = Failure [InValidInputScanStart nName startSt (0, inputTop)]
     | not inbEnd = Failure [InValidInputScanEnd nName endSt (0, inputTop)]
-    | otherwise = Success $ IntESC startFixedVec endFixedVec sSteps
+    | otherwise = IntESC <$> mkRealInputCoordinate mL [(nName, startSt)]
+                         <*> mkRealInputCoordinate mL [(nName, endSt)]
+                         <*> pure sSteps
     where
-        startFixedVec = inputFVecs L.!! startSt
-        endFixedVec = inputFVecs L.!! endSt 
-        inputFVecs = inputLevels lniBMap Nothing inputStack
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
-        inbEnd = (endSt >= 0) && (endSt <= inputTop)
-        inbStart = (startSt >= 0) && (startSt <= inputTop)
+        inbEnd = (endSt >= 0) && (endSt <= (fromIntegral inputTop))
+        inbStart = (startSt >= 0) && (startSt <= (fromIntegral inputTop))
         inputTop = inputDegrees inputStack - 1
         inputStack = (fromJust . L.find ipFF) inPts
         ipFF = (== nName) . nodeName . nodeMeta . head
@@ -169,10 +191,10 @@ mkIntEnvScan mL (WholeESC nName sSteps)
     | notElem nName mlNodeNames = Failure [UnknownNodeInInputScan nName]
     | notElem nName inputNodeNames = Failure [NonInputNodeInInputScan nName]
     | notElem nName topLevelNames = Failure [InputScanNodeNotTopLevel nName]
-    | otherwise = Success $ IntESC startFixedVec endFixedVec sSteps
+    | otherwise = Success $ IntESC startRIC endRIC sSteps
     where
-        startFixedVec = head inputFVecs
-        endFixedVec = last inputFVecs
+        startRIC = (U.map (fmap fromIntegral) . head) inputFVecs
+        endRIC = (U.map (fmap fromIntegral) . last) inputFVecs
         inputFVecs = inputLevels lniBMap Nothing inputStack
         inputStack = (fromJust . L.find ipFF) inPts
         ipFF = (== nName) . nodeName . nodeMeta . head
@@ -243,8 +265,9 @@ mkMetaScanKind inPts sc = case sc of
 -- mkMetaScanKind!
 mkMetaEnvSc :: [[DMNode]] -> EnvScan -> (NodeName, [Double])
 mkMetaEnvSc inPts envScan = case envScan of
+    (StepSpecESC nName stepValues) -> (nName, stepValues)
     (RangeESC nName sSt eSt scStps) -> (nName, mkSteps sSt eSt scStps)
-    (WholeESC nName scStps) -> (nName, mkSteps 0 inputTop scStps)
+    (WholeESC nName scStps) -> (nName, mkSteps 0 (fromIntegral inputTop) scStps)
         where
             inputTop = (inputDegrees ((fromJust . L.find ipFF) inPts)) - 1
             ipFF = (== nName) . nodeName . nodeMeta . head
@@ -351,6 +374,8 @@ mkScDetails (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
             | otherwise = "_" <> kdoeDetails nAlts
 
 mkEnvDetails :: EnvScan -> T.Text
+mkEnvDetails (StepSpecESC nName stepValues) =
+    "StepSpecESC" <> nName <> "_" <> tShow stepValues
 mkEnvDetails (RangeESC nName startSt endSt scSteps) = "RangeESC_" <> nName <>
     "_" <> tShow startSt <> "_" <> tShow endSt <> "_over_" <> tShow scSteps
 mkEnvDetails (WholeESC nName scSteps) = "WholeESC_" <> nName <> "_over_" <>
@@ -418,13 +443,14 @@ mkEnvVars :: IntEnvScan -> [ScanVariation]
 mkEnvVars intEnv = zipWith SCVar (mkRealICS intEnv) (repeat [])
 
 mkRealICS :: IntEnvScan -> [RealInputCoord]
-mkRealICS (IntESC startFixedVec endFixedVec nSts) =
-    case U.length startFixedVec of
+mkRealICS (IntStepSpecESC rICs) = rICs
+mkRealICS (IntESC startRIC endRIC nSts) =
+    case U.length startRIC of
     0 -> []
     1 -> (U.singleton . (,) nI) <$> (mkSteps sSt eSt nSts)
         where
-            (_, eSt) = U.head endFixedVec
-            (nI, sSt) = U.head startFixedVec
+            (_, eSt) = U.head endRIC
+            (nI, sSt) = U.head startRIC
     iSize -> frILevel nIndices <$> fractionalLevels
         where
             frILevel nIds x = U.zip nIds $ U.fromList digitsList
@@ -438,8 +464,8 @@ mkRealICS (IntESC startFixedVec endFixedVec nSts) =
             fractionalLevels = mkSteps sSt eSt nSts
             sSt = U.sum stSts
             eSt = U.sum endSts
-            (nIndices, stSts) = U.unzip startFixedVec
-            endSts = (snd . U.unzip) endFixedVec
+            (nIndices, stSts) = U.unzip startRIC
+            endSts = (snd . U.unzip) endRIC
             
 mkKDOEVars :: IntKDOEScan -> [ScanVariation]
 mkKDOEVars intKDOE = zipWith SCVar (repeat U.empty) (mkIntNAltss intKDOE)
@@ -451,13 +477,11 @@ mkIntNAltss (scSteps, stNAlts) = rangeInserter stNAlts <$> rnge
             where primedFs = (uncurry IntNodeLock) <$> iAlts
         rnge = mkSteps 0 1 scSteps
 
-mkSteps :: Int -> Int -> Int -> [Double]
-mkSteps sSt eSt nSts = (init spreadL) <> [endSt]
+mkSteps :: Double -> Double -> Int -> [Double]
+mkSteps startSt endSt nSts = (init spreadL) <> [endSt]
     where
         spreadL = [startSt,listSpacer..endSt]
         listSpacer = startSt + ((endSt - startSt)/(scanStps - 1))
-        startSt = fromIntegral sSt
-        endSt = fromIntegral eSt
         scanStps = fromIntegral nSts
 
 -- Spread an IntKDOEScan over an existing ScanVariation. 

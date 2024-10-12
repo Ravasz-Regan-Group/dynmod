@@ -452,13 +452,18 @@ scanKindParse = (EnvSc <$> envScanParse)
 
 envScanParse :: Parser EnvScan
 envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
-    (   (try rangedEnvScanParse)
+    (   (try stepSpecifiedEnvScanParse)
+    <|> (try rangedEnvScanParse)
     <|> wholeEnvScanParse
     )))
     where
+        stepSpecifiedEnvScanParse = StepSpecESC
+            <$> variable
+            <*> between (symbol "[") (symbol "]")
+                    ((toRealFloat <$> number) `sepBy1` comma)
         rangedEnvScanParse = RangeESC <$> variable
-                                      <*> cInt
-                                      <*> (comma >> integer)
+                                      <*> (colon >> (toRealFloat <$> number))
+                                      <*> (comma >> (toRealFloat <$> number))
                                       <*> (comma >> integer)
         wholeEnvScanParse = WholeESC <$> variable <*> cInt
 
