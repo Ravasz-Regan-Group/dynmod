@@ -1527,7 +1527,7 @@ modelCiteKeys (Fine ml) = Set.unions [modelKeys, linkKeys, nodeKeys, mPaperKeys]
 modelCiteKeys (LayerBinding _ mLayer dmModel) =
     (modelCiteKeys (Fine mLayer)) `Set.union` (modelCiteKeys dmModel)
 
--- Extract all the names of the layers of  DMModel
+-- Extract all the names of the layers of a DMModel
 layerNames :: DMModel -> [T.Text]
 layerNames (Fine ml) = [(modelName . modelMeta) ml]
 layerNames (LayerBinding _ mLayer dmModel) =

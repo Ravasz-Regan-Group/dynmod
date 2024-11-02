@@ -30,7 +30,6 @@ import qualified Data.List as L
 import Data.Maybe (mapMaybe, fromJust)
 import System.Random
 
-
 data DMScan = Sc {
       scanKind :: SCExpKind
     , scExpMeta :: SCExpMeta
@@ -49,6 +48,7 @@ data SCExpMeta = SCEMeta {
     , scExpDetails :: T.Text
     , scMetaScanKind :: MetaScanKind
     , scExpSwitches :: [ScanSwitch]
+    , scExpScanNodes :: [ScanNode]
     , stopPhenotypes :: [(PhenotypeName, SubSpace)]
     } deriving (Eq, Show)
 
@@ -61,9 +61,11 @@ data MetaScanKind =
     | MetaTwoDEnvScan (NodeName, [Double])
                       (NodeName, [Double])
                       (Maybe ([(NodeName, NodeState)], [Double]))
+                      DoOverlayValues
     | MetaThreeDEnvScan (NodeName, [Double])
                         (NodeName, [Double])
                         (NodeName, [Double])
+                        DoOverlayValues
     deriving (Eq, Show)
 
 data SCExpKind = 
@@ -97,12 +99,12 @@ data ScanResult = SKREnv [[Timeline]]
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
        -> Validation [VEXInvestigationInvalid] DMScan
 mkDMScan mM mL
-  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep scSws mPRMNGSeed) =
+  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep pltNds mPRMNGSeed) =
     case mkSCExpKind mL scKnd of
     Failure errs -> Failure errs
     Success intScKnd ->
         Sc <$> pure intScKnd
-           <*> mkSCExpMeta mM inPts expName expDetails scSws stopPhs scKnd
+           <*> mkSCExpMeta mM mL expName expDetails pltNds stopPhs scKnd
            <*> pure maxN
            <*> pure relN
            <*> mkIntNodeAlterations mL nAlts
@@ -111,7 +113,6 @@ mkDMScan mM mL
            <*> (traverse (mkRealInputCoordinate mL) mIFix)
            <*> pure (mkStdGen <$> mPRMNGSeed)
         where
-            inPts = (inputs . modelGraph) mL
             expDetails = mkScDetails scKnd
             expName = mkScName scKnd
             mIFix = case iFix of
@@ -126,11 +127,11 @@ mkSCExpKind mL (EnvKDOEScan envScan kdoeScan xAx) =
     IntEnvKDOEScan <$> mkIntEnvScan mL envScan
                    <*> mkIntKDOEScan mL kdoeScan
                    <*> pure xAx
-mkSCExpKind mL (TwoDEnvScan envScan1 envScan2 mKDOESc) =
+mkSCExpKind mL (TwoDEnvScan envScan1 envScan2 _ mKDOESc) =
         IntTwoDEnvScan <$> mkIntEnvScan mL envScan1
                        <*> mkIntEnvScan mL envScan2
                        <*> (traverse (mkIntKDOEScan mL) mKDOESc)
-mkSCExpKind mL  (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
+mkSCExpKind mL  (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) =
     IntThreeDEnvScan <$> mkIntEnvScan mL envScan1
                      <*> mkIntEnvScan mL envScan2
                      <*> mkIntEnvScan mL envScan3
@@ -147,10 +148,10 @@ mkIntEnvScan mL (StepSpecESC nName stepValues)
     | notElem nName topLevelNames = Failure [InputScanNodeNotTopLevel nName]
     | (not . L.null) oobSteps =
         Failure [InvalidInputScanValues nName oobSteps (0, inputTop)]
-    | otherwise = IntStepSpecESC <$> preppedRICs
+    | otherwise = Success $ IntStepSpecESC preppedRICs
     where
-        preppedRICs = traverse (mkRealInputCoordinate mL) preppedSteps
-        preppedSteps = (pure . (,) nName) <$> (L.sort stepValues)
+        preppedRICs = mkSingleRealInputCoord lniBMap inputStack <$>
+                                                            (L.sort stepValues)
         oobSteps = filter oobF stepValues
         oobF x = not $ (x >= 0) && (x <= fromIntegral inputTop)
         inputTop = inputDegrees inputStack - 1
@@ -162,6 +163,7 @@ mkIntEnvScan mL (StepSpecESC nName stepValues)
 --      always be the head of the input lists. 
         topLevels = head <$> inPts
         inputNodeNames = mconcat $ (nodeName . nodeMeta) <<$>> inPts
+        LayerSpecs lniBMap _ _ _ = layerPrep mL
         inPts = (inputs . modelGraph) mL
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
 mkIntEnvScan mL (RangeESC nName startSt endSt sSteps)
@@ -170,13 +172,14 @@ mkIntEnvScan mL (RangeESC nName startSt endSt sSteps)
     | notElem nName topLevelNames = Failure [InputScanNodeNotTopLevel nName]
     | not inbStart = Failure [InValidInputScanStart nName startSt (0, inputTop)]
     | not inbEnd = Failure [InValidInputScanEnd nName endSt (0, inputTop)]
-    | otherwise = IntESC <$> mkRealInputCoordinate mL [(nName, startSt)]
-                         <*> mkRealInputCoordinate mL [(nName, endSt)]
-                         <*> pure sSteps
+    | otherwise = Success $
+        IntESC (mkSingleRealInputCoord lniBMap inputStack startSt)
+               (mkSingleRealInputCoord lniBMap inputStack endSt)
+               sSteps
     where
         inbEnd = (endSt >= 0) && (endSt <= (fromIntegral inputTop))
         inbStart = (startSt >= 0) && (startSt <= (fromIntegral inputTop))
-        inputTop = inputDegrees inputStack - 1
+        inputTop = (inputDegrees inputStack) - 1
         inputStack = (fromJust . L.find ipFF) inPts
         ipFF = (== nName) . nodeName . nodeMeta . head
         topLevelNames = (nodeName . nodeMeta) <$> topLevels
@@ -185,6 +188,7 @@ mkIntEnvScan mL (RangeESC nName startSt endSt sSteps)
 --      always be the head of the input lists. 
         topLevels = head <$> inPts
         inputNodeNames = mconcat $ (nodeName . nodeMeta) <<$>> inPts
+        LayerSpecs lniBMap _ _ _ = layerPrep mL
         inPts = (inputs . modelGraph) mL
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
 mkIntEnvScan mL (WholeESC nName sSteps)
@@ -204,6 +208,27 @@ mkIntEnvScan mL (WholeESC nName sSteps)
         inputNodeNames = mconcat $ (nodeName . nodeMeta) <<$>> inPts
         inPts = (inputs . modelGraph) mL
         mlNodeNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
+
+-- Consume a LayerNameIndexBimap, an input stack, and a Double that represents
+-- that input's level across its entire range, and produce a RealInputCoord. 
+-- This presumes that inputLevel is in band. Do not use outside of mkIntEnvScan!
+mkSingleRealInputCoord :: LayerNameIndexBimap
+               -> [DMNode]
+               -> Double
+               -> RealInputCoord
+mkSingleRealInputCoord lniBMap inputStack inputLevel = case length inputStack of
+    0 -> mempty
+    1 -> U.singleton (head inputIndices, inputLevel)
+    iSize -> U.fromList $ zip inputIndices digitsList
+        where
+            digitsList
+                | iSize == nOnes = replicate nOnes 1
+                | otherwise = zeroes <> (residue:ones)
+            zeroes = replicate (iSize - (nOnes + 1)) 0
+            ones = replicate nOnes 1
+            (nOnes, residue) = properFraction inputLevel
+    where
+        inputIndices = ((lniBMap BM.!) . nodeName . nodeMeta) <$> inputStack
 
 mkIntKDOEScan :: ModelLayer -> KDOEScan
               -> Validation [VEXInvestigationInvalid] IntKDOEScan
@@ -233,15 +258,18 @@ mkIntKDOEScan mL (scSteps, nodeLocks)
         lockRepeats = repeated nodeLockNames
         nodeLockNames = fst <$> nodeLocks
 
-mkSCExpMeta :: ModelMapping -> [[DMNode]] -> T.Text -> T.Text -> [ScanSwitch]
-            -> [(ScanSwitch, PhenotypeName)] -> ScanKind
+-- This presumes that mkSCExpKind has passed. Do not use outside of mkDMScan!
+mkSCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
+            -> PlottingNodes -> [(ScanSwitch, PhenotypeName)] -> ScanKind
             -> Validation [VEXInvestigationInvalid] SCExpMeta
-mkSCExpMeta mM inPts expName expDetails scSws stopPhs scKnd =
+mkSCExpMeta mM mL expName expDetails (scSws, scNodes) stopPhs scKnd =
     SCEMeta <$> pure expName
             <*> pure expDetails
             <*> (pure . mkMetaScanKind inPts) scKnd
             <*> validateSCSwitches mM scSws
+            <*> validateSCNodes mL scNodes
             <*> mkStopPhenotypes mM stopPhs
+    where inPts = (inputs . modelGraph) mL
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of mkSCExpMeta!
 mkMetaScanKind :: [[DMNode]] -> ScanKind -> MetaScanKind
@@ -250,14 +278,16 @@ mkMetaScanKind inPts sc = case sc of
     (KDOESc kdoeScan) -> uncurry MetaKDOESc (mkMetaKDOESc kdoeScan)
     (EnvKDOEScan envScan kdoeScan xAx) ->
         MetaEnvKDOEScan (mkMetaEnvSc inPts envScan) (mkMetaKDOESc kdoeScan) xAx
-    (TwoDEnvScan envScan1 envScan2 mKDOEScan) ->
+    (TwoDEnvScan envScan1 envScan2 overLayVs mKDOEScan) ->
         MetaTwoDEnvScan (mkMetaEnvSc inPts envScan1)
                         (mkMetaEnvSc inPts envScan2)
                         (mkMetaKDOESc <$> mKDOEScan)
-    (ThreeDEnvScan envScan1 envScan2 envScan3 _) ->
+                        overLayVs
+    (ThreeDEnvScan envScan1 envScan2 envScan3 overLayVs _) ->
         MetaThreeDEnvScan (mkMetaEnvSc inPts envScan1)
                           (mkMetaEnvSc inPts envScan2)
                           (mkMetaEnvSc inPts envScan3)
+                          overLayVs
     where
         mkMetaKDOESc (scStps, lockNodes) = (lockNodes, mkSteps 0 1 scStps)
 
@@ -273,7 +303,7 @@ mkMetaEnvSc inPts envScan = case envScan of
             ipFF = (== nName) . nodeName . nodeMeta . head
 
 validateSCSwitches :: ModelMapping -> [ScanSwitch]
-             -> Validation [VEXInvestigationInvalid] [ScanSwitch]
+                   -> Validation [VEXInvestigationInvalid] [ScanSwitch]
 validateSCSwitches mM scSws
     | (not . null) scanSwRepeats = Failure $ [ScanSwitchRepeats scanSwRepeats]
     | (not . null) npSwitches = Failure $ [UnknownSwitchesInScan npSwitches]
@@ -285,6 +315,18 @@ validateSCSwitches mM scSws
         scanSwRepeats = repeated scSws
         mMPhSwitches = (fmap fst . filter (not . L.null . snd . snd)) mM
         mMSwitches = fst <$> mM
+
+validateSCNodes :: ModelLayer -> [ScanNode]
+                -> Validation [VEXInvestigationInvalid] [ScanNode]
+validateSCNodes mL scanNodes
+    | scanNdRepeats /= [] = Failure $ [ScanNodeRepeats scanNdRepeats]
+    | npNodes /= [] = Failure $ [UnknownScanNodes npNodes]
+    | otherwise = Success scanNodes
+    where
+        npNodes = filter (`notElem` layerNNames) scanNodes
+        scanNdRepeats = repeated scanNodes
+        layerNNames = (fmap (nodeName . nodeMeta) . layerNodes) mL
+
 
 mkStopPhenotypes :: ModelMapping ->  [(ScanSwitch, PhenotypeName)]
         -> Validation [VEXInvestigationInvalid] [(PhenotypeName, SubSpace)]
@@ -334,11 +376,11 @@ mkScName (EnvSc soloEnv)  = mkEnvName soloEnv
 mkScName (KDOESc soloKDOE)= mkKDOEName soloKDOE
 mkScName (EnvKDOEScan envScan kdoeScan _) = "EnvKDOEScan_" <>
     mkEnvName envScan <> "_" <> mkKDOEName kdoeScan
-mkScName (TwoDEnvScan envScan1 envScan2 mKDOEScan) = case mKDOEScan of
+mkScName (TwoDEnvScan envScan1 envScan2 _ mKDOEScan) = case mKDOEScan of
     Just kdoeSc -> "EnvKDOEScan_" <> mkEnvName envScan1 <> "_" <>
         mkEnvName envScan2 <> "_" <> mkKDOEName kdoeSc
     Nothing -> "EnvKDOEScan_" <> mkEnvName envScan1 <> "_" <> mkEnvName envScan2
-mkScName (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
+mkScName (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) =
     "ThreeDEnvScan_" <> mkEnvName envScan1 <> "_" <> mkEnvName envScan2 <> "_"
         <> mkEnvName envScan3 <> kName
     where
@@ -360,12 +402,12 @@ mkScDetails (EnvSc soloEnv)  = mkEnvDetails soloEnv
 mkScDetails (KDOESc soloKDOE) = mkKDOEDetails soloKDOE
 mkScDetails (EnvKDOEScan envScan kdoeScan _) = "EnvKDOEScan_" <>
     mkEnvDetails envScan <> "_" <> mkKDOEDetails kdoeScan
-mkScDetails (TwoDEnvScan envScan1 envScan2 mKDOEScan) = case mKDOEScan of
+mkScDetails (TwoDEnvScan envScan1 envScan2 _ mKDOEScan) = case mKDOEScan of
     Just kdoeSc -> "EnvKDOEScan_" <> mkEnvDetails envScan1 <> "_" <>
         mkEnvDetails envScan2 <> "_" <> mkKDOEDetails kdoeSc
     Nothing -> "EnvKDOEScan_" <> mkEnvDetails envScan1 <> "_" <>
                 mkEnvDetails envScan2
-mkScDetails (ThreeDEnvScan envScan1 envScan2 envScan3 nAlts) =
+mkScDetails (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) =
     "ThreeDEnvScan_" <> mkEnvDetails envScan1 <> "_" <> mkEnvDetails envScan2 <>
         "_" <> mkEnvDetails envScan3 <> kDets
     where
@@ -444,8 +486,7 @@ mkEnvVars intEnv = zipWith SCVar (mkRealICS intEnv) (repeat [])
 
 mkRealICS :: IntEnvScan -> [RealInputCoord]
 mkRealICS (IntStepSpecESC rICs) = rICs
-mkRealICS (IntESC startRIC endRIC nSts) =
-    case U.length startRIC of
+mkRealICS (IntESC startRIC endRIC nSts) = case U.length startRIC of
     0 -> []
     1 -> (U.singleton . (,) nI) <$> (mkSteps sSt eSt nSts)
         where
@@ -478,7 +519,9 @@ mkIntNAltss (scSteps, stNAlts) = rangeInserter stNAlts <$> rnge
         rnge = mkSteps 0 1 scSteps
 
 mkSteps :: Double -> Double -> Int -> [Double]
-mkSteps startSt endSt nSts = (init spreadL) <> [endSt]
+mkSteps startSt endSt nSts
+    | (startSt /= endSt) && (nSts > 1) = (init spreadL) <> [endSt]
+    | otherwise = [startSt]
     where
         spreadL = [startSt,listSpacer..endSt]
         listSpacer = startSt + ((endSt - startSt)/(scanStps - 1))

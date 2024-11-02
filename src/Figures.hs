@@ -85,8 +85,8 @@ expRunFigure cMap mM mL expRes = case expRes of
     ScanExpRes (xMeta, ress) -> ScanExpFigs $ (xMeta, figs)
         where
             figs :: [(Barcode, [ScanExpFigure])]
-            figs = (resCombine . (fmap . fmap) (scRunDia phCMap mM xMeta)) ress
-            phCMap = mkPhColorMap mM cMap
+            figs = (resCombine . (fmap . fmap)
+                (scRunDia cMap mM mL xMeta)) ress
 
 
 bcRunDia :: ColorMap

@@ -95,6 +95,13 @@ variable = (lexeme . try) (p >>= check)
                 then fail $ "Keyword " ++ show x ++ " cannot be a variable. "
                 else return x
 
+boolParse :: Parser Bool
+boolParse = (try (True <$ rword "True")) <|> (False <$ rword "False")
+
+boolVariableParse :: T.Text -> Parser Bool
+boolVariableParse t = rword t >> colon >> boolParse
+
+
 -- Parse an identified FilePath
 identifiedFilePathParse :: T.Text -> Parser FilePath
 identifiedFilePathParse name = lexeme $ rword name >> colon >> (stripF <$> p)
@@ -281,9 +288,6 @@ modelStepTypeParse = lexeme $ rword "ModelStepType" >>
         )
     )
 
-boolParse :: Parser Bool
-boolParse = (try (True <$ rword "True")) <|> (False <$ rword "False")
-
 pulseParse :: Parser VEXInputPulse
 pulseParse = between (symbol "Pulse{") (symbol "Pulse}")
     (runPermutation $
@@ -351,11 +355,11 @@ defFigKinds = FigKinds True False [] []
 
 -- Do we produce a Node time course figure? Default to True. 
 nodeTimeCourseParse :: Parser DoNodeTimeCourse
-nodeTimeCourseParse = rword "NodeTimeCourse" >> colon >> boolParse
+nodeTimeCourseParse = boolVariableParse "NodeTimeCourse"
 
 -- Do we produce a Phenotype time course figure? Default to False. 
 phTimeCourseParse :: Parser DoPhenotypeTimeCourse
-phTimeCourseParse = rword "PhenotypeTimeCourse" >> colon >> boolParse
+phTimeCourseParse = boolVariableParse "PhenotypeTimeCourse"
 
 manualPRNGParse :: Parser (Maybe Int)
 manualPRNGParse = Just <$> (lexeme $ rword "ManualPRNGSeed" >>
@@ -438,7 +442,11 @@ scanParse = (between (symbol "Scan{") (symbol "Scan}") (
                 <*> toPermutation relevantTParse
                 <*> toPermutation stopPhParse
                 <*> toPermutation modelStepTypeParse
-                <*> toPermutation ((multiIdentifier "ScanSwitches"))
+                <*> ((,) <$> toPermutationWithDefault []
+                                            (multiIdentifier "ScanSwitches")
+                         <*> toPermutationWithDefault []
+                                            (multiIdentifier "ScanNodes")
+                    )
                 <*> toPermutationWithDefault Nothing manualPRNGParse
     )) >>= scanCheck
 
@@ -449,7 +457,6 @@ scanKindParse = (EnvSc <$> envScanParse)
             <|> twoDEnvScanParse
             <|> threeDEnvScanParse
 
-
 envScanParse :: Parser EnvScan
 envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
     (   (try stepSpecifiedEnvScanParse)
@@ -459,8 +466,8 @@ envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
     where
         stepSpecifiedEnvScanParse = StepSpecESC
             <$> variable
-            <*> between (symbol "[") (symbol "]")
-                    ((toRealFloat <$> number) `sepBy1` comma)
+            <*> (colon >> (between (symbol "[") (symbol "]")
+                    ((toRealFloat <$> number) `sepBy1` comma)))
         rangedEnvScanParse = RangeESC <$> variable
                                       <*> (colon >> (toRealFloat <$> number))
                                       <*> (comma >> (toRealFloat <$> number))
@@ -483,7 +490,7 @@ xAxisParse = lexeme $ rword "X_Axis" >>
 
 scanCheck :: VEXScan -> Parser VEXScan
 scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
-    exStep scSws mPRMNGSeed) =
+    exStep plottingNs mPRMNGSeed) =
     VEXScan <$> scanKindCheck nAlts scKnd
             <*> pure inEnv
             <*> pure nAlts
@@ -492,7 +499,7 @@ scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
             <*> pure relN
             <*> pure stopPhs
             <*> pure exStep
-            <*> pure scSws
+            <*> plottingNodeCheck plottingNs
             <*> pure mPRMNGSeed
     
 
@@ -503,14 +510,16 @@ scanKindCheck nAlts (EnvKDOEScan envScan kdoeScan xAx) =
     EnvKDOEScan <$> pure envScan
                 <*> kdoeScanCheck nAlts kdoeScan
                 <*> pure xAx
-scanKindCheck nAlts (TwoDEnvScan envScan1 envScan2 mKDOEScan)
+scanKindCheck nAlts (TwoDEnvScan envScan1 envScan2 overLayVs mKDOEScan)
     | envScansCheck envScan1 envScan2 =
         TwoDEnvScan <$> pure envScan1
                     <*> pure envScan2
+                    <*> pure overLayVs
                     <*> traverse (kdoeScanCheck nAlts) mKDOEScan
     | otherwise = fail $ show $
         DuplicateEnvScanNodeInScan (envScanInputName envScan1)
-scanKindCheck nAlts (ThreeDEnvScan envScan1 envScan2 envScan3 vsNAlts) =
+scanKindCheck nAlts
+  (ThreeDEnvScan envScan1 envScan2 envScan3 overLayVs vsNAlts) =
     case envScansCheck envScan1 envScan2 of
         False -> fail $ show $ DuplicateEnvScanNodeInScan
             (envScanInputName envScan1)
@@ -523,6 +532,7 @@ scanKindCheck nAlts (ThreeDEnvScan envScan1 envScan2 envScan3 vsNAlts) =
                 True -> ThreeDEnvScan <$> pure envScan1
                                       <*> pure envScan2
                                       <*> pure envScan3
+                                      <*> pure overLayVs
                                       <*> nAltsCh
                     where
                         nAltsCh
@@ -546,6 +556,11 @@ envScansCheck :: EnvScan -> EnvScan -> Bool
 envScansCheck envScan1 envScan2 = not
     (envScanInputName envScan1 == envScanInputName envScan2)
 
+plottingNodeCheck :: PlottingNodes -> Parser PlottingNodes
+plottingNodeCheck (scanSws, scanNds)
+    | not ((scanSws == []) && (scanNds == [])) = pure (scanSws, scanNds)
+    | otherwise = fail $ show $ EmptyScanSwitchesAndScanNodes
+
 envKDOEScanParse :: Parser ScanKind
 envKDOEScanParse = between (symbol "EnvKDOEScan{") (symbol "EnvKDOEScan}") (
     runPermutation $
@@ -559,8 +574,13 @@ twoDEnvScanParse = between (symbol "TwoDEnvScan{") (symbol "TwoDEnvScan}") (
     runPermutation $ TwoDEnvScan
         <$> toPermutation envScanParse
         <*> toPermutation envScanParse
+        <*> toPermutationWithDefault False valuesOnHeatMapParse
         <*> toPermutationWithDefault Nothing (Just <$> kdoeScanParse)
     )
+
+-- Do we overlay the values of a heat map onto the figure?
+valuesOnHeatMapParse :: Parser Bool
+valuesOnHeatMapParse = boolVariableParse "ValuesOnHeatMap"
 
 threeDEnvScanParse :: Parser ScanKind
 threeDEnvScanParse = between (symbol "ThreeDEnvScan{") (symbol "ThreeDEnvScan}")
@@ -568,7 +588,8 @@ threeDEnvScanParse = between (symbol "ThreeDEnvScan{") (symbol "ThreeDEnvScan}")
         <$> toPermutation envScanParse
         <*> toPermutation envScanParse
         <*> toPermutation envScanParse
-        <*> toPermutation wildTypeVsMutantParse
+        <*> toPermutationWithDefault False valuesOnHeatMapParse
+        <*> toPermutationWithDefault [] wildTypeVsMutantParse
     )
 
 wildTypeVsMutantParse :: Parser [WildTypeVsMutantAlt]

@@ -53,10 +53,13 @@ module Types.DMInvestigation
     , pickStates
     , envScanInputName
     , VEXScan(..)
+    , PlottingNodes
     , ScanSwitch
+    , ScanNode
     , ScanKind(..)
     , EnvScan(..)
     , KDOEScan
+    , DoOverlayValues
     , XAxis(..)
     , ScanResult(..)
     , DMScan(..)

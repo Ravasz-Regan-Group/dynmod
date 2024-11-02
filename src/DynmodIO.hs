@@ -208,30 +208,30 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                     expTense
                         | numExp == 1 = " experiment. "
                         | otherwise = " experiments. "
---                 PS.pPrint (tmlnLF <$> invRs)
+                PS.pPrint (tmlnLF <$> invRs)
                 putStrLn $ "Ran " <> show numExp <> expTense
                 putStrLn "Generating figures..."
                 let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets) invRs
                 writeVexFigs dmmsPath lRFigs
 
--- tmlnLF :: LayerResult -> [[[Int]]]
--- tmlnLF lR = (fmap tmlnLF' . layerResultERs) lR
--- 
--- tmlnLF' :: ExperimentResult -> [[Int]]
--- tmlnLF' (TCExpRes _) = [[0]]
--- tmlnLF' (ScanExpRes (_, scanRs)) = (tmlnLF'' . snd) <$> scanRs
--- 
--- tmlnLF'' :: ScanResult -> [Int]
--- tmlnLF'' (SKREnv tmlnss) = (sum . (fmap length)) <$> tmlnss
--- tmlnLF'' (SKRKDOE tmlnss) = (sum . (fmap length)) <$> tmlnss
--- tmlnLF'' (SKREnvKDOE tmlnss) = sum <$> sums
---     where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
--- tmlnLF'' (SKRTwoEnvWithoutKDOE tmlnss) = sum <$> sums
---     where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
--- tmlnLF'' (SKRTwoEnvWithKDOE tmlnss) = (fmap sum . (fmap . fmap) sum) sums
---     where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
--- tmlnLF'' (SKRThreeEnv (tmlnss, _)) = (fmap sum . (fmap . fmap) sum) sums
---     where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
+tmlnLF :: LayerResult -> [[[Int]]]
+tmlnLF lR = (fmap tmlnLF' . layerResultERs) lR
+
+tmlnLF' :: ExperimentResult -> [[Int]]
+tmlnLF' (TCExpRes _) = [[0]]
+tmlnLF' (ScanExpRes (_, scanRs)) = (tmlnLF'' . snd) <$> scanRs
+
+tmlnLF'' :: ScanResult -> [Int]
+tmlnLF'' (SKREnv tmlnss) = (sum . (fmap length)) <$> tmlnss
+tmlnLF'' (SKRKDOE tmlnss) = (sum . (fmap length)) <$> tmlnss
+tmlnLF'' (SKREnvKDOE tmlnss) = sum <$> sums
+    where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
+tmlnLF'' (SKRTwoEnvWithoutKDOE tmlnss) = sum <$> sums
+    where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
+tmlnLF'' (SKRTwoEnvWithKDOE tmlnss) = (fmap sum . (fmap . fmap) sum) sums
+    where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
+tmlnLF'' (SKRThreeEnv (tmlnss, _)) = (fmap sum . (fmap . fmap) sum) sums
+    where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
 
 writeVexFigs :: Path Abs File
              -> [([ExperimentFigures], Maybe (Diagram B))]
@@ -259,8 +259,8 @@ writeScExpFigs f (scExpMt, bcExpFigs) = do
         (MetaEnvSc _ _) -> parseRelDir "EnvScan"
         (MetaKDOESc _ _) -> parseRelDir "KDOE_Scan"
         (MetaEnvKDOEScan _ _ _) -> parseRelDir "Env_KDOE_Scan"
-        (MetaTwoDEnvScan _ _ _) -> parseRelDir "TwoDEnvScan"
-        (MetaThreeDEnvScan _ _ _) -> parseRelDir "ThreeDEnvScan"
+        (MetaTwoDEnvScan _ _ _ _) -> parseRelDir "TwoDEnvScan"
+        (MetaThreeDEnvScan _ _ _ _) -> parseRelDir "ThreeDEnvScan"
     dirExpName <- parseRelDir (T.unpack expName)
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpName
     mapM_ (writeScanExpFigures dirFull scExpMt) bcExpFigs
@@ -286,15 +286,19 @@ writeScanExpFigure :: Path Abs Dir
 writeScanExpFigure f scExpMt bc fig = case fig of
     EnvScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
     KDOEScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
-    EnvKDOESc envKDOEFig -> simpleSCWrite f scExpMt 0 envKDOEFig
-    TwoDEnvScWWOKDOE htmaps ->
-        mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..] htmaps)
-    ThreeDEnvSc heatmapBlockFigs -> mapM_ (uncurry (simpleSCWrite f scExpMt))
-        (zip [0..] heatmapBlockFigs)
+    EnvKDOESc swEnvKFig nodeEnvKFig -> do
+        let figs = [("switches", swEnvKFig), ("nodes", nodeEnvKFig)]
+        mapM_ (simpleSCWrite f scExpMt) figs
+    TwoDEnvScWWOKDOE stopPercentHMs swLabeledHMs nodeLabeledHMs -> do
+        let figs = stopPercentHMs <> swLabeledHMs <> nodeLabeledHMs
+        mapM_ (simpleSCWrite f scExpMt) figs
+    ThreeDEnvSc stopPHMBlockFigs swHMBlockFigs nodeHMBlockFigs -> do
+        let figs = stopPHMBlockFigs <> swHMBlockFigs <> nodeHMBlockFigs
+        mapM_ (simpleSCWrite f scExpMt) figs
 
-simpleSCWrite :: Path Abs Dir -> SCExpMeta -> Int -> Diagram B -> IO ()
-simpleSCWrite f _ i dia = do
-    relFileName <- parseRelFile (show i)
+simpleSCWrite :: Path Abs Dir -> SCExpMeta -> (T.Text, Diagram B) -> IO ()
+simpleSCWrite f _ (fName, dia) = do
+    relFileName <- parseRelFile (T.unpack fName)
     relFileNameWExt <- addExtension ".pdf" relFileName
     let absFileNameWExt = (f </> relFileNameWExt) :: Path Abs File
         fPath = toFilePath absFileNameWExt
@@ -303,9 +307,9 @@ simpleSCWrite f _ i dia = do
 
 -- Again, this is a simple write to disk of the Diagram Bs for now. 
 writeBaseScanFig :: Path Abs Dir -> SCExpMeta -> Barcode -> BaseScanFigs -> IO ()
-writeBaseScanFig f scExpMt _ (BSFgs stFig tisPhsFigs) = do
-    let figs = stFig:tisPhsFigs
-    mapM_ (uncurry (simpleSCWrite f scExpMt)) (zip [0..(length tisPhsFigs)] figs)
+writeBaseScanFig f scExpMt _ (BSFgs stFig tisPhsFigs nAvgFigs) = do
+    let figs = (stFig:tisPhsFigs) <> nAvgFigs
+    mapM_ (simpleSCWrite f scExpMt) figs
 
 writeTCExpFig :: Path Abs File
               -> (TCExpMeta, [(Barcode, BCExpFigures)])

@@ -50,6 +50,8 @@
 		<string>X_Axis</string>
 		<string>ManualPRNGSeed</string>
 		<string>WildTypeVsMutant</string>
+		<string>ValuesOnHeatMap</string>
+		<string>ScanNodes</string>
 	</array>
 	<key>BBLMLanguageCode</key>
 	<string>VEX</string>

@@ -1350,6 +1350,8 @@ vexKeyword = [ "DMMSFile"
              , "X_Axis"
              , "ManualPRNGSeed"
              , "WildTypeVsMutant"
+             , "ValuesOnHeatMap"
+             , "ScanNodes"
              ]
 
 vexPredefined ::[T.Text]

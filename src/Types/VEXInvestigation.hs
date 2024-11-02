@@ -95,7 +95,7 @@ data VEXScan = VEXScan
     -- StopPhenotypes: Stop a run and restart if you hit one. 
     [(NodeName, PhenotypeName)]
     ExperimentStep
-    [ScanSwitch]
+    PlottingNodes
     ManualSeed
     deriving (Eq, Show)
 
@@ -110,6 +110,8 @@ type Relevant_N = Int
 -- is always the scan steps, whatever those are. TwoDEnvScan and ThreeDEnvScan
 -- are heat maps. 
 
+type PlottingNodes = ([ScanSwitch], [ScanNode])
+
 -- Which Switches' time-spent in each Phenotype distribution figure to plot. 
 -- If some of the Phenotypes are loops, also plot how many loops were completed.
 type ScanSwitch = NodeName
@@ -118,13 +120,23 @@ type ScanSwitch = NodeName
 -- type CycleErrors = (Phenotype, (CycleErrorName, [SubSpace]))
 -- type CycleErrorName = T.Text
 
+-- Which DMNodes average values to plot. 
+type ScanNode = NodeName
+
 data ScanKind =
       EnvSc EnvScan
     | KDOESc KDOEScan
     | EnvKDOEScan EnvScan KDOEScan XAxis
-    | TwoDEnvScan EnvScan EnvScan (Maybe KDOEScan)
-    | ThreeDEnvScan EnvScan EnvScan EnvScan [WildTypeVsMutantAlt]
+    | TwoDEnvScan EnvScan EnvScan DoOverlayValues (Maybe KDOEScan)
+    | ThreeDEnvScan EnvScan
+                    EnvScan
+                    EnvScan
+                    DoOverlayValues
+                    [WildTypeVsMutantAlt]
     deriving (Eq, Show)
+
+-- Do we overlay the values of a heat map onto the figure?
+type DoOverlayValues = Bool
 
 -- To distinguish from the Scan's regular node alterations
 type WildTypeVsMutantAlt = NodeAlteration
@@ -220,12 +232,15 @@ data VEXInvestigationInvalid =
     | ScanSwitchRepeats [NodeName]
     | UnknownSwitchesInScan [NodeName]
     | NonPhenotypedSwitchesInScan [NodeName]
+    | ScanNodeRepeats [NodeName]
+    | UnknownScanNodes [NodeName]
     | StopSwitchRepeats [NodeName]
     | StopPhenotypeRepeats [NodeName]
     | UnknownSwitchesInStopPhenotype [NodeName]
     | UnknownPhenotypesInStopPhenotype [(NodeName, PhenotypeName)]
     | MismatchedStopPhenotypes [(PhenotypeName, NodeName, T.Text)]
     | LoopStopPhenotypes [NodeName]
+    | EmptyScanSwitchesAndScanNodes
     deriving (Eq, Show, Ord)
 
 vexErrorPrep :: VEXInvestigationInvalid -> T.Text
@@ -361,6 +376,10 @@ vexErrorPrep (UnknownSwitchesInScan nNms) =
     "UnknownSwitchesInScan: " <> T.intercalate ", " nNms
 vexErrorPrep (NonPhenotypedSwitchesInScan nNms) =
     "NonPhenotypedSwitchesInScan: " <> T.intercalate ", " nNms
+vexErrorPrep (ScanNodeRepeats nNms) =
+    "ScanNodeRepeats: " <> T.intercalate ", " nNms
+vexErrorPrep (UnknownScanNodes nNms) =
+    "UnknownScanNodes: " <> T.intercalate ", " nNms
 vexErrorPrep (StopSwitchRepeats nNms) = "StopSwitchRepeats: " <>
     T.intercalate ", " nNms
 vexErrorPrep (StopPhenotypeRepeats nNms) = "StopPhenotypeRepeats: " <>
@@ -375,6 +394,8 @@ vexErrorPrep (MismatchedStopPhenotypes mismatches) =
 vexErrorPrep (LoopStopPhenotypes loopPhNames) = "LoopStopPhenotypes: " <> 
     "Only point phenotypes may be stop conditions: " <>
     T.intercalate ", " (tShow <$> loopPhNames)
+vexErrorPrep EmptyScanSwitchesAndScanNodes = "EmptyScanSwitchesAndScanNodes: "
+    <> "At least one ScanSwitch or ScanNode is needed"
 
 -- Base types needed in all of Types.DMInvestigation
 

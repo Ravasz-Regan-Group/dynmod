@@ -433,6 +433,9 @@ mkTCExpMeta mM mL expName expDetails initialCs exReps exKnd figureKinds =
             <*> pure exKnd
             <*> mkFigKinds mM mL figureKinds
 
+-- Construct a RealInputCoord that pins inputs. This follows the convention that
+-- each level of a multi-node input is indicated by a one of the nodenames
+-- in its DMNode stack. 
 mkRealInputCoordinate :: ModelLayer
                       -> [(NodeName, RealNodeState)]
                       -> Validation [VEXInvestigationInvalid] RealInputCoord
