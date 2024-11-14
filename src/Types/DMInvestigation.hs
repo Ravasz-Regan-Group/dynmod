@@ -114,6 +114,18 @@ data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
 data DMExperiment = TCDMEx DMTimeCourse
                   | ScDMex DMScan
 
+type DMInvestigationOutput = [LayerOutput]
+data LayerOutput = LayerOutput
+    { layerGateSet :: [(NodeName, TruthTable)]
+    , layerNIBM :: LayerNameIndexBimap
+    , layerDMExpOutputs :: [Maybe DMExpOutput]
+    } deriving (Eq, Show)
+
+data DMExpOutput = TimeCourseOutput
+                 | ScanOutput
+                   deriving (Eq, Show)
+
+
 ----------------------------------------------------------------------------
 -- Validating vex files:
 

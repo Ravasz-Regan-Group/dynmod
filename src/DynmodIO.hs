@@ -330,6 +330,7 @@ writeTCExpFig f (dmExpMeta, bcExpFigs) = do
     dirNTC <- parseRelDir "NodeTC"
     dirNBCH <- parseRelDir "NodeBCh"
     dirPHBCH <- parseRelDir "PhBCh"
+--     dirOutput <- parseRelDir "Data_Output"
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpDetails
     let idF fs = zip [0..] fs
 -- Note that for a given experiment, there are either Just nodeBCTCFigs for

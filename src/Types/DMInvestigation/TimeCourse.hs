@@ -88,6 +88,11 @@ data ExpStepper = SD PSStepper
                 | SN PNStepper'
                 | AD PAStepper'
 
+data ExpStepperKind = SynchronousDeterministic
+                    | SynchronousNoisy
+                    | AsynchronousDeterministic
+                    deriving (Eq, Show, Ord)
+
 -- The inner run of stepping through the network should be fast-ish, so looking
 -- up the NodeIndex each time for node alterations is a bad idea. 
 data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
@@ -96,6 +101,38 @@ data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
                                           BoolNudgeDirection
                                           NudgeProbability
                        deriving (Eq, Show, Ord)
+
+-- The output of a TimeCourse experiment, to be rendered to disk for future use. 
+data TimeCourseOutput = TCOutput
+    { tcOutputParams :: TCOutputParameters
+    , tcOutput :: TCResultOutput
+    } deriving (Eq, Show)
+
+-- Cogent details of a TimeCourse's specification, in case the output is not
+-- being read back in by dynmod in conjuntion with a VEX file. 
+data TCOutputParameters = TCPParams
+    { tcExpOPMeta :: TCExpOPMeta
+    , tcExpOPStepper :: ExpStepperKind
+    , tcExpOPPulseSps :: [[PulseSpacing]]
+    , tcExpOPMPRNGSeed :: Maybe StdGen
+    } deriving (Eq, Show)
+data TCExpOPMeta = TCEOPM
+    { tcExpOPName :: T.Text
+    , tcExpOPDetails :: T.Text
+    , tcExpOPInitCoord :: (NodeName, RealNodeState)
+    , tcExpOPReps :: ExperimentReps
+    , tcExpOPKind :: TCExpKind
+    } deriving (Eq, Show)
+
+-- Results to be output to disk
+type TCResultOutput = TCProcdOutput
+
+-- data TCResultOutput = TCFull [ExpSpreadResults]
+--                     | TCProc TCProcdOutput
+--                     deriving (Eq, Show)
+-- 
+type TCProcdOutput = [(Barcode, (ProcdExpSpreadRes, [[PulseSpacing]]))]
+type ProcdExpSpreadRes = 
 
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
