@@ -208,30 +208,30 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                     expTense
                         | numExp == 1 = " experiment. "
                         | otherwise = " experiments. "
-                PS.pPrint (tmlnLF <$> invRs)
+--                 PS.pPrint (tmlnLF <$> invRs)
                 putStrLn $ "Ran " <> show numExp <> expTense
                 putStrLn "Generating figures..."
                 let lRFigs = zipWith ($) (layerRunFigure cMap <$> attSets) invRs
                 writeVexFigs dmmsPath lRFigs
 
-tmlnLF :: LayerResult -> [[[Int]]]
-tmlnLF lR = (fmap tmlnLF' . layerResultERs) lR
-
-tmlnLF' :: ExperimentResult -> [[Int]]
-tmlnLF' (TCExpRes _) = [[0]]
-tmlnLF' (ScanExpRes (_, scanRs)) = (tmlnLF'' . snd) <$> scanRs
-
-tmlnLF'' :: ScanResult -> [Int]
-tmlnLF'' (SKREnv tmlnss) = (sum . (fmap length)) <$> tmlnss
-tmlnLF'' (SKRKDOE tmlnss) = (sum . (fmap length)) <$> tmlnss
-tmlnLF'' (SKREnvKDOE tmlnss) = sum <$> sums
-    where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
-tmlnLF'' (SKRTwoEnvWithoutKDOE tmlnss) = sum <$> sums
-    where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
-tmlnLF'' (SKRTwoEnvWithKDOE tmlnss) = (fmap sum . (fmap . fmap) sum) sums
-    where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
-tmlnLF'' (SKRThreeEnv (tmlnss, _)) = (fmap sum . (fmap . fmap) sum) sums
-    where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
+-- tmlnLF :: LayerResult -> [[[Int]]]
+-- tmlnLF lR = (fmap tmlnLF' . layerResultERs) lR
+-- 
+-- tmlnLF' :: ExperimentResult -> [[Int]]
+-- tmlnLF' (TCExpRes _) = [[0]]
+-- tmlnLF' (ScanExpRes (_, scanRs)) = (tmlnLF'' . snd) <$> scanRs
+-- 
+-- tmlnLF'' :: ScanResult -> [Int]
+-- tmlnLF'' (SKREnv tmlnss) = (sum . (fmap length)) <$> tmlnss
+-- tmlnLF'' (SKRKDOE tmlnss) = (sum . (fmap length)) <$> tmlnss
+-- tmlnLF'' (SKREnvKDOE tmlnss) = sum <$> sums
+--     where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
+-- tmlnLF'' (SKRTwoEnvWithoutKDOE tmlnss) = sum <$> sums
+--     where sums = (fmap . fmap) (sum . (fmap length)) tmlnss
+-- tmlnLF'' (SKRTwoEnvWithKDOE tmlnss) = (fmap sum . (fmap . fmap) sum) sums
+--     where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
+-- tmlnLF'' (SKRThreeEnv (tmlnss, _)) = (fmap sum . (fmap . fmap) sum) sums
+--     where sums = (fmap . fmap . fmap) (sum . (fmap length)) tmlnss
 
 writeVexFigs :: Path Abs File
              -> [([ExperimentFigures], Maybe (Diagram B))]

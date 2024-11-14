@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+
+BBEdit Codeless Language Module for the Haskell programming language.
+	Copyright (c) 2012 Nicolas Godbout
+	http://code.google.com/p/bbedit-haskell
+	https://github.com/dcappellin/bbedit-haskell
+	Release: r3
+	License: see at end of this document
+	
+INSTALL: place this file in
+	~/Library/Application Support/BBEdit/Language Modules/
+Tip: If you have a hard time locating this folder, open a Finder window,
+	 press Command-Shift-G and paste the path above in the text box.
+
+FEATURES:
+	- comment highlighting
+	- color syntax for keywords
+	- color syntax for characters and strings
+	- scans for function names (not completely reliable)
+	- automatic detection of .hs suffix
+	- support for Un/Comment command in BBEdit 10.1 and above
+
+TODO:
+	- better recognition of function name and body
+-->
+<plist version="1.0">
+<dict>
+	<key>BBEditDocumentType</key>
+	<string>CodelessLanguageModule</string>
+	<key>BBLMLanguageDisplayName</key>
+	<string>Haskell</string>
+	<key>BBLMLanguageCode</key>
+	<string>Hask</string>
+	<key>BBLMSuffixMap</key>
+	<array>
+		<dict>
+			<key>BBLMLanguageSuffix</key>
+			<string>.hs</string>
+		</dict>
+		<dict>
+			<key>BBLMLanguageSuffix</key>
+			<string>.lhs</string>
+		</dict>
+	</array>
+	<key>BBLMSupportsTextCompletion</key>
+	<true/>
+	<key>BBLMCanSpellCheckCodeRuns</key>
+	<false/>
+	<key>BBLMIsCaseSensitive</key>
+	<true/>
+	<key>BBLMScansFunctions</key>
+	<true/>
+	<key>BBLMColorsSyntax</key>
+	<true/>
+	<key>BBLMKeywordList</key>
+	<array>
+	    <string>-&lt;</string>
+	    <string>-&lt;&lt;</string>
+		<string>-&gt;</string>
+		<string>&lt;-</string>
+		<string>=&gt;</string>
+		<string>::</string>
+		<string>as</string>
+	    <string>case</string>
+		<string>class</string>
+		<string>data</string>
+		<string>default</string>
+		<string>deriving</string>
+		<string>do</string>
+		<string>else</string>
+		<string>family</string>
+		<string>forall</string>
+		<string>foreign</string>
+		<string>hiding</string>
+		<string>if</string>
+		<string>import</string>
+		<string>in</string>
+		<string>infix</string>
+		<string>infixl</string>
+		<string>infixr</string>
+		<string>instance</string>
+		<string>let</string>
+		<string>mdo</string>
+		<string>module</string>
+		<string>newtype</string>
+		<string>of</string>
+		<string>proc</string>
+		<string>qualified</string>
+		<string>rec</string>
+		<string>then</string>
+		<string>type</string>
+		<string>where</string>
+	</array>
+	<key>BBLMCommentLineDefault</key>
+	<string>-- </string>
+	<key>Language Features</key>
+	<dict>
+		<key>Identifier and Keyword Character Class</key>
+		<string>a-zA-Z0-9_'</string>
+		
+		<key>Comment Pattern</key>
+		<string><![CDATA[(?x: 
+			(?P<block>
+				\{- ( (?> [^-\{\}]+ )
+					| \{ (?!-)
+					| - (?!\})
+					| (?<!-) \}
+					| (?P>block)
+					)*
+				-\}
+			)
+			|
+			(?> -- [^\r\n]* )
+		)]]></string>
+		
+		<key>String Pattern</key>
+		<string><![CDATA[(?x:
+			(?<!\\) ('(\\.|.)')
+		|	(?<!\\) ("(?>(\\.|[^"])*)")
+		)]]></string>
+		
+		<key>Function Pattern</key>
+		<string><![CDATA[(?x:
+			(?P<function>
+				^
+				(?P<function_name>
+					(?! type | newtype | data )
+					[a-z_] [a-zA-Z0-9_']* )
+				(?> [^=\r\n]* ) =
+			)
+		)]]></string>
+		
+		<key>Skip Pattern</key>
+		<string><![CDATA[(?x:
+			(?P>string) | (?P>comment)
+		)]]></string>
+	</dict>
+</dict>
+</plist>
+<!--
+Copyright (c) 2012 Nicolas Godbout
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+-->
