@@ -38,8 +38,6 @@ import Statistics.Sample (meanVarianceUnb, mean)
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
 
-type RealExpSpreadResults = [RealTimeline]
-
 data ExperimentFigures = TCExpFigs (TCExpMeta, [(Barcode, BCExpFigures)])
                        | ScanExpFigs (SCExpMeta, [(Barcode, [ScanExpFigure])])
 

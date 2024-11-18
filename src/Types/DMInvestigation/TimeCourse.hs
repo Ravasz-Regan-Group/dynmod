@@ -73,6 +73,7 @@ type WasForced = Bool
 -- Partial Timeline. This comes up often enough that it saves space
 type PTimeLine = B.Vector (U.Vector (NodeState, WasForced))
 
+type RealExpSpreadResults = [RealTimeline]
 type RealTimeline = B.Vector (RealAnnotatedLayerVec, PhenotypeWeights)
 -- RealAnnotatedLayerVec represents the average NodeState of a series of
 -- repeated experiments, associated with various properties.
@@ -125,14 +126,15 @@ data TCExpOPMeta = TCEOPM
     } deriving (Eq, Show)
 
 -- Results to be output to disk
-type TCResultOutput = TCProcdOutput
+data TCResultOutput = TCFull [(Barcode, RepResults)]
+                    | TCProc TCProcdOutput
+                    deriving (Eq, Show)
 
--- data TCResultOutput = TCFull [ExpSpreadResults]
---                     | TCProc TCProcdOutput
---                     deriving (Eq, Show)
--- 
-type TCProcdOutput = [(Barcode, (ProcdExpSpreadRes, [[PulseSpacing]]))]
-type ProcdExpSpreadRes = 
+data TCProcdOutput = TCProcdOutput
+  { timeCourseOP :: Maybe (Barcode, [[(RealExpSpreadResults, [PulseSpacing])]])
+--   , nodeBarChartOP :: Maybe
+--   , phBarChartOP :: Maybe
+  } deriving (Eq, Show)
 
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse

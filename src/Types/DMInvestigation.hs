@@ -43,6 +43,7 @@ module Types.DMInvestigation
     , ExpSpreadResults
     , Timeline
     , AnnotatedLayerVec
+    , RealExpSpreadResults
     , RealTimeline
     , RealAnnotatedLayerVec
     , WasForced
