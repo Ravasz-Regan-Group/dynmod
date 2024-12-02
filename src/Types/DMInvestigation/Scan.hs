@@ -9,6 +9,7 @@ module Types.DMInvestigation.Scan
     , IntKDOEScan
     , ScanVariation
     , ScanResult(..)
+    , kdoeScNLocks
     , mkDMScan
     , runScan
     ) where
@@ -82,7 +83,7 @@ data IntEnvScan = IntESC RealInputCoord --[[DMNode]] input start state
                 | IntStepSpecESC [RealInputCoord]
                 deriving (Eq, Show)
 
-type IntKDOEScan = (ScanSteps, [(NodeIndex, NodeState)])
+type IntKDOEScan = ([LockProbability], [(NodeIndex, NodeState)])
 
 data ScanVariation = SCVar { scanVrealIC :: RealInputCoord
                            , scanVRNAlts :: [IntNodeAlteration]
@@ -232,14 +233,18 @@ mkSingleRealInputCoord lniBMap inputStack inputLevel = case length inputStack of
 
 mkIntKDOEScan :: ModelLayer -> KDOEScan
               -> Validation [VEXInvestigationInvalid] IntKDOEScan
-mkIntKDOEScan mL (scSteps, nodeLocks)
+mkIntKDOEScan mL kdoeScan
     | (not . null) lockRepeats = Failure [KDOEScanLocksRepeat lockRepeats]
     | (not . null) nonPresentLocks =
         Failure [UnknownNodesInKDOEScanLocks nonPresentLocks]
     | (not . null) inputLocks = Failure [InputsInKDOEScanLocks inputLocks]
     | (not . null) oobLocks =
         Failure [InvalidKDOEScanLocks oobLocks properLocks]
-    | otherwise = Success (scSteps, intNodeLocks)
+    | otherwise = case kdoeScan of
+        (StepSpecKDOESC _ probValues) -> Success (probValues, intNodeLocks)
+        (RangeKDOESC _ startProb endProb scSteps) ->
+            Success (mkSteps startProb endProb scSteps, intNodeLocks)
+        (WholeKDOESC _ scSteps) -> Success (mkSteps 0 1 scSteps, intNodeLocks)
     where
         intNodeLocks = (BF.first (lniBMap BM.!)) <$> nodeLocks
         LayerSpecs lniBMap _ _ _ = layerPrep mL
@@ -257,6 +262,13 @@ mkIntKDOEScan mL (scSteps, nodeLocks)
         mlNodes = layerNodes mL
         lockRepeats = repeated nodeLockNames
         nodeLockNames = fst <$> nodeLocks
+        nodeLocks = kdoeScNLocks kdoeScan
+
+
+kdoeScNLocks :: KDOEScan -> [(NodeName, NodeState)]
+kdoeScNLocks (StepSpecKDOESC nodeLocks _) = nodeLocks
+kdoeScNLocks (RangeKDOESC nodeLocks _ _ _) = nodeLocks
+kdoeScNLocks (WholeKDOESC nodeLocks _) = nodeLocks
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of mkDMScan!
 mkSCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
@@ -289,7 +301,12 @@ mkMetaScanKind inPts sc = case sc of
                           (mkMetaEnvSc inPts envScan3)
                           overLayVs
     where
-        mkMetaKDOESc (scStps, lockNodes) = (lockNodes, mkSteps 0 1 scStps)
+        mkMetaKDOESc (StepSpecKDOESC lockNodes probValues) =
+            (lockNodes, probValues)
+        mkMetaKDOESc (RangeKDOESC lockNodes startProb endProb scStps) =
+            (lockNodes, mkSteps startProb endProb scStps)
+        mkMetaKDOESc (WholeKDOESC lockNodes scStps) =
+            (lockNodes, mkSteps 0 1 scStps)
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of
 -- mkMetaScanKind!
@@ -392,9 +409,10 @@ mkEnvName :: EnvScan -> T.Text
 mkEnvName envScan = "EnvScan_" <> envScanInputName envScan
 
 mkKDOEName :: KDOEScan -> T.Text
-mkKDOEName (_, nodeLocks) = "KDOEScan_" <> nLocksT
+mkKDOEName kdoeScan = "KDOEScan_" <> nLocksT
     where
         nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
+        nodeLocks = kdoeScNLocks kdoeScan
         lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
 
 mkScDetails :: ScanKind -> T.Text
@@ -424,10 +442,15 @@ mkEnvDetails (WholeESC nName scSteps) = "WholeESC_" <> nName <> "_over_" <>
     tShow scSteps
 
 mkKDOEDetails :: KDOEScan -> T.Text
-mkKDOEDetails (scSteps, nodeLocks) = "KDOEScan_" <> nLocksT <>
-    "_over_" <> tShow scSteps
+mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> tShow rnge
     where
+        rnge = case kdoeScan of
+            (StepSpecKDOESC _ probValues) -> probValues
+            (RangeKDOESC _ startProb endProb scSteps) ->
+                mkSteps startProb endProb scSteps
+            (WholeKDOESC _ scSteps) -> mkSteps 0 1 scSteps
         nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
+        nodeLocks = kdoeScNLocks kdoeScan
         lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
 
 runScan :: (LayerNameIndexBimap, [Phenotype])
@@ -509,14 +532,15 @@ mkRealICS (IntESC startRIC endRIC nSts) = case U.length startRIC of
             endSts = (snd . U.unzip) endRIC
             
 mkKDOEVars :: IntKDOEScan -> [ScanVariation]
-mkKDOEVars intKDOE = zipWith SCVar (repeat U.empty) (mkIntNAltss intKDOE)
+mkKDOEVars (lockProbs, stNalts) = zipWith SCVar (repeat U.empty) $ 
+    rangeInserter stNalts <$> lockProbs
 
-mkIntNAltss :: IntKDOEScan -> [[IntNodeAlteration]]
-mkIntNAltss (scSteps, stNAlts) = rangeInserter stNAlts <$> rnge
-    where
-        rangeInserter iAlts lockProb = sequenceA primedFs lockProb
-            where primedFs = (uncurry IntNodeLock) <$> iAlts
-        rnge = mkSteps 0 1 scSteps
+rangeInserter :: [(NodeIndex, NodeState)]
+              -> LockProbability
+              -> [IntNodeAlteration]
+rangeInserter stNalts lockProb = sequenceA primedFs lockProb
+    where primedFs = (uncurry IntNodeLock) <$> stNalts
+        
 
 mkSteps :: Double -> Double -> Int -> [Double]
 mkSteps startSt endSt nSts
@@ -529,10 +553,10 @@ mkSteps startSt endSt nSts
 
 -- Spread an IntKDOEScan over an existing ScanVariation. 
 kdoeSpread :: IntKDOEScan -> ScanVariation -> [ScanVariation]
-kdoeSpread intKSOESc (SCVar rIC nAlts) = SCVar rIC <$> newNAlts
+kdoeSpread (lockProbs, stNalts) (SCVar rIC nAlts) = SCVar rIC <$> newNAlts
     where
         newNAlts = (nAlts <>) <$> scanNAlts
-        scanNAlts = mkIntNAltss intKSOESc
+        scanNAlts = rangeInserter stNalts <$> lockProbs
 
 -- Spread an IntEnvScan over an existing ScanVariation. 
 envSpread :: IntEnvScan -> ScanVariation -> [ScanVariation]

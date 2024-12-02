@@ -58,7 +58,8 @@ module Types.DMInvestigation
     , ScanNode
     , ScanKind(..)
     , EnvScan(..)
-    , KDOEScan
+    , KDOEScan(..)
+    , kdoeScNLocks
     , DoOverlayValues
     , XAxis(..)
     , ScanResult(..)

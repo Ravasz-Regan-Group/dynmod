@@ -37,6 +37,11 @@ symbol = LE.symbol sc
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
+-- | 'brackets' parses something between brackets.
+
+brackets :: Parser a -> Parser a
+brackets = between (symbol "[") (symbol "]")
+
 -- | 'number' parses an number in scientific format.
 
 number :: Parser Scientific
@@ -466,8 +471,7 @@ envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
     where
         stepSpecifiedEnvScanParse = StepSpecESC
             <$> variable
-            <*> (colon >> (between (symbol "[") (symbol "]")
-                    ((toRealFloat <$> number) `sepBy1` comma)))
+            <*> (colon >> (brackets ((toRealFloat <$> number) `sepBy1` comma)))
         rangedEnvScanParse = RangeESC <$> variable
                                       <*> (colon >> (toRealFloat <$> number))
                                       <*> (comma >> (toRealFloat <$> number))
@@ -476,10 +480,23 @@ envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
 
 kdoeScanParse :: Parser KDOEScan
 kdoeScanParse = lexeme $ rword "KDOEScan" >> (try (colon >>
-    (flip (,) <$> (parens (sepBy1 ((,) <$> variable
-                                       <*> (colon >> integer)) comma)) 
-              <*> (colon >> integer))))
-
+    (   (try stepSpecifiedKDOEScanParse)
+    <|> (try rangedKDOEScanParse)
+    <|> wholeKDOEScanParse
+    )))
+    where
+        stepSpecifiedKDOEScanParse = StepSpecKDOESC
+            <$> kdoeSCNodesParse
+            <*> (colon >> (brackets (probParse `sepBy1` comma)))
+        rangedKDOEScanParse = RangeKDOESC <$> kdoeSCNodesParse
+                                          <*> (colon >> probParse)
+                                          <*> (comma >> probParse)
+                                          <*> (comma >> integer)
+        wholeKDOEScanParse = WholeKDOESC <$> kdoeSCNodesParse
+                                         <*> (colon >> cInt)
+        kdoeSCNodesParse = parens (sepBy1 ((,) <$> variable
+                                               <*> (colon >> integer)) comma)
+    
 xAxisParse :: Parser XAxis
 xAxisParse = lexeme $ rword "X_Axis" >>
     (colon >>
@@ -545,12 +562,13 @@ scanKindCheck nAlts
                                         (nodeAltName <$> vsNAlts)
     
 kdoeScanCheck :: [NodeAlteration] -> KDOEScan -> Parser KDOEScan
-kdoeScanCheck nAlts (scSteps, locknodes)
+kdoeScanCheck nAlts kdoeScan
     | sharedNAlts /= [] = fail $ show $
         KDOESharedNodesInSteppedAndAlts sharedNAlts
-    | otherwise = return (scSteps, locknodes)
+    | otherwise = return kdoeScan
     where
         sharedNAlts = L.intersect (nodeAltName <$> nAlts) (fst <$> locknodes)
+        locknodes = kdoeScNLocks kdoeScan
 
 envScansCheck :: EnvScan -> EnvScan -> Bool
 envScansCheck envScan1 envScan2 = not

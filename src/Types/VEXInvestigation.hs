@@ -159,17 +159,24 @@ data EnvScan =
              Double -- End state, ditto
              ScanSteps -- Steps to get there
   | WholeESC NodeName ScanSteps -- Scan over the whole input range. 
-             deriving (Eq, Show)
+    deriving (Eq, Show)
 
 envScanInputName :: EnvScan -> NodeName
 envScanInputName (StepSpecESC nName _) = nName
 envScanInputName (RangeESC nName _ _ _) = nName
 envScanInputName (WholeESC nName _) = nName
 
--- All of the DMNodes in the ScanSteps Tuple will be gradually locked to the
--- specified states in sync, over the number of steps specified, starting at 0%
--- and ending at 100%. 
-type KDOEScan = (ScanSteps, [(NodeName, NodeState)])
+-- All of the DMNodes in the ScanSteps Tuple will be probabilistically locked to
+-- the specified states in sync, at the number of probabilities specified. 
+data KDOEScan =
+-- Specify directly which probabilities to scan. 
+    StepSpecKDOESC [(NodeName, NodeState)] [Probability]
+-- Pick two probabilities and the number of steps to get from one to the other. 
+  | RangeKDOESC [(NodeName, NodeState)] Probability Probability ScanSteps
+-- Start at 0% and get to 100% over the number of steps specified. 
+  | WholeKDOESC [(NodeName, NodeState)] ScanSteps
+    deriving (Eq, Show)
+  
 
 type ScanSteps = Int -- The number of steps from min to max in a Scan. 
 
