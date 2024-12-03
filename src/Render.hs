@@ -15,6 +15,7 @@ import Constants
 import Compare
 import Utilities
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
 import qualified Data.Versions as Ver
@@ -524,3 +525,14 @@ purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
             DMMSTruthTable -> renderTableG nGate
             _ -> renderDiscreteG lr nGate
         nGate = nodeGate n
+
+timeCourseOutputRender :: TimeCourseOutput -> TL.Text
+timeCourseOutputRender (TCOutput params resultOP) = 
+    tcOutputParamsRender params <> "\n\n" <> tcResOutputRender resultOP
+
+tcOutputParamsRender :: TCOutputParameters -> TL.Text
+tcOutputParamsRender params =
+    
+
+tcResOutputRender :: TCResultOutput -> TL.Text
+tcResOutputRender (resultOP)
