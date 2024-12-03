@@ -488,12 +488,12 @@ kdoeScanParse = lexeme $ rword "KDOEScan" >> (try (colon >>
         stepSpecifiedKDOEScanParse = StepSpecKDOESC
             <$> kdoeSCNodesParse
             <*> (colon >> (brackets (probParse `sepBy1` comma)))
+        wholeKDOEScanParse = WholeKDOESC <$> kdoeSCNodesParse
+                                         <*> (colon >> cInt)
         rangedKDOEScanParse = RangeKDOESC <$> kdoeSCNodesParse
                                           <*> (colon >> probParse)
                                           <*> (comma >> probParse)
                                           <*> (comma >> integer)
-        wholeKDOEScanParse = WholeKDOESC <$> kdoeSCNodesParse
-                                         <*> (colon >> cInt)
         kdoeSCNodesParse = parens (sepBy1 ((,) <$> variable
                                                <*> (colon >> integer)) comma)
     
