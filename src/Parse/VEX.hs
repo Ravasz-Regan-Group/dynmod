@@ -481,8 +481,8 @@ envScanParse = lexeme $ rword "EnvironmentalScan" >> (try (colon >>
 kdoeScanParse :: Parser KDOEScan
 kdoeScanParse = lexeme $ rword "KDOEScan" >> (try (colon >>
     (   (try stepSpecifiedKDOEScanParse)
-    <|> (try rangedKDOEScanParse)
-    <|> wholeKDOEScanParse
+    <|> (try wholeKDOEScanParse)
+    <|> rangedKDOEScanParse
     )))
     where
         stepSpecifiedKDOEScanParse = StepSpecKDOESC
