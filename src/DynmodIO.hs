@@ -147,7 +147,7 @@ writeAttractorBundle f lniBMap mapping (rN, nN, nP) mMult atts = do
         flatAttTanspLists = L.transpose (mconcat attLLists)
         switchRows = mappingFormat mapping
         attFile = mkAttTable attSizes switchRows flatAttTanspLists <> "\n\n" <>
-            tShow attNumber
+            showt attNumber
         fNameString = fromRelFile fName
         attFileNameStem = fNameString ++ "_attractors"
         attFileName = case mMult of 
@@ -175,7 +175,7 @@ mkAttTable sizes stRs atts = T.intercalate "\n" $ mkAttRow <$> (zip stRs atts)
     where
         mkAttRow (r, intR) = r <> "," <> (spacedRow sizes intR)
         spacedRow ss r = T.intercalate ",," $ T.intercalate "," <$>
-            (tShow <<$>> Split.splitPlaces ss r)
+            (showt <<$>> Split.splitPlaces ss r)
 
 runVEX :: Path Abs File
        -> Path Abs File

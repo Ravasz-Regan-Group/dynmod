@@ -50,6 +50,8 @@ module Types.DMInvestigation
     , AvgWasForced
     , PhenotypeWeights
     , PulseSpacing
+    , DMExpOutput(..)
+    , ExpOutput
     , runInvestigation
     , pickStates
     , envScanInputName
@@ -82,6 +84,7 @@ import Types.DMInvestigation.TimeCourse
 import Types.DMInvestigation.Scan
 import Types.VEXInvestigation
 import Data.Validation
+import TextShow
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import System.Random
@@ -90,7 +93,8 @@ import Data.Maybe (fromMaybe)
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
--- as well as functions to validate parsed investigation files. 
+-- as well as functions to validate parsed investigation files. After running
+-- we can also write the results to disk for future use. 
 
 type DMInvestigation = [LayerExpSpec]
 
@@ -115,16 +119,13 @@ data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
 data DMExperiment = TCDMEx DMTimeCourse
                   | ScDMex DMScan
 
-type DMInvestigationOutput = [LayerOutput]
-data LayerOutput = LayerOutput
-    { layerGateSet :: [(NodeName, TruthTable)]
-    , layerNIBM :: LayerNameIndexBimap
-    , layerDMExpOutputs :: [Maybe DMExpOutput]
-    } deriving (Eq, Show)
-
-data DMExpOutput = TimeCourseOutput
-                 | ScanOutput
-                   deriving (Eq, Show)
+data DMExpOutput = DMExpOutput { layerGateSet :: [NodeGate]
+                               , layerNIBM :: LayerNameIndexBimap
+                               , dmExpOutput :: ExpOutput
+                               } deriving (Eq, Show)
+data ExpOutput = TimeCourseOutput
+                   | ScanOutput
+                     deriving (Eq, Show)
 
 
 ----------------------------------------------------------------------------
@@ -224,7 +225,7 @@ mkInIBFixedVec mL pinnedIs
         pinningChoices = "\nThere are more than 5 unpinned environmental \
             \inputs. Please choose at least " <> leftoverN <> " to pin:\n"
             <> tUPOpts
-        leftoverN = tShow $ (L.length unpinnedInputs) - 5
+        leftoverN = showt $ (L.length unpinnedInputs) - 5
         tUPOpts = textInputOptions unpinnedInputs
         unpinnedInputs = inPts L.\\ extractedInputs
         extractedInputs = (inputExtract inPts . fst) <$> pinnedIs

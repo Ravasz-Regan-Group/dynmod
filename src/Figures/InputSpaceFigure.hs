@@ -7,7 +7,6 @@ module Figures.InputSpaceFigure
     ( attractorESpaceFigure
     ) where    
 
-import Utilities
 import Types.DMModel
 import Types.Simulation
 import Types.Figures
@@ -18,6 +17,7 @@ import qualified Data.List.Split as Split
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Text as T
+import TextShow
 import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.List as L
@@ -145,7 +145,7 @@ eSpaceNames nns = (eSpaceName . reverse) <$> nns
                     | (i <= nRange) = Just (iLine, i + 1)
                     |otherwise = Nothing
                     where
-                        iLine = nName <> ":" <> tShow i
+                        iLine = nName <> ":" <> showt i
                 (nName, nRange) = nodeRange n
         eSpaceName ns = [headName <> " off"] <> [headName <> " on"] <>
                                 ((nodeName . nodeMeta) <$> (tail ns))

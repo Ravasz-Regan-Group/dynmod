@@ -22,6 +22,7 @@ import Types.VEXInvestigation
 import Types.DMInvestigation.TimeCourse
 import Data.Validation
 import qualified Data.Text as T
+import TextShow
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Bimap as BM
@@ -96,6 +97,42 @@ data ScanResult = SKREnv [[Timeline]]
                 | SKRTwoEnvWithKDOE [[[[Timeline]]]]
                 | SKRThreeEnv ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
                   deriving (Eq, Show)
+
+-- The output of a Scan experiment, to be rendered to disk for future use.
+data ScanOutput = ScOutput
+    { scOutputParams :: SCOutputParameters
+    , scOutput :: [(Barcode, ScanResult)]
+    } deriving (Eq, Show)
+
+-- Cogent details of a Scan's specification, in case the output is not
+-- being read back in by dynmod in conjuntion with a VEX file. 
+data SCOutputParameters = SCPParams
+    { scExpOPMeta :: SCExpOPMeta
+    , scExpOPStepper :: ExpStepperKind
+    , scExpOPMPRNGSeed :: Maybe StdGen
+    } deriving (Eq, Show)
+data SCExpOPMeta = SCEOPM
+    { tcExpOPName :: T.Text
+    , tcExpOPDetails :: T.Text
+    , scExpOPKind :: MetaScanKind
+    } deriving (Eq, Show)
+
+
+-- Eventualy we will also want to write just processed result to disk. 
+-- Results to be output to disk
+-- data TCResultOutput = SCFull [(Barcode, RepResults)]
+--                     | SCProc SCProcdOutput
+--                     deriving (Eq, Show)
+
+-- data SCProcdOutput =
+--     SKREnvOP [[Timeline]]
+--   | SKRKDOEOP [[Timeline]]
+--   | SKREnvKDOEOP [[[Timeline]]]
+--   | SKRTwoEnvWithoutKDOEOP [[[Timeline]]]
+--   | SKRTwoEnvWithKDOEOP [[[[Timeline]]]]
+--   | SKRThreeEnvOP ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
+--     deriving (Eq, Show)
+
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
        -> Validation [VEXInvestigationInvalid] DMScan
@@ -413,7 +450,7 @@ mkKDOEName kdoeScan = "KDOEScan_" <> nLocksT
     where
         nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
         nodeLocks = kdoeScNLocks kdoeScan
-        lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
+        lockShow (nN, nLSt) = nN <> "_" <> showt nLSt
 
 mkScDetails :: ScanKind -> T.Text
 mkScDetails (EnvSc soloEnv)  = mkEnvDetails soloEnv
@@ -435,11 +472,11 @@ mkScDetails (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) =
 
 mkEnvDetails :: EnvScan -> T.Text
 mkEnvDetails (StepSpecESC nName stepValues) =
-    "StepSpecESC" <> nName <> "_" <> tShow stepValues
+    "StepSpecESC" <> nName <> "_" <> showt stepValues
 mkEnvDetails (RangeESC nName startSt endSt scSteps) = "RangeESC_" <> nName <>
-    "_" <> tShow startSt <> "_" <> tShow endSt <> "_over_" <> tShow scSteps
+    "_" <> showt startSt <> "_" <> showt endSt <> "_over_" <> showt scSteps
 mkEnvDetails (WholeESC nName scSteps) = "WholeESC_" <> nName <> "_over_" <>
-    tShow scSteps
+    showt scSteps
 
 mkKDOEDetails :: KDOEScan -> T.Text
 mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> tShow rnge
@@ -451,7 +488,7 @@ mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> tShow rnge
             (WholeKDOESC _ scSteps) -> mkSteps 0 1 scSteps
         nLocksT = T.intercalate "," (lockShow <$> nodeLocks)
         nodeLocks = kdoeScNLocks kdoeScan
-        lockShow (nN, nLSt) = nN <> "_" <> tShow nLSt
+        lockShow (nN, nLSt) = nN <> "_" <> showt nLSt
 
 runScan :: (LayerNameIndexBimap, [Phenotype])
         -> DMScan

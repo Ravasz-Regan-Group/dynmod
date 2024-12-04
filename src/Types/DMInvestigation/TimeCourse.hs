@@ -9,6 +9,8 @@ import Types.Figures
 import Types.VEXInvestigation
 import Data.Validation
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
@@ -49,6 +51,12 @@ data TCExpKind = P1
                | KDOEAtTr
                | GenExp
                deriving (Eq, Show)
+
+instance TextShow TCExpKind where
+    showb P1 = showbString "P1"
+    showb KDOE = showbString "KDOE"
+    showb KDOEAtTr = showbString "KDOEAtTr"
+    showb GenExp = showbString "GenExp"
 
 data InputPulse = InputPulse { realInputCoord :: RealInputCoord
                              , intNodeAlterations :: [IntNodeAlteration]
@@ -106,7 +114,7 @@ data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
 -- The output of a TimeCourse experiment, to be rendered to disk for future use. 
 data TimeCourseOutput = TCOutput
     { tcOutputParams :: TCOutputParameters
-    , tcOutput :: TCResultOutput
+    , tcOutput :: [(Barcode, RepResults)] -- TCResultOutput
     } deriving (Eq, Show)
 
 -- Cogent details of a TimeCourse's specification, in case the output is not
@@ -120,21 +128,22 @@ data TCOutputParameters = TCPParams
 data TCExpOPMeta = TCEOPM
     { tcExpOPName :: T.Text
     , tcExpOPDetails :: T.Text
-    , tcExpOPInitCoord :: (NodeName, RealNodeState)
     , tcExpOPReps :: ExperimentReps
     , tcExpOPKind :: TCExpKind
     } deriving (Eq, Show)
 
+-- Eventualy we will also want to write just processed result to disk. 
 -- Results to be output to disk
-data TCResultOutput = TCFull [(Barcode, RepResults)]
-                    | TCProc TCProcdOutput
-                    deriving (Eq, Show)
+-- data TCResultOutput = TCFull [(Barcode, RepResults)]
+--                     | TCProc TCProcdOutput
+--                     deriving (Eq, Show)
 
-data TCProcdOutput = TCProcdOutput
-  { timeCourseOP :: Maybe (Barcode, [[(RealExpSpreadResults, [PulseSpacing])]])
---   , nodeBarChartOP :: Maybe
+-- data TCProcdOutput = TCProcdOutput
+--   { timeCourseOP :: Maybe (Barcode, [[(RealExpSpreadResults
+--                                                     , [PulseSpacing])]])
+--   , nodeBarChartOP :: Maybe 
 --   , phBarChartOP :: Maybe
-  } deriving (Eq, Show)
+--   } deriving (Eq, Show)
 
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
@@ -171,10 +180,10 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
             -- Switch from NodeStates to RealNodeStates. 
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             expName = "pulse1_" <> pName <> "_wInputs_" <> textInputs
-            expDetails = "pulse1_" <> pName <> "-" <> tShow pState <>
-                "-" <> tShow dur <> "_wInputs_" <> textInputs
-            textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-            initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+            expDetails = "pulse1_" <> pName <> "-" <> showt pState <>
+                "-" <> showt dur <> "_wInputs_" <> textInputs
+            textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+            inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
                                                                 mPRMNGSeed) =
     TCExp <$> expM
@@ -193,8 +202,8 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
         initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
         expName = "KD_OE_" <> kdoeName nAlts <> "_wInputs_" <> textInputs
         expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
-        textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-        initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+        textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+        inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts 
                                                     exReps fkds mPRMNGSeed)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
@@ -218,23 +227,23 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
                 "_wInputs_" <> textInputs
             expDtls = "KDOEAtTr_" <> kdoeDetails nAlts <> "_wPulse_" <>
                 pulseDetails <> "_wInputs_" <> textInputs
-            pulseDetails = pN <> "-" <> tShow pSt <> "-" <> tShow pDur
-            textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-            initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+            pulseDetails = pN <> "-" <> showt pSt <> "-" <> showt pDur
+            textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+            inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 
 kdoeName :: [NodeAlteration] -> T.Text
 kdoeName alts = T.intercalate "_" $ kdoeName' <$> alts
     where
         kdoeName' (NodeLock nN _ _) = "Lock_" <> nN
-        kdoeName' (GradientNudge nN nD _) = tShow nD <> nN
+        kdoeName' (GradientNudge nN nD _) = showt nD <> nN
 
 kdoeDetails :: [NodeAlteration] -> T.Text
 kdoeDetails alts = T.intercalate "_" $ kdoeName' <$> alts
     where
-        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> "-" <> tShow nS <>
-            "-" <> tShow lP
-        kdoeName' (GradientNudge nN nD nP) = tShow nD <> nN <> "-"
-            <> tShow nP
+        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> "-" <> showt nS <>
+            "-" <> showt lP
+        kdoeName' (GradientNudge nN nD nP) = showt nD <> nN <> "-"
+            <> showt nP
 
 mkAttFilter :: ModelMapping -> ModelLayer -> InitialEnvironment
             -> Validation [VEXInvestigationInvalid]
@@ -526,7 +535,7 @@ realTextInputOptions inPtNDs = T.intercalate "\n" $ realTxtInputOpt <$> inPtNDs
         realTxtInputOpt [] = T.empty
         realTxtInputOpt [n] = nName <> theRange
             where
-                theRange = ":x, x ∈ [0, " <> tShow nRange <> "]"
+                theRange = ":x, x ∈ [0, " <> showt nRange <> "]"
                 (nName, nRange) = nodeRange n
         realTxtInputOpt ns = T.intercalate "\n" $ firstRange:
             (otherOpts <$> rNS)
@@ -589,7 +598,7 @@ txtNodeLockOpts oobLocks mlNodeRanges =
         txtNodeLockOpt :: [NodeRange] -> (NodeName, NodeState) -> T.Text
         txtNodeLockOpt nRanges (altName, _) = altName <> theRange
             where
-                theRange = ":x, x ∈ " <> tShow [0..rTop]
+                theRange = ":x, x ∈ " <> showt [0..rTop]
                 -- txtNodeLockOpts is never evaluated unless I already know that
                 -- the node in the NodeLock exists in the ModelLayer
                 rTop = (snd . fromJust . L.find ((==) altName . fst)) nRanges
@@ -632,7 +641,7 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
         txtInputOpt [] = T.empty
         txtInputOpt [n] = T.intercalate "\n" $ nName:(iLine <$> [0..nRange])
             where
-                iLine i = "    " <> nName <> ":" <> tShow i
+                iLine i = "    " <> nName <> ":" <> showt i
                 (nName, nRange) = nodeRange n
         txtInputOpt ns = T.intercalate "\n" $ nName:("    " <> nName <> ":0"):
                  (otherOpts <$> rNS)

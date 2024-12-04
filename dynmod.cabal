@@ -99,6 +99,8 @@ library
     , split
     , statistics
     , text
+    , text-show
+    , text-show-instances
     , unordered-containers
     , validation
     , vector

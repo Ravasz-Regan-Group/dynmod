@@ -124,6 +124,9 @@ import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Instances()
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString, showbChar)
+import TextShow.Data.UnorderedContainers()
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
@@ -493,7 +496,7 @@ prettyTTable :: NodeName -> GateOrder -> TruthTable -> (NodeName, T.Text)
 prettyTTable nN gO tT = (nN, gatePrint <> T.singleton '\n' <> prettyRows)
     where
         prettyRows = T.unlines textRows
-        textRows = (T.concat . (L.intersperse (T.singleton '\t')) . fmap tShow)
+        textRows = (T.concat . (L.intersperse (T.singleton '\t')) . fmap showt)
             <$> joinedRows
         joinedRows = (\(v, y) -> U.toList v <> [y]) <$> rows
         rows = (L.sortOn fst . Map.toList) tT
@@ -530,8 +533,8 @@ tTInputOutput gO tT = zip exprInputs outputs
         inputLists = U.toList <$> vecs
         (vecs, outputs) = unzip $ (L.sortOn fst . Map.toList) tT
 
-data NodeExpr
-  = GateLit Bool
+data NodeExpr =
+    GateLit Bool
   | GateConst NodeName NodeState
   | Not NodeExpr
   | Binary BinOp NodeExpr NodeExpr
@@ -547,6 +550,16 @@ instance Show NodeExpr where
     show (Binary Or expr1 expr2) =
         show expr1 ++ " or " ++ show expr2
     show (Pars expr) = "(" <> show expr <> ")"
+
+instance TextShow NodeExpr where
+    showb (GateLit b) = showb b
+    showb (GateConst n s) = showb n <> showbChar ':' <> showb s
+    showb (Not expr) = showbString "not " <> showb expr
+    showb (Binary And expr1 expr2) =
+        showb expr1 <> showbString " and " <> showb expr2
+    showb (Binary Or expr1 expr2) =
+        showb expr1 <> showbString " or " <> showb expr2
+    showb (Pars expr) = showbChar '(' <> showb expr <> showbChar ')'
 
 data BinOp
   = And
@@ -585,7 +598,7 @@ prettyGateEval :: GateOrder
 prettyGateEval gO assigns nInput = prettify output
     where
         prettify = (((prettyInput <> T.singleton '\t') <>) . T.pack . show)
-        prettyInput = (T.intersperse '\t' . T.concat . fmap tShow) orderedInput
+        prettyInput = (T.intersperse '\t' . T.concat . fmap showt) orderedInput
         orderedInput = fromJust <$> (sequenceA (Map.lookup <$> gO) nInput)
         output = fromJust $ gateEval assigns nInput
 
@@ -700,6 +713,27 @@ data GateInvalid = InconsistentNames
                  | TableDisNameMismatch TableDisNameMismatch
                  | TruthTableIncomplete TruthTableIncomplete
     deriving (Show, Eq)
+
+instance TextShow GateInvalid where
+    showb InconsistentNames = showbString "InconsistentNames"
+    showb DuplicateAssigns = showbString "DuplicateAssigns"
+    showb ZeroAssigned = showbString "ZeroAssigned"
+    showb (MissingOrTooHigh nSts) =
+        showbString "MissingOrTooHigh" <> showbSpace <> showbList nSts
+    showb OutOfOrder = showbString "OutOfOrder"
+    showb EmptyGate = showbString "EmptyGate"
+    showb (ContradictoryExprSet ceSet) =
+        showbString "ContradictoryExprSet" <> showbSpace <> showb ceSet
+    showb (TableExprInNodeMismatch nNames) =
+        showbString "TableExprInNodeMismatch" <> showbSpace <> showbList nNames
+    showb (TableExprStateMismatch mMatchT) =
+        showbString "TableExprStateMismatch" <> showbSpace <> showb mMatchT
+    showb (TableExprOutputMismatch mMatch) =
+        showbString "TableExprOutputMismatch" <> showbSpace <> showb mMatch
+    showb (TableDisNameMismatch mMatch) = showbString "TableDisNameMismatch" <>
+        showbSpace <> showb mMatch
+    showb (TruthTableIncomplete ttInc) = showbString "TruthTableIncomplete" <>
+        showbSpace <> showb ttInc
 
 -- If there are internal contradictions in a gate, this provides the relevant
 -- expressions, expression states, inputs, and gate states affected. 

@@ -27,6 +27,7 @@ import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import Statistics.Sample (meanVarianceUnb)
 import qualified Data.Text as T
+import TextShow
 import qualified Data.List as L
 import Text.Printf (printf)
 import GHC.IO (unsafePerformIO)
@@ -350,7 +351,7 @@ scanXAxisData (MetaEnvSc inptName spread) = [(T.unpack inptName, spread)]
 scanXAxisData (MetaKDOESc lockNodes spread) = [(T.unpack lockT, spread)]
     where
         lockT = (T.intercalate ", " . fmap lockF) lockNodes
-        lockF (nN, nSt) = nN <> ":" <> tShow nSt
+        lockF (nN, nSt) = nN <> ":" <> showt nSt
 scanXAxisData (MetaEnvKDOEScan envD kdoeD xAx) = case xAx of
     KDOEX -> scanXAxisData (uncurry MetaEnvSc envD) <>
         scanXAxisData (uncurry MetaKDOESc kdoeD)

@@ -10,6 +10,7 @@ import qualified Types.Simulation as S
 import Constants
 import Utilities
 import qualified Data.Text as T
+import TextShow
 import qualified Data.Versions as Ver
 import qualified Data.Colour.Names as C
 import qualified Data.Colour.SRGB as SC
@@ -346,7 +347,7 @@ nodeStateCheck nodesWLinks =  case isSubset exNodes nodes of
             (\(a, b) -> (fst a, (snd a, snd b))) <$> zs
         []  -> case sequenceA (tableSizeCheck nodeMaxes <$> dmNodes) of
             Failure errs -> fail $
-                T.unpack $ T.unlines $ tShow <$> errs
+                T.unpack $ T.unlines $ showt <$> errs
             Success ns -> return $ zip ns links
     where
         links = snd <$> nodesWLinks
@@ -928,7 +929,7 @@ tableDisCheck (Just lG, Just tG) = case gateOrdCheck lG tG of
         where            
             nGate = NodeGate lName tOrder assigns tTable Both
             prettyCombos :: [T.Text]
-            prettyCombos = (T.concat . (L.intersperse "  ") . fmap tShow) <$>
+            prettyCombos = (T.concat . (L.intersperse "  ") . fmap showt) <$>
                 tSortedtGOrderedELCombos
             tSortedtGOrderedELCombos = L.sort $ (snd <$>) <$> tGOrderedELCombos
             tGOrderedELCombos = (sortWithOrderOn fst tOrder) <$> excessLCombos
@@ -952,10 +953,10 @@ accOutputMis :: TruthTableGate -> LogicalGate -> [T.Text]
 accOutputMis (_, tOrder, tTable) (_, _, assigns) = textified
     where
         textified = textify <$> mismatches
-        textify (t, (x, y)) = t <> "\t(" <> tShow x <> ",  "
-            <> tShow y <> ")"
+        textify (t, (x, y)) = t <> "\t(" <> showt x <> ",  "
+            <> showt y <> ")"
         mismatches = filter (\(_, (x, y)) -> x /= y) $ zip inputRowTexts outputs
-        inputRowTexts = (T.intersperse '\t' . T.concat . fmap tShow)
+        inputRowTexts = (T.intersperse '\t' . T.concat . fmap showt)
             <$> inputLists
         outputs = zip tOutputs lOutputs
         lOutputs = fromJust . gateEval assigns <$> tCombos

@@ -86,6 +86,8 @@ library:
   - Chart-diagrams
   - statistics
   - random-shuffle
+  - text-show
+  - text-show-instances
 
 executables:
   dynmod:

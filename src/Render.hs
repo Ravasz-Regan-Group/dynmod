@@ -11,6 +11,7 @@ module Render
 
 import Types.GML
 import Types.DMModel
+import Types.DMInvestigation
 import Constants
 import Compare
 import Utilities
@@ -18,9 +19,11 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
+import qualified Data.Bimap as BM
 import qualified Data.Versions as Ver
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
+import TextShow
 import qualified Data.List as L
 import Data.Function (on)
 
@@ -32,8 +35,8 @@ gmlListRender kvPs tabDepth = T.intercalate "\n" $ pairRender <$> kvPs
   where
       tabber i = T.replicate i "\t"
       pairRender (k, v) = case v of
-          GInt  i -> tabber tabDepth <> k <> "\t" <> tShow i
-          GReal r -> tabber tabDepth <> k <> "\t" <> tShow r
+          GInt  i -> tabber tabDepth <> k <> "\t" <> showt i
+          GReal r -> tabber tabDepth <> k <> "\t" <> showt r
           GStr  x -> tabber tabDepth <> k <> "\t" <> "\"" <> x <> "\""
           GList g ->   tabber tabDepth <> k <> "\n"
                     <> tabber tabDepth <> "[\n" 
@@ -76,7 +79,7 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             rBOL = "BiasOrderLast: " <> (T.intercalate ", " $ boShow <$> bOL)
             boShow (WholeNode n) = "WholeNode: " <> n
             boShow (SpecificState n i) = "SpecificState: " <>
-                n <> " " <> tShow i
+                n <> " " <> showt i
 
 renderMMaping :: ModelMapping -> T.Text
 renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries Nothing) <>
@@ -113,7 +116,7 @@ renderSubSpace :: SubSpace -> T.Text
 renderSubSpace sSp = "(" <> entries <> ")"
     where
         entries = T.intercalate ", " $ renderSSElem <$> sSp
-        renderSSElem (nN, nS) = nN <> ":" <> tShow nS
+        renderSSElem (nN, nS) = nN <> ":" <> showt nS
 
 renderMGraph :: ModelGraph -> T.Text
 renderMGraph mg = dmmsWrap "ModelGraph" entries Nothing
@@ -139,11 +142,11 @@ renderNMeta nm = dmmsWrap "NodeMetaData" entries Nothing
             [rName, rGene, rType, rColor, rCoord, rDesc, rNotes]
         rName = "NodeName: " <> (nodeName nm)
         rGene = "NodeGenes: " <>
-            (T.intercalate ", " $ tShow <$> (nodeGenes nm))
-        rType = "NodeType: " <> ((tShow . nodeType) nm)
+            (T.intercalate ", " $ showt <$> (nodeGenes nm))
+        rType = "NodeType: " <> ((showt . nodeType) nm)
         rColor = "NodeColor: " <> (renderColor . nodeColor) nm
         rCoord = "NodeCoordinate: " <>
-            (T.intercalate ", " $ tShow <$> ((U.toList . nodeCoordinate) nm))
+            (T.intercalate ", " $ showt <$> ((U.toList . nodeCoordinate) nm))
         rDesc = "NodeDescription: " <> desc nInfo
         rNotes = "NodeNotes: " <> note nInfo
         nInfo = nodeInfo nm
@@ -191,12 +194,12 @@ renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries Nothing
         boolNS = Map.keysSet $ Map.filter (== 1) r
 
 renderExpr :: Set.HashSet NodeName -> NodeExpr -> T.Text
-renderExpr _ (GateLit b) = tShow b
+renderExpr _ (GateLit b) = showt b
 renderExpr s (GateConst n st) = case Set.member n s of
     True -> case st of
         0 -> "not " <> n
         _ -> n
-    False -> n <> ":" <> tShow st
+    False -> n <> ":" <> showt st
 renderExpr s (Not expr) = "not " <> renderExpr s expr
 renderExpr s (Pars expr) = "(" <> renderExpr s expr <> ")"
 renderExpr s (Binary And expr1 expr2) =
@@ -211,8 +214,7 @@ renderTableG ng = dmmsWrap "TruthTable" entries Nothing
         entries = topLine <> "\n" <> (T.intercalate "\n" rows)
         topLine = T.intercalate "\t" $ gateOrder ng <> [gNodeName ng]
         rows = L.sort $ zipWith (<>) inputRows tOutputs
-        inputRows =
-            (T.intercalate "\t" . fmap tShow . U.toList) <$> vecs
+        inputRows = (T.intercalate "\t" . fmap showt . U.toList) <$> vecs
         tOutputs = ((<>) "\t" . T.pack . show) <$> outputs
         (vecs, outputs) = (unzip . Map.toList . gateTable) ng
 
@@ -361,12 +363,12 @@ renderPDiff :: PDiff -> T.Text -> T.Text
 renderPDiff (PDiff _ Nothing Nothing) acc = acc
 renderPDiff (PDiff pDN (Just lSwitchSDiff) Nothing) acc =
     "Shared PhenotypeName(" <> pDN <> "), but differing SwitchNodeStates:" <>
-        tShow lSwitchSDiff <> "\n" <> acc
+        showt lSwitchSDiff <> "\n" <> acc
 renderPDiff (PDiff pDN Nothing (Just _)) acc =
     "Shared PhenotypeName(" <> pDN <> "), but differing FingerPrints\n" <> acc
 renderPDiff (PDiff pDN (Just lSwitchSDiff) (Just _)) acc =
     "Shared PhenotypeName(" <> pDN <>
-        "), but differing SwitchNodeStates(" <> tShow lSwitchSDiff <>
+        "), but differing SwitchNodeStates(" <> showt lSwitchSDiff <>
          ") and differing Fingerprints\n" <> acc
 
 renderLayerDiff :: (LayerRange, LayerRange)
@@ -401,8 +403,8 @@ renderNodeDiff (lRangeL, lRangeR) (NodeDiff nN nTD lDs tD)
     where
     typesMaybe = case nTD of
         Nothing -> ""
-        Just (lType, rType) -> "\n" <> "NodeTypes vary: " <> tShow lType <>
-            " vs " <> tShow rType <> "\n"
+        Just (lType, rType) -> "\n" <> "NodeTypes vary: " <> showt lType <>
+            " vs " <> showt rType <> "\n"
     rLinkDiffs = renderLinkDiff lDs
     tablesMaybe = case tD of
         Left gates -> "\n" <> "Gate Inlinks differ, so comparing the gate\
@@ -467,7 +469,7 @@ renderTableDiff (nodes, (SD (LD lTable) (RD rTable) _)) = case rows of
         orders = isoBimap (gateOrder . nodeGate) nodes
         nN = (nodeName . nodeMeta . fst) nodes
         inputRows =
-            (T.intercalate "\t" . fmap tShow . U.toList) <$> vecs
+            (T.intercalate "\t" . fmap showt . U.toList) <$> vecs
         tOutputs = ((<>) "\t") <$> outs
         (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR
         zipdLR = ((<>) "\t" . T.pack . show) <<$>> (zipWith zipper lList rList)
@@ -526,13 +528,28 @@ purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
             _ -> renderDiscreteG lr nGate
         nGate = nodeGate n
 
-timeCourseOutputRender :: TimeCourseOutput -> TL.Text
-timeCourseOutputRender (TCOutput params resultOP) = 
-    tcOutputParamsRender params <> "\n\n" <> tcResOutputRender resultOP
 
-tcOutputParamsRender :: TCOutputParameters -> TL.Text
-tcOutputParamsRender params =
-    
+----------------------------------------------------------------------------
+-- Render DMExperiment output. Note the use of Data.Text.Lazy to try to ditch
+-- the result from memory as quickly as possible. 
 
-tcResOutputRender :: TCResultOutput -> TL.Text
-tcResOutputRender (resultOP)
+renderDMExpOutput :: DMExpOutput -> TL.Text
+renderDMExpOutput expOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
+    where
+        expOPT = (renderSingleExpOP . dmExpOutput) expOP
+        layerGatesT = "Layer Gates: " <> TL.intercalate ", " gateTs
+        gateTs = renderLGate <$> (layerGateSet expOP)
+        lniBMapT = "LayerNameIndexBimap: " <> TL.intercalate ", " lniBMapPairTs
+        lniBMapPairTs = (fmap (TL.pack . show) . BM.toList . layerNIBM) expOP
+
+
+renderLGate :: NodeGate -> TL.Text
+renderLGate nGate = TL.intercalate ", " (tlNName:ttPairTs)
+    where
+        tlNName = (TL.fromStrict . gNodeName) nGate
+        ttPairTs = ttPairF <$> tablePairs
+        ttPairF (inputV, opState) = showtl inputV <> ":" <> showtl opState
+        tablePairs = (Map.toList . gateTable) nGate
+
+renderSingleExpOP :: ExpOutput -> TL.Text
+renderSingleExpOP = undefined

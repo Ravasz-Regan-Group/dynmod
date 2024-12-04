@@ -48,6 +48,8 @@ import Types.DMModel
 import Types.Simulation
 import Utilities
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
@@ -102,6 +104,10 @@ data NudgeDirection = NudgeUp
                     | NudgeDown
                     deriving (Eq, Show, Ord, Enum)
 
+instance TextShow NudgeDirection where
+    showb NudgeUp = showbString "NudgeUp"
+    showb NudgeDown = showbString "NudgeDown"
+
 type LockProbability = Probability
 -- NudgeDirection is its own sum type, but we need nudging to be fast-ish
 -- when we alter NodeStates in the middle of a DMExperiment, so:
@@ -116,6 +122,10 @@ data GeneralDuration a = DefaultD a | UserD a
 instance Functor GeneralDuration where
     fmap f (DefaultD x) = DefaultD $ f x
     fmap f (UserD x) = UserD $ f x
+
+instance (TextShow a) => TextShow (GeneralDuration a) where
+    showb (DefaultD x) = showbString "DefaultD" <> showbSpace <> showb x
+    showb (UserD x) = showbString "UserD" <> showbSpace <> showb x
 
 -- DefaultD is a default duration, and may be altered by the length of the
 -- Attractor that the pulse starts in. UserD is specified by the user, and may
@@ -503,9 +513,9 @@ groupInputs inputNames lniBMap inputV = inputStates
         namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
 
 nAltTPrep :: NodeAlteration -> T.Text
-nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> tShow nlS <> "@" <>
-    tShow nlP
-nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tShow gP
+nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> showt nlS <> "@" <>
+    showt nlP
+nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> showt gP
     where
         shND NudgeUp = "up"
         shND NudgeDown = "down"
@@ -515,7 +525,7 @@ nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tShow gP
 -- and belongs to the [[DMNode]] (inputs) and LayerNameIndexBimap in question. 
 inputCoordText :: [(NodeName, RealNodeState)] -> T.Text
 inputCoordText [] = ""
-inputCoordText [(nN, nS)] = nN <> ":" <> tShow nS
-inputCoordText ipts = nN <> ":" <> tShow nS
+inputCoordText [(nN, nS)] = nN <> ":" <> showt nS
+inputCoordText ipts = nN <> ":" <> showt nS
     where (nN, nS) = fromMaybe (L.last ipts) (L.find ((> 0) . snd) ipts)
 

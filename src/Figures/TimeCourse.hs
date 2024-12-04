@@ -19,6 +19,7 @@ import Constants
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
+import TextShow
 import qualified Data.HashMap.Strict as M
 import qualified Data.Bimap as BM
 import qualified Data.Colour as C
@@ -389,7 +390,7 @@ expGuideDia mL exMeta stripHt pSps = expTypeText ||| pulseDia
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mLInputNames =
             ((fmap . fmap) (nodeName . nodeMeta) . inputs . modelGraph) mL
-        expTypeText = tText' stripHt (tShow expKnd <> " ")
+        expTypeText = tText' stripHt (showt expKnd <> " ")
         expKnd = tcExpKind exMeta
 
 pulseSpacingDia :: Double
