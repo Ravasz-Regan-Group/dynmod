@@ -331,21 +331,23 @@ writeTCExpFig f (dmExpMeta, bcExpFigs) = do
     dirNBCH <- parseRelDir "NodeBCh"
     dirPHBCH <- parseRelDir "PhBCh"
     let dirFull = dirStem </> dirExp </> dirCat </> dirExpDetails
+    let idF fs = zip [0..] fs
 -- Note that for a given experiment, there are either Just nodeBCTCFigs for
 -- every Barcode or Nothings; similarly for Just phenotypeBCTCFigs. So these
 -- (traverse . traverse) will not clobber any figures that we want to write out
 -- to disk. 
-        tcFigs = (traverse . traverse) nodeBCTCFigs bcExpFigs
-        phFigs = (traverse . traverse) phenotypeBCTCFigs bcExpFigs
-        nBChFig = (traverse . traverse) nodeBCAvgBarFig bcExpFigs
-        phBChFig = (traverse . traverse) phenotypeBCAvgBarFigs bcExpFigs
+        tcFigs = fmap idF $ (traverse . traverse) nodeBCTCFigs bcExpFigs
+        phFigs = fmap idF $ (traverse . traverse) phenotypeBCTCFigs bcExpFigs
+        nBChFigs = fmap idF $ (traverse . traverse) nodeBCAvgBarFig bcExpFigs
+        phBChFigs = fmap idF $ (traverse . traverse)
+                                                phenotypeBCAvgBarFigs bcExpFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirNTC) expDetails) tcFigs
     (mapM_ . mapM_) (writeExpBCFig (dirFull </> dirPHTC) expDetails) phFigs
-    (mapM_ . mapM_) (wrExpBCFigNBC (dirFull </> dirNBCH) expDetails) nBChFig
-    (mapM_ . mapM_) (wrExpBCFigPhBC (dirFull </> dirPHBCH) expDetails) phBChFig
+    (mapM_ . mapM_) (wrExpBCFigNBC (dirFull </> dirNBCH) expDetails) nBChFigs
+    (mapM_ . mapM_) (wrExpBCFigPhBC (dirFull </> dirPHBCH) expDetails) phBChFigs
 
-writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
-writeExpBCFig dirFull expDetails (bc, expDias) = do
+writeExpBCFig :: Path Abs Dir -> T.Text -> (Int,(Barcode, [Diagram B])) -> IO ()
+writeExpBCFig dirFull expDetails (fID, (bc, expDias)) = do
     ensureDir dirFull
     case expDias of
         [] -> do 
@@ -353,7 +355,8 @@ writeExpBCFig dirFull expDetails (bc, expDias) = do
             PS.pPrint bc
         [expDia] -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = show fID ++ "bc" ++
+                    (T.unpack $ bcPatterns <> "_" <> expDetails)
             relFileName <- parseRelFile rFString
             relFileNameWExt <- addExtension ".pdf" relFileName
             let absFileNameWExt = dirFull </> relFileNameWExt
@@ -361,7 +364,8 @@ writeExpBCFig dirFull expDetails (bc, expDias) = do
             renderCairo fPath (mkWidth 1600) expDia
         expDs -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = show fID ++ "bc" ++
+                    (T.unpack $ bcPatterns <> "_" <> expDetails)
                 intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
                 rFStrings = (rFString <>) <$> intBStrs
                 fStrDiaPairs = zip rFStrings expDs
@@ -794,9 +798,10 @@ inputPP dMM = do
 -- ability to do statistics across experiments internally. 
 wrExpBCFigNBC :: Path Abs Dir
         -> T.Text
-        -> (Barcode, [(Diagram B, [[[(NodeName, U.Vector RealNodeState)]]])])
+        -> (Int
+           , (Barcode, [(Diagram B, [[[(NodeName, U.Vector RealNodeState)]]])]))
         -> IO ()
-wrExpBCFigNBC dirFull expDetails (bc, expDiasWData) = do
+wrExpBCFigNBC dirFull expDetails (fID, (bc, expDiasWData)) = do
     ensureDir dirFull
     case expDiasWData of
         [] -> do 
@@ -804,7 +809,8 @@ wrExpBCFigNBC dirFull expDetails (bc, expDiasWData) = do
             PS.pPrint bc
         [(expDia, nodeVecs)] -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = show fID ++ "bc" ++
+                    (T.unpack $ bcPatterns <> "_" <> expDetails)
                 formattedData = formatNBCData nodeVecs
             relFileName <- parseRelFile rFString
             relFileNameWExt <- addExtension ".pdf" relFileName
@@ -816,7 +822,8 @@ wrExpBCFigNBC dirFull expDetails (bc, expDiasWData) = do
             RW.writeFile absDataFileNameWExt formattedData
         expDs -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = show fID ++ "bc" ++
+                    (T.unpack $ bcPatterns <> "_" <> expDetails)
                 intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
                 rFStrings = (rFString <>) <$> intBStrs
                 fStrDiaPairs = zip rFStrings expDs
@@ -859,10 +866,10 @@ writeAttAlteredExpBCFigNBC dirFull (rFString, (expDia, nodeVecs)) = do
 -- ability to do statistics across experiments internally. 
 wrExpBCFigPhBC :: Path Abs Dir
                -> T.Text
-               -> (Barcode, [(Diagram B,
-                        [[(NodeName, [[(PhenotypeName, U.Vector Double)]])]])])
+               -> (Int, (Barcode, [(Diagram B,
+                        [[(NodeName, [[(PhenotypeName, U.Vector Double)]])]])]))
                -> IO ()
-wrExpBCFigPhBC dirFull expDetails (bc, expDiasWData) = do
+wrExpBCFigPhBC dirFull expDetails (fID, (bc, expDiasWData)) = do
     ensureDir dirFull
     case expDiasWData of
         [] -> do 
@@ -870,7 +877,8 @@ wrExpBCFigPhBC dirFull expDetails (bc, expDiasWData) = do
             PS.pPrint bc
         [(expDia, phVecs)] -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = show fID ++ "bc" ++
+                    (T.unpack $ bcPatterns <> "_" <> expDetails)
                 formattedData = formatPhBCData phVecs
             relFileName <- parseRelFile rFString
             relFileNameWExt <- addExtension ".pdf" relFileName
