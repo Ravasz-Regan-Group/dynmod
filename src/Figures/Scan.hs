@@ -744,7 +744,7 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         nodeVals = zipWith3 ndTupleValsF nodeValuesWOM nodeValuesWM diffNValues
         ndTupleValsF x y z = (tagPair, (snd x, snd y, snd z))
             where tagPair = (fst x, (fromIntegral . (lRangeMap M.!)) (fst x))
-        diffNValues = zipWith diffF nodeValuesWOM nodeValuesWM
+        diffNValues = zipWith diffF nodeValuesWM nodeValuesWOM
         nodeValuesWOM, nodeValuesWM :: [(ScanNode, [[[Double]]])]
         (nodeValuesWOM, nodeValuesWM) = isoBimap nodeValuesF trimmedSCBsPair
         nodeValuesF :: [[[[Timeline]]]] -> [(ScanNode, [[[Double]]])]
@@ -763,7 +763,7 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         swFigs = scDiffHMBlock "Switch" overLayVs rangeData <$> phVals
         phVals = zipWith3 swTupleValsF phValuessWOM phValuessWM diffPhValues
         swTupleValsF x y z = ((fst x, 1), (snd x, snd y, snd z))
-        diffPhValues = zipWith diffF phValuessWOM phValuessWM
+        diffPhValues = zipWith diffF phValuessWM phValuessWOM 
         (phValuessWOM, phValuessWM) = isoBimap phValuesF bareValuessPair
         phValuesF = zip phNames . L.transpose . fmap L.transpose .
             (fmap . fmap) L.transpose
@@ -774,9 +774,9 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         stPlValues = zipWith3 tupleValsF
             stopPlotValuesWOM stopPlotValuesWM diffStopPlotValues
         tupleValsF x y z = (fst x, (snd x, snd y, snd z))
-        diffStopPlotValues = zipWith diffF stopPlotValuesWOM stopPlotValuesWM
-        diffF (diffN, vs) (_, mVs) = (diffN, (zipWith . zipWith . zipWith) (-)
-            vs mVs)
+        diffStopPlotValues = zipWith diffF stopPlotValuesWM stopPlotValuesWOM
+        diffF (_, mVs) (diffN, vs)= (diffN, (zipWith . zipWith . zipWith) (-)
+            mVs vs)
         (stopPlotValuesWOM, stopPlotValuesWM) =
             isoBimap mkStopPhValues3D stopDsssPair
         stopDsssPair :: ([[[([(PhenotypeName, Double)], Double)]]], 
@@ -934,6 +934,6 @@ stringText' tHt t = F.svgText def t # F.fit_height tHt
 
 -- A diverging pallete for differences of heatmap data. 
 divergingP :: P.ColourMap
-divergingP = P.colourMap $ zip [1..] --[blue, white, red]
-    [sRGB24 202 0 32, sRGB24 244 165 130, sRGB24 247 247 247, sRGB24 146 197 222
-    , sRGB24 5 113 176]
+divergingP = P.colourMap $ zip [1..] --[red, white, blue]
+    [sRGB24 5 113 176, sRGB24 146 197 222, sRGB24 247 247 247,
+     sRGB24 244 165 130, sRGB24 202 0 32]
