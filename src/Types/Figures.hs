@@ -49,7 +49,7 @@ import Types.Simulation
 import Utilities
 import qualified Data.Text as T
 import TextShow
-import TextShow.Data.Char (showbString)
+import TextShow.Data.Char (showbString, showbChar)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
@@ -212,12 +212,19 @@ data BarKind = FullMiss BarHeight
                         LocalColor
              deriving (Eq, Show, Generic)
 instance Hashable BarKind
+
 type BarHeight = Int
 
 data Slice = Match AttractorSize AttractorMatchIndices PhenotypeName
            | Miss AttractorSize
            deriving (Eq, Show, Generic)
 instance Hashable Slice
+instance TextShow Slice where
+    showb (Match attSize attMatchIndices phName) = showbString "Match " <>
+        showb attSize <> showbChar ' ' <> showb attMatchIndices <>
+        showbChar ' ' <> showb phName
+    showb (Miss attSize) = showbString "Miss " <> showb attSize
+
 type AttractorSize = Int
 type AttractorMatchIndices = [[Int]]
 

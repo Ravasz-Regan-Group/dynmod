@@ -97,7 +97,6 @@ data VEXScan = VEXScan
     [(NodeName, PhenotypeName)]
     ExperimentStep
     PlottingNodes
-    ManualSeed
     deriving (Eq, Show)
 
 -- Maximum length of a given run. 

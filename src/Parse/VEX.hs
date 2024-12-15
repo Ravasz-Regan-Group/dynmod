@@ -452,7 +452,6 @@ scanParse = (between (symbol "Scan{") (symbol "Scan}") (
                          <*> toPermutationWithDefault []
                                             (multiIdentifier "ScanNodes")
                     )
-                <*> toPermutationWithDefault Nothing manualPRNGParse
     )) >>= scanCheck
 
 scanKindParse :: Parser ScanKind
@@ -507,7 +506,7 @@ xAxisParse = lexeme $ rword "X_Axis" >>
 
 scanCheck :: VEXScan -> Parser VEXScan
 scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
-    exStep plottingNs mPRMNGSeed) =
+    exStep plottingNs) =
     VEXScan <$> scanKindCheck nAlts scKnd
             <*> pure inEnv
             <*> pure nAlts
@@ -517,7 +516,6 @@ scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
             <*> pure stopPhs
             <*> pure exStep
             <*> plottingNodeCheck plottingNs
-            <*> pure mPRMNGSeed
     
 
 scanKindCheck :: [NodeAlteration] -> ScanKind -> Parser ScanKind

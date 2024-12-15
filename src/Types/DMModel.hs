@@ -127,6 +127,7 @@ import qualified Data.Text as T
 import TextShow
 import TextShow.Data.Char (showbString, showbChar)
 import TextShow.Data.UnorderedContainers()
+import TextShow.Data.Vector()
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
@@ -375,6 +376,39 @@ instance Texy NodeType where
     texy LncRNA             = (footnotesize . fromLaTeX . TeXRaw) "lncRNA"
     texy Cell_Surgace_Ligand
                             = (footnotesize . fromLaTeX . TeXRaw) "SLig"
+
+instance TextShow NodeType where
+    showb Undefined_NT = showbString "Undefined_NT"
+    showb Cell = showbString "Cell"
+    showb DM_Switch = showbString "DM_Switch"
+    showb Connector = showbString "Connector"
+    showb Environment = showbString "Undefined_NT"
+    showb Process = showbString "Process"
+    showb Macro_Structure = showbString "Macro_Structure"
+    showb Metabolite = showbString "Metabolite"
+    showb MRNA = showbString "MRNA"
+    showb MicroRNA = showbString "MicroRNA"
+    showb Protein_Complex = showbString "Protein_Complex"
+    showb Receptor = showbString "Receptor"
+    showb Adaptor_Protein = showbString "Adaptor_Protein"
+    showb Secreted_Protein = showbString "Secreted_Protein"
+    showb TF_Protein = showbString "TF_Protein"
+    showb Kinase = showbString "Kinase"
+    showb Phosphatase = showbString "Phosphatase"
+    showb Ubiquitin_Ligase = showbString "Ubiquitin_Ligase"
+    showb Protease = showbString "Protease"
+    showb DNase = showbString "DNase"
+    showb CAM = showbString "CAM"
+    showb CDK = showbString "CDK"
+    showb CDKI = showbString "CDKI"
+    showb GEF = showbString "GEF"
+    showb GAP = showbString "GAP"
+    showb GTPase = showbString "GTPase"
+    showb Enzyme = showbString "Enzyme"
+    showb Protein = showbString "Protein"
+    showb Membrane_Potential = showbString "Membrane_Potential"
+    showb LncRNA = showbString "LncRNA"
+    showb Cell_Surgace_Ligand = showbString "Cell_Surgace_Ligand"
 
 data LinkEffect = Undefined_LE
                 | Activation

@@ -27,6 +27,7 @@ import Path
 import Path.IO
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
+import TextShow
 import Diagrams.Prelude (mkWidth, Diagram)
 import Diagrams.Backend.Cairo (B, renderCairo)
 import qualified Data.Graph.Inductive as Gr

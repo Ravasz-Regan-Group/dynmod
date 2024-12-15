@@ -9,6 +9,8 @@ module Types.DMInvestigation.Scan
     , IntKDOEScan
     , ScanVariation
     , ScanResult(..)
+    , ScanOutput(..)
+    , SCOutputParameters
     , kdoeScNLocks
     , mkDMScan
     , runScan
@@ -42,7 +44,6 @@ data DMScan = Sc {
     , scAttFilter :: [(Barcode, Attractor)] -> [(Barcode, Attractor)]
     , scExpStepper :: ExpStepper
     , scanInputFix :: Maybe RealInputCoord -- Start runs at real-valued inputs. 
-    , manualSCPRNGSeed :: Maybe StdGen
     }
 
 data SCExpMeta = SCEMeta {
@@ -135,9 +136,9 @@ data SCExpOPMeta = SCEOPM
 
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
-       -> Validation [VEXInvestigationInvalid] DMScan
+         -> Validation [VEXInvestigationInvalid] DMScan
 mkDMScan mM mL
-  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep pltNds mPRMNGSeed) =
+  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep pltNds) =
     case mkSCExpKind mL scKnd of
     Failure errs -> Failure errs
     Success intScKnd ->
@@ -149,7 +150,6 @@ mkDMScan mM mL
            <*> mkAttFilter mM mL inEnv
            <*> pure (mkStepper exStep mL)
            <*> (traverse (mkRealInputCoordinate mL) mIFix)
-           <*> pure (mkStdGen <$> mPRMNGSeed)
         where
             expDetails = mkScDetails scKnd
             expName = mkScName scKnd
@@ -479,7 +479,7 @@ mkEnvDetails (WholeESC nName scSteps) = "WholeESC_" <> nName <> "_over_" <>
     showt scSteps
 
 mkKDOEDetails :: KDOEScan -> T.Text
-mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> tShow rnge
+mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> showt rnge
     where
         rnge = case kdoeScan of
             (StepSpecKDOESC _ probValues) -> probValues

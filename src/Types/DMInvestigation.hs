@@ -51,7 +51,12 @@ module Types.DMInvestigation
     , PhenotypeWeights
     , PulseSpacing
     , DMExpOutput(..)
-    , ExpOutput
+    , ExpOutput(..)
+    , TimeCourseOutput(..)
+    , TCOutputParameters(..)
+    , TCExpOPMeta(..)
+    , ScanOutput(..)
+    , SCOutputParameters
     , runInvestigation
     , pickStates
     , envScanInputName
@@ -123,9 +128,9 @@ data DMExpOutput = DMExpOutput { layerGateSet :: [NodeGate]
                                , layerNIBM :: LayerNameIndexBimap
                                , dmExpOutput :: ExpOutput
                                } deriving (Eq, Show)
-data ExpOutput = TimeCourseOutput
-                   | ScanOutput
-                     deriving (Eq, Show)
+data ExpOutput = TCO TimeCourseOutput
+               | SCO ScanOutput
+                 deriving (Eq, Show)
 
 
 ----------------------------------------------------------------------------
@@ -299,10 +304,9 @@ runExperiment phData layerBCG attSet gen ex = case ex of
     ScDMex scanExp -> (newGen, ScanExpRes (expMeta, attResults))
         where
             (newGen, attResults) =
-                L.mapAccumL (runScan phData scanExp) expGen filteredAtts
+                L.mapAccumL (runScan phData scanExp) gen filteredAtts
             filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
             expMeta = scExpMeta scanExp
-            expGen = fromMaybe gen (manualSCPRNGSeed scanExp)
     where
         attList = HS.toList attSet
 

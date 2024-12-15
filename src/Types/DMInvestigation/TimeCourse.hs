@@ -9,6 +9,7 @@ import Types.Figures
 import Types.VEXInvestigation
 import Data.Validation
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
 import TextShow
 import TextShow.Data.Char (showbString)
 import qualified Data.Vector.Unboxed as U
@@ -44,6 +45,7 @@ data TCExpMeta = TCEMeta {
     , expReps :: ExperimentReps -- Times to repeat this experiment.
     , tcExpKind :: TCExpKind -- Was the parsed VEXTimeCourse general or preset?
     , tcExpFigures :: FigKinds
+    , tcManualSeed :: ManualSeed
     }  deriving (Eq, Show)
 
 data TCExpKind = P1
@@ -102,6 +104,11 @@ data ExpStepperKind = SynchronousDeterministic
                     | AsynchronousDeterministic
                     deriving (Eq, Show, Ord)
 
+instance TextShow ExpStepperKind where
+    showb SynchronousDeterministic = showbString "SynchronousDeterministic"
+    showb SynchronousNoisy = showbString "SynchronousNoisy"
+    showb AsynchronousDeterministic = showbString "AsynchronousDeterministic"
+
 -- The inner run of stepping through the network should be fast-ish, so looking
 -- up the NodeIndex each time for node alterations is a bad idea. 
 data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
@@ -123,11 +130,11 @@ data TCOutputParameters = TCPParams
     { tcExpOPMeta :: TCExpOPMeta
     , tcExpOPStepper :: ExpStepperKind
     , tcExpOPPulseSps :: [[PulseSpacing]]
-    , tcExpOPMPRNGSeed :: Maybe StdGen
+    , tcExpOPMPRNGSeed :: ManualSeed
     } deriving (Eq, Show)
 data TCExpOPMeta = TCEOPM
-    { tcExpOPName :: T.Text
-    , tcExpOPDetails :: T.Text
+    { tcExpOPName :: TL.Text
+    , tcExpOPDetails :: TL.Text
     , tcExpOPReps :: ExperimentReps
     , tcExpOPKind :: TCExpKind
     } deriving (Eq, Show)
@@ -149,12 +156,21 @@ mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
 mkTimeCourse mM mL (GeneralTC exNm inEnv expStep vexPlss exReps fkds
                                                                 mPRMNGSeed) =
-    TCExp <$> mkTCExpMeta mM mL exNm exNm initialCs exReps GenExp fkds
+    TCExp <$> expMeta
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper expStep mL)
           <*> (const <$> listedPulses)
           <*> pure (mkStdGen <$> mPRMNGSeed)
         where
+            expMeta = mkTCExpMeta mM
+                                  mL
+                                  exNm
+                                  exNm
+                                  initialCs
+                                  exReps
+                                  GenExp
+                                  fkds
+                                  mPRMNGSeed
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
 mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
@@ -168,7 +184,15 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
               <*> (const <$> listedPulses)
               <*> pure (mkStdGen <$> mPRMNGSeed)
         where
-            expM = mkTCExpMeta mM mL expName expDetails initialCs exReps P1 fkds
+            expM = mkTCExpMeta mM
+                               mL
+                               expName
+                               expDetails
+                               initialCs
+                               exReps
+                               P1
+                               fkds
+                               mPRMNGSeed
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
             startPl = VEXInPt initialCs [] t_0
@@ -192,7 +216,15 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
           <*> (const <$> listedPulses)
           <*> pure (mkStdGen <$> mPRMNGSeed)
     where
-        expM = mkTCExpMeta mM mL expName expDetails initialCs exReps KDOE fkds
+        expM = mkTCExpMeta mM
+                           mL
+                           expName
+                           expDetails
+                           initialCs
+                           exReps
+                           KDOE
+                           fkds
+                           mPRMNGSeed
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
         startPl = VEXInPt initialCs [] t_0
@@ -215,8 +247,15 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
               <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
               <*> pure (mkStdGen <$> mPRMNGSeed)
         where
-            expM =
-                mkTCExpMeta mM mL expNm expDtls initialCs exReps KDOEAtTr fkds
+            expM = mkTCExpMeta mM
+                               mL
+                               expNm
+                               expDtls
+                               initialCs
+                               exReps
+                               KDOEAtTr
+                               fkds
+                               mPRMNGSeed
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
                 Nothing -> (pN, pSt):initialCs
@@ -472,14 +511,16 @@ mkInputPulse mL (VEXInPt vexRICs vexNAlts vexDuration) =
 
 mkTCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
             -> [(NodeName, RealNodeState)] -> ExperimentReps -> TCExpKind
-            -> FigKinds -> Validation [VEXInvestigationInvalid] TCExpMeta
-mkTCExpMeta mM mL expName expDetails initialCs exReps exKnd figureKinds = 
+            -> FigKinds -> ManualSeed
+            -> Validation [VEXInvestigationInvalid] TCExpMeta
+mkTCExpMeta mM mL expName expDetails initialCs exReps exKnd figKinds mMSeed = 
     TCEMeta <$> pure expName
             <*> pure expDetails
             <*> mkRealInputCoordinate mL initialCs
             <*> pure exReps
             <*> pure exKnd
-            <*> mkFigKinds mM mL figureKinds
+            <*> mkFigKinds mM mL figKinds
+            <*> pure mMSeed
 
 -- Construct a RealInputCoord that pins inputs. This follows the convention that
 -- each level of a multi-node input is indicated by a one of the nodenames

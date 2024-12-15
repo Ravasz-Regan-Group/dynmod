@@ -12,6 +12,8 @@ module Render
 import Types.GML
 import Types.DMModel
 import Types.DMInvestigation
+import Types.Figures
+import Types.Simulation
 import Constants
 import Compare
 import Utilities
@@ -530,17 +532,18 @@ purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
 
 
 ----------------------------------------------------------------------------
--- Render DMExperiment output. Note the use of Data.Text.Lazy to try to ditch
+-- Render DMExperiment output. Note the use of Data.Text.Lazy to try to clear
 -- the result from memory as quickly as possible. 
 
 renderDMExpOutput :: DMExpOutput -> TL.Text
-renderDMExpOutput expOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
+renderDMExpOutput dmExpOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
     where
-        expOPT = (renderSingleExpOP . dmExpOutput) expOP
+        expOPT = (renderSingleExpOP lniBMap . dmExpOutput) dmExpOP
         layerGatesT = "Layer Gates: " <> TL.intercalate ", " gateTs
-        gateTs = renderLGate <$> (layerGateSet expOP)
+        gateTs = renderLGate <$> (layerGateSet dmExpOP)
         lniBMapT = "LayerNameIndexBimap: " <> TL.intercalate ", " lniBMapPairTs
-        lniBMapPairTs = (fmap (TL.pack . show) . BM.toList . layerNIBM) expOP
+        lniBMapPairTs = (fmap (TL.pack . show) . BM.toList) lniBMap
+        lniBMap = layerNIBM dmExpOP
 
 
 renderLGate :: NodeGate -> TL.Text
@@ -551,5 +554,92 @@ renderLGate nGate = TL.intercalate ", " (tlNName:ttPairTs)
         ttPairF (inputV, opState) = showtl inputV <> ":" <> showtl opState
         tablePairs = (Map.toList . gateTable) nGate
 
-renderSingleExpOP :: ExpOutput -> TL.Text
-renderSingleExpOP = undefined
+renderSingleExpOP :: LayerNameIndexBimap -> ExpOutput -> TL.Text
+renderSingleExpOP lniBMap (TCO expOP) = "Experiment Parameters \n" <> paramsT <>
+    "\n" <> "Experiment Output: \n" <> outputT
+    where
+        paramsT = renderTCParams lniBMap tcParams
+        outputT = (TL.intercalate "\n" . fmap renderTCOutput) tcOP
+        tcParams = tcOutputParams expOP
+        tcOP = tcOutput expOP
+renderSingleExpOP _ (SCO expOp) = "Experiment Parameters \n" <> paramsT <>
+    "\n" <> "Experiment Output: \n" <> outputT
+    where
+        paramsT = renderSCParams scParams
+        outputT = (TL.intercalate "\n" . fmap renderSCOutput) scOP
+        scParams = scOutputParams expOp
+        scOP = scOutput expOp
+
+renderTCParams :: LayerNameIndexBimap -> TCOutputParameters -> TL.Text
+renderTCParams lniBMap tcParams = (TL.intercalate "\n" . filter (not . TL.null))
+    [nameT, detailsT, repsT, kindT, stepperT, seedT, pulseSpacingT]
+    where
+        pulseSpacingT = "PulseSpacings: \n" <> formatF pulseSpacingTss
+        formatF = (TL.intercalate "\n" . fmap (TL.intercalate ", "))
+        pulseSpacingTss = renderPulseSpacing lniBMap <<$>>
+            (tcExpOPPulseSps tcParams)
+        seedT = maybe "" (\x -> "Experimental Seed, " <> showtl x) mSeed
+            where mSeed = tcExpOPMPRNGSeed tcParams
+        stepperT = "Experiment Stepper, " <> (showtl . tcExpOPStepper) tcParams
+        kindT = "Experiment Kind, " <> (showtl . tcExpOPKind) expMeta
+        repsT = "Repetitions, " <> (showtl . tcExpOPReps) expMeta
+        detailsT = "Details, " <> tcExpOPDetails expMeta
+        nameT = "Name, " <> tcExpOPName expMeta
+        expMeta = tcExpOPMeta tcParams
+
+renderPulseSpacing :: LayerNameIndexBimap -> PulseSpacing -> TL.Text
+renderPulseSpacing lniBMap (dur, ricVec, nAlts) = durT <> inputT <> nAltsT
+    where
+        durT = "Duration, " <> showtl durT <> "\n"
+        inputT = "RealInputCoord, " <> renderInputCoord lniBMap ricVec <> "\n"
+        nAltsT = "NodeAlterations, " <> TL.intercalate ", " nAltTs
+        nAltTs = (TL.fromStrict . nAltTPrep) <$> nAlts
+
+renderInputCoord :: LayerNameIndexBimap -> RealInputCoord -> TL.Text
+renderInputCoord lniBMap = TL.intercalate ", " . fmap riF . U.toList
+    where riF (nI, nS) = showtl nI <> ":" <> showtl nS
+
+renderTCOutput :: (Barcode, RepResults) -> TL.Text
+renderTCOutput (bc, rRess) = "Barcode, " <>
+    (TL.intercalate ", " . fmap renderBar) bc <> "\n" <>
+    "RepResults \n" <> renderRepResults rRess
+
+renderBar :: Bar -> TL.Text
+renderBar br = TL.intercalate ", " [bKindT, aSizeT, sNameT, phNamesT]
+    where
+        bKindT = "BarKind:" <> (renderBarKind . barKind) br
+        aSizeT = "AttSize:" <> (showtl . attractorSize) br
+        sNameT = "SwitchName:" <> (TL.fromStrict . switchName) br
+        phNamesT = "PhenotypeNames:" <> TL.intercalate "-" phNamesTs
+        phNamesTs = (fmap TL.fromStrict . phenotypeNames) br
+
+renderBarKind :: BarKind -> TL.Text
+renderBarKind (FullMiss bHeight) = "FullMiss " <> showtl bHeight
+renderBarKind (MatchBar slices lColor) =
+    "MatchBar " <> slicesT <> " " <> lColorT
+    where
+        slicesT = TL.intercalate "-" $ showtl <$> slices
+        lColorT = (TL.pack . SC.sRGB24show) lColor
+
+-- We are not rendering the 
+renderRepResults :: RepResults -> TL.Text
+renderRepResults (timelinesss, _) = timelineF timelineTsss
+    where
+        timelineF = inCF . fmap inCF . (fmap . fmap) inCF
+        inCF = TL.intercalate "\n"
+        timelineTsss = (fmap . fmap . fmap) renderTimeline timelinesss
+
+renderTimeline :: Timeline -> TL.Text
+renderTimeline = undefined
+
+renderSCParams :: SCOutputParameters -> TL.Text
+renderSCParams = undefined
+
+renderSCOutput :: (Barcode, ScanResult) -> TL.Text
+renderSCOutput (bc, scRess) = "Barcode, " <>
+    (TL.intercalate ", " . fmap renderBar) bc <> "\n" <> "ScanResults \n" <>
+    renderScanResult scRess
+
+renderScanResult :: ScanResult -> TL.Text
+renderScanResult = undefined
+
