@@ -754,7 +754,7 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         nodeVals = zipWith3 ndTupleValsF nodeValuesWOM nodeValuesWM diffNValues
         ndTupleValsF x y z = (tagPair, (snd x, snd y, snd z))
             where tagPair = (fst x, (fromIntegral . (lRangeMap M.!)) (fst x))
-        diffNValues = zipWith diffF nodeValuesWOM nodeValuesWM
+        diffNValues = zipWith diffF nodeValuesWM nodeValuesWOM
         nodeValuesWOM, nodeValuesWM :: [(ScanNode, [[[Double]]])]
         (nodeValuesWOM, nodeValuesWM) = isoBimap nodeValuesF trimmedSCBsPair
         nodeValuesF :: [[[[Timeline]]]] -> [(ScanNode, [[[Double]]])]
@@ -773,7 +773,7 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         swFigs = scDiffHMBlock "Switch" overLayVs rangeData <$> phVals
         phVals = zipWith3 swTupleValsF phValuessWOM phValuessWM diffPhValues
         swTupleValsF x y z = ((fst x, 1), (snd x, snd y, snd z))
-        diffPhValues = zipWith diffF phValuessWOM phValuessWM
+        diffPhValues = zipWith diffF phValuessWM phValuessWOM
         (phValuessWOM, phValuessWM) = isoBimap phValuesF bareValuessPair
         phValuesF = zip phNames . L.transpose . fmap L.transpose .
             (fmap . fmap) L.transpose
