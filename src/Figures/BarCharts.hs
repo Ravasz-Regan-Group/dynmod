@@ -4,6 +4,7 @@
 module Figures.BarCharts
     ( nBChartDia
     , phBChartDia
+    , phBCDataPrep
     ) where    
 
 import Types.DMModel
@@ -17,7 +18,6 @@ import Graphics.Rendering.Chart hiding (scale)
 import Graphics.Rendering.Chart.Backend.Diagrams
 import qualified Graphics.SVGFonts as F
 import qualified Data.HashMap.Strict as M
-import qualified Data.Bimap as BM
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.Text as T
@@ -28,12 +28,11 @@ import GHC.IO (unsafePerformIO)
 -- Make a bar chart with average of the selected DMNodes during each pulse, plus
 -- an error bar with the standard deviation.
 nBChartDia :: ColorMap
-           -> ModelLayer
            -> TCExpMeta
            -> AvgBChartNodes
-           -> [B.Vector (U.Vector RealNodeState, (RealNodeState, StdDev))]
-           -> (Diagram B, [[(NodeName, U.Vector RealNodeState)]])
-nBChartDia cMap mL exMeta bCHNodeNs statVs = (fig, namedPulseVecs)
+           -> [B.Vector (RealNodeState, StdDev)]
+           -> Diagram B
+nBChartDia cMap exMeta bCHNodeNs pulseStats = fig
     where
         fig = (fst . runBackendR dEnv . toRenderable) layout
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
@@ -72,19 +71,7 @@ nBChartDia cMap mL exMeta bCHNodeNs statVs = (fig, namedPulseVecs)
         transposedAvgs = L.transpose avgs
         (avgs, _ {-stdDevs-}) =
             (isoBimap (fmap B.toList) . L.unzip . fmap B.unzip) pulseStats
--- For now we will keep both the averages and the vectors of NodeState values
--- that they came from. They will be written out with the figure, to be
--- available for additional analysis. Eventually this will be replaced by the
--- ability to do statistics across experiments internally. 
-        namedPulseVecs :: [[(NodeName, U.Vector RealNodeState)]]
-        namedPulseVecs = (L.zip bCHNodeNs . B.toList) <$> pulseVecs
-        pulseVecs :: [B.Vector (U.Vector RealNodeState)]
-        pulseStats :: [B.Vector (RealNodeState, StdDev)]
-        (pulseVecs, pulseStats) = (L.unzip . fmap B.unzip) selectedVecs
-        selectedVecs = flip B.backpermute nIndices <$> statVs
-        nIndices = B.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = L.reverse $ (opaque . (cMap M.!)) <$> bCHNodeNs
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
 
 phBChartDia :: ColorMap
             -> ModelLayer
@@ -92,9 +79,9 @@ phBChartDia :: ColorMap
             -> TCExpMeta
             -> AvgBChartSwitches
             -> [PulseSpacing]
-            -> [M.HashMap PhenotypeName (U.Vector Double, (Double, StdDev))]
-            -> (Diagram B, [(NodeName, [[(PhenotypeName, U.Vector Double)]])])
-phBChartDia cMap mL switchMap exMeta bChSwitchNs pSps statMs = (fig, chartVecs)
+            -> [M.HashMap PhenotypeName (Double, StdDev)]
+            -> Diagram B
+phBChartDia cMap mL switchMap exMeta bChSwitchNs pSps statMs = fig
     where
         fig = (extrudeBottom 100 chBlLabel) === chartBlock
         chBlLabel = expLabelDia (3 * floatfSSetting) (tcExpName exMeta)
@@ -104,31 +91,46 @@ phBChartDia cMap mL switchMap exMeta bChSwitchNs pSps statMs = (fig, chartVecs)
             where
                 resized = extrudeLeft 100 (scale scaleN dx)
                 scaleN = 0.75 * (width dy / width dx)
-        (chartRes, chartVecs) =  unzip $ (uncurry phDiaF) <$> pairs
+        chartRes = (uncurry phDiaF) <$> pairs
         phDiaF = phSingleBChDia fontSizeSetting cMap switchMap
         pairs = zip bChSwitchNs avgs
-        avgs::[[[(U.Vector Double, Double)]]]
-        avgs =  (fmap . fmap . fmap . fmap) fst pulseStats
--- For now we will keep both the averages and the vectors of Phenotype
--- prevalence that they came from. They will be written out with the figure, to
--- be available for additional analysis. Eventually this will be replaced by the
--- ability to do statistics across experiments internally. 
-        pulseStats :: [[[(U.Vector Double, (Double, StdDev))]]]
-        pulseStats = L.transpose $ extractor phNamess <$> statMs
+--         We aren't using the standard deviations for now. 
+        avgs =  (fmap . fmap . fmap) fst pulseStats
+        pulseStats :: [[[(Double, StdDev)]]]
+        pulseStats = L.transpose $ phDataExtractor (0,0) phNamess <$> statMs
         phNamess = (switchMap M.!) <$> bChSwitchNs
-        extractor phNss statM = (fmap . fmap)
-            (flip (M.findWithDefault (U.empty, (0, 0))) statM) phNss
         floatfSSetting = fromIntegral fontSizeSetting
         fontSizeSetting = 48 :: Int
         expGuide = bChartExpGuide mL exMeta pSps
 
+phBCDataPrep :: [(SwitchName, [PhenotypeName])]
+             -> [M.HashMap PhenotypeName (U.Vector Double)]
+             -> [(SwitchName, [[(PhenotypeName, U.Vector Double)]])]
+phBCDataPrep nonEmptySwPhNs statVMs = nameInjecter <$> pairs
+    where
+        pairs = zip nonEmptySwPhNs pulseStats
+        pulseStats = L.transpose $ phDataExtractor U.empty phNamess <$> statVMs
+        phNamess = snd <$> nonEmptySwPhNs
+
+nameInjecter :: ((SwitchName, [PhenotypeName]), [[a]])
+             -> (SwitchName, [[(PhenotypeName, a)]])
+nameInjecter ((swName, phNames), xss) = (swName, (zip phNames) <$> xss)
+
+phDataExtractor :: a
+                -> [[PhenotypeName]]
+                -> M.HashMap PhenotypeName a
+                -> [[a]]
+phDataExtractor blank phNamess statM = (fmap . fmap) extractorF phNamess
+    where
+        extractorF phName = M.findWithDefault blank phName statM
+
 phSingleBChDia :: Int
                -> ColorMap
                -> M.HashMap NodeName [PhenotypeName]
-               -> NodeName
-               -> [[(U.Vector Double, Double)]]
-               -> (Diagram B, (NodeName, [[(PhenotypeName, U.Vector Double)]]))
-phSingleBChDia fontSizeSetting cMap switchMap swName pairs = (fig, swPhLbldVec)
+               -> SwitchName
+               -> [[Double]]
+               -> Diagram B
+phSingleBChDia fontSizeSetting cMap switchMap swName avgs = fig
     where
         fig = fst $ (runBackendR dEnv . toRenderable) layout
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
@@ -160,11 +162,7 @@ phSingleBChDia fontSizeSetting cMap switchMap swName pairs = (fig, swPhLbldVec)
           $ def
         blendedColors = opaque <$> (phTCBlend 0.85 swColor (L.length phNames))
         swColor = cMap M.! swName
-        swPhLbldVec = (swName, phLabeledVecs)
-        phLabeledVecs = (zip phNames) <$> vecs
         phNames = switchMap M.! swName
-        vecs = fst <<$>> pairs
-        avgs = snd <<$>> pairs
 
 -- Arrange multiple Phenotype bar charts in a block with minimum row length i
 phBChArrange :: Int -> [Diagram B] -> Diagram B

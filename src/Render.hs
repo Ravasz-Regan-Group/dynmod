@@ -6,14 +6,13 @@ module Render
     , renderDMMSDiff
     , renderDMMSSwitch
     , purgeTableRenderDMMS
+    , renderDMExpOutput
+    , renderNBCData
+    , renderPhBCData
     )
     where
 
-import Types.GML
-import Types.DMModel
-import Types.DMInvestigation
-import Types.Figures
-import Types.Simulation
+import Types
 import Constants
 import Compare
 import Utilities
@@ -25,6 +24,7 @@ import qualified Data.Bimap as BM
 import qualified Data.Versions as Ver
 import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as B
 import TextShow
 import qualified Data.List as L
 import Data.Function (on)
@@ -538,12 +538,13 @@ purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
 renderDMExpOutput :: DMExpOutput -> TL.Text
 renderDMExpOutput dmExpOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
     where
-        expOPT = (renderSingleExpOP lniBMap . dmExpOutput) dmExpOP
+        expOPT = (renderSingleExpOP mM lniBMap . dmExpOutput) dmExpOP
         layerGatesT = "Layer Gates: " <> TL.intercalate ", " gateTs
         gateTs = renderLGate <$> (layerGateSet dmExpOP)
         lniBMapT = "LayerNameIndexBimap: " <> TL.intercalate ", " lniBMapPairTs
         lniBMapPairTs = (fmap (TL.pack . show) . BM.toList) lniBMap
         lniBMap = layerNIBM dmExpOP
+        mM = layerMM dmExpOP
 
 
 renderLGate :: NodeGate -> TL.Text
@@ -554,55 +555,257 @@ renderLGate nGate = TL.intercalate ", " (tlNName:ttPairTs)
         ttPairF (inputV, opState) = showtl inputV <> ":" <> showtl opState
         tablePairs = (Map.toList . gateTable) nGate
 
-renderSingleExpOP :: LayerNameIndexBimap -> ExpOutput -> TL.Text
-renderSingleExpOP lniBMap (TCO expOP) = "Experiment Parameters \n" <> paramsT <>
-    "\n" <> "Experiment Output: \n" <> outputT
+renderSingleExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOutput -> TL.Text
+renderSingleExpOP mM lniBMap expOutPut = "Experiment: \n" <> vexExpT <>
+    "\n" <> "Output: \n" <> outputT
     where
-        paramsT = renderTCParams lniBMap tcParams
-        outputT = (TL.intercalate "\n" . fmap renderTCOutput) tcOP
-        tcParams = tcOutputParams expOP
-        tcOP = tcOutput expOP
-renderSingleExpOP _ (SCO expOp) = "Experiment Parameters \n" <> paramsT <>
-    "\n" <> "Experiment Output: \n" <> outputT
+        vexExpT = (renderVEXExperiment . opVexExp) expOutPut
+        outputT = (renderExpOP mM lniBMap . expOP) expOutPut
+
+renderVEXExperiment :: VEXExperiment -> TL.Text
+renderVEXExperiment (VXTC vexTC) = renderTCVEXExperiment vexTC
+renderVEXExperiment (TXSC vexScan) = renderScanVEXExperiment vexScan
+
+
+-- Render TimeCourse experiments. 
+renderTCVEXExperiment :: VEXTimeCourse -> TL.Text
+renderTCVEXExperiment tcExp = case tcExp of
+    GeneralTC exNm inEnv expStep vexPlss exReps fkds mPRMNGSeed ->
+        vexWrap "GeneralExperiment" bLines $ Just $ TL.fromStrict exNm
+        where
+            bLines = [
+                  "ExperimentName: " <> TL.fromStrict exNm
+                , renderVexVar "SampleSize" showtl Nothing exReps
+                , renderManualSeed mPRMNGSeed
+                , renderExperimentStep expStep
+                , renderInitialEnvironment inEnv
+                , renderFigKinds fkds
+                ] <> fmap renderVEXInputPulse vexPlss
+    Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds mPRMNGSeed ->
+        vexWrap "Pulse1" bLines Nothing
+        where
+            bLines = [
+                  renderUserDuration "t_0" t_0
+                , renderInitialEnvironment inEnv
+                , renderUserDuration "Duration" dur
+                , "FlipTo: " <> TL.fromStrict pName <> ", " <> showtl pState
+                , renderVexVar "SampleSize" showtl (Just 1) exReps
+                , renderFigKinds fkds
+                , renderManualSeed mPRMNGSeed
+                , renderUserDuration "t_end" t_end
+                ]
+    KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds mPRMNGSeed ->
+        vexWrap "KDOE" bLines Nothing
+        where
+            bLines = [
+                  renderUserDuration "t_0" t_0
+                , renderInitialEnvironment inEnv
+                , renderUserDuration "Duration" dur
+                , renderNodeAlterations nAlts
+                , renderVexVar "SampleSize" showtl (Just 1) exReps
+                , renderFigKinds fkds
+                , renderManualSeed mPRMNGSeed
+                , renderUserDuration "t_end" t_end
+                ]
+    KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps fkds
+        mPRMNGSeed -> vexWrap "KDOEAtTransition" bLines Nothing
+        where
+            bLines =[
+                  renderUserDuration "t_0" t_0
+                , renderInitialEnvironment inEnv
+                , renderUserDuration "Duration" pDur
+                , "FlipTo: " <> TL.fromStrict pN <> ", " <> showtl pSt
+                , renderVexVar "SampleSize" showtl (Just 1) exReps
+                , renderNodeAlterations nAlts
+                , renderFigKinds fkds
+                , renderManualSeed mPRMNGSeed
+                , renderUserDuration "t_end" t_end
+                ]
+
+-- Consume a vex keyword, the content for that keyword, and properly wrap the
+-- second in the first. Optionally add a commented note at the end. 
+vexWrap :: TL.Text -> [TL.Text] -> Maybe TL.Text -> TL.Text
+vexWrap keyword bLines mComment =
+    keyword <> "{\n" <> body <> "\n" <> keyword <> "}" <> commentT
     where
-        paramsT = renderSCParams scParams
-        outputT = (TL.intercalate "\n" . fmap renderSCOutput) scOP
-        scParams = scOutputParams expOp
-        scOP = scOutput expOp
+        body = (TL.intercalate "\n" . filter (not . TL.null)) bLines
+        commentT = maybe "" (\cNote -> " // " <> cNote) mComment
 
-renderTCParams :: LayerNameIndexBimap -> TCOutputParameters -> TL.Text
-renderTCParams lniBMap tcParams = (TL.intercalate "\n" . filter (not . TL.null))
-    [nameT, detailsT, repsT, kindT, stepperT, seedT, pulseSpacingT]
+-- Render a VEX file assignment that might have a default value that 
+-- want rewritten. 
+renderVexVar :: (Show a, Eq a)
+              => TL.Text
+              -> (a -> TL.Text)
+              -> Maybe a
+              -> a
+              -> TL.Text
+renderVexVar vName renderF mDefault vexV = case (vexV ==) <$> mDefault of
+    Nothing -> vName <> ": " <> renderF vexV
+    Just False -> vName <> ": " <>  renderF vexV
+    Just True -> ""
+
+renderManualSeed :: ManualSeed -> TL.Text
+renderManualSeed = maybe "" (\sd -> "ManualPRNGSeed: " <> showtl sd)
+
+renderExperimentStep :: ExperimentStep -> TL.Text
+renderExperimentStep = showtl
+
+renderInitialEnvironment :: InitialEnvironment -> TL.Text
+renderInitialEnvironment inEnv = vexWrap "StartingModelState" bLines Nothing
     where
-        pulseSpacingT = "PulseSpacings: \n" <> formatF pulseSpacingTss
-        formatF = (TL.intercalate "\n" . fmap (TL.intercalate ", "))
-        pulseSpacingTss = renderPulseSpacing lniBMap <<$>>
-            (tcExpOPPulseSps tcParams)
-        seedT = maybe "" (\x -> "Experimental Seed, " <> showtl x) mSeed
-            where mSeed = tcExpOPMPRNGSeed tcParams
-        stepperT = "Experiment Stepper, " <> (showtl . tcExpOPStepper) tcParams
-        kindT = "Experiment Kind, " <> (showtl . tcExpOPKind) expMeta
-        repsT = "Repetitions, " <> (showtl . tcExpOPReps) expMeta
-        detailsT = "Details, " <> tcExpOPDetails expMeta
-        nameT = "Name, " <> tcExpOPName expMeta
-        expMeta = tcExpOPMeta tcParams
+        bLines = "InputCoordinate: " : ((fmap coordF . initCoord) inEnv)
+            <> [(maybe "" renderBarcodeFilter . initFilters) inEnv]
+        coordF (nName, nState) = TL.fromStrict nName <> ":" <> showtl nState
 
-renderPulseSpacing :: LayerNameIndexBimap -> PulseSpacing -> TL.Text
-renderPulseSpacing lniBMap (dur, ricVec, nAlts) = durT <> inputT <> nAltsT
+renderBarcodeFilter :: BarcodeFilter -> TL.Text
+renderBarcodeFilter bcFilt = case bcFilt of 
+    (OnlyBarCodesWithAny flts) -> "OnlyBarCodesWithAny: " <>
+        (TL.intercalate ", " . fmap renderF) flts
+    (OnlyBarCodesWithAll flts) -> "OnlyBarCodesWithAll: " <>
+        (TL.intercalate ", " . fmap renderF) flts
+    (ExcludeBarCodesWithAny flts) -> "ExcludeBarCodesWithAny: " <>
+        (TL.intercalate ", " . fmap renderF) flts
+    (ExcludeBarCodesWithAll flts) -> "ExcludeBarCodesWithAll: " <>
+        (TL.intercalate ", " . fmap renderF) flts
     where
-        durT = "Duration, " <> showtl durT <> "\n"
-        inputT = "RealInputCoord, " <> renderInputCoord lniBMap ricVec <> "\n"
-        nAltsT = "NodeAlterations, " <> TL.intercalate ", " nAltTs
-        nAltTs = (TL.fromStrict . nAltTPrep) <$> nAlts
+        renderF (nName, phName) = TL.fromStrict (nName <> ":" <> phName)
 
-renderInputCoord :: LayerNameIndexBimap -> RealInputCoord -> TL.Text
-renderInputCoord lniBMap = TL.intercalate ", " . fmap riF . U.toList
-    where riF (nI, nS) = showtl nI <> ":" <> showtl nS
 
-renderTCOutput :: (Barcode, RepResults) -> TL.Text
-renderTCOutput (bc, rRess) = "Barcode, " <>
+renderFigKinds :: FigKinds -> TL.Text
+renderFigKinds fgKinds
+    | L.null bLines = ""
+    | otherwise = vexWrap "Figures" bLines Nothing
+    where
+        bLines = [nTCText, phTCText, nAvgNodeNames, phAvgSwitchNames]
+        nTCText = (nodeTCF . nodeTimeCourse) fgKinds
+        nodeTCF = renderVexVar "NodeTimeCourse" showtl (Just True)
+        phTCText = (phTCF . phenotypeTimeCourse) fgKinds
+        phTCF = renderVexVar "PhenotypeTimeCourse" showtl (Just False)
+        nAvgNodeNames = (nodeAvgTCF . nodeAvgBars) fgKinds
+        nodeAvgTCF = renderVexVar "AvgBarChartNodes" renderTList (Just [])
+        phAvgSwitchNames = (phAvgTCF . phenotypeAvgBars) fgKinds
+        phAvgTCF = renderVexVar "AvgBarChartSwitches" renderTList (Just [])
+
+renderTList :: [T.Text] -> TL.Text
+renderTList = TL.fromStrict . T.intercalate ", "
+
+renderVEXInputPulse :: VEXInputPulse -> TL.Text
+renderVEXInputPulse (VEXInPt vexRIC vexNodeAlts vexDur) =
+    vexWrap "Pulse" [ipFixText, durText, nAltsWrapL] Nothing
+    where
+        ipFixText = renderVexVar "InputFix" renderPairsTL Nothing vexRIC
+        durText = renderUserDuration "Duration" vexDur
+        nAltsWrapL = renderNodeAlterations vexNodeAlts
+
+renderPairsTL :: (TextShow a, TextShow b) => [(a, b)] -> TL.Text
+renderPairsTL = TL.intercalate ", " . fmap pairTLF
+    where pairTLF (x, y) = showtl x <> ":" <> showtl y
+
+
+renderNodeAlterations :: [NodeAlteration] -> TL.Text
+renderNodeAlterations [] = ""
+renderNodeAlterations nAlts = vexWrap "NodeAlterations" nAltLines Nothing
+    where
+        nAltLines = fmap renderNAlts nAlts
+        renderNAlts (NodeLock nName nState lockProb) = TL.fromStrict nName <>
+            ": " <> showtl nState <> ", " <> showtl lockProb
+        renderNAlts (GradientNudge nName NudgeUp nudgeProp) =
+            TL.fromStrict nName <> ": Up, " <> showtl nudgeProp
+        renderNAlts (GradientNudge nName NudgeDown nudgeProp) =
+            TL.fromStrict nName <> ": Down, " <> showtl nudgeProp
+
+-- When rendering a VEX file, we only ever want to write out a UserD Duration. 
+renderUserDuration :: TL.Text -> Duration -> TL.Text
+renderUserDuration _ (DefaultD _) = ""
+renderUserDuration vexVarName (UserD i) = vexVarName <> ": " <> showtl i <> "\n"
+
+
+-- Render Scans
+renderScanVEXExperiment :: VEXScan -> TL.Text
+renderScanVEXExperiment (VEXScan scKind inEnv nAlts iFix maxN relN stopPhs
+    expStep (plottingSws, plottingNs)) = vexWrap "Scan" bLines Nothing
+    where
+        bLines = [
+              renderInitialEnvironment inEnv
+            , renderVexVar "Max_T" showtl Nothing maxN
+            , renderVexVar "Relevant_T" showtl Nothing relN
+            , renderVexVar "InputFix" renderPairsTL (Just []) iFix
+            , renderVexVar "StopPhenotypes" renderPairsTL (Just []) stopPhs
+            , renderExperimentStep expStep
+            , renderVexVar "ScanSwitches" renderTList (Just []) plottingSws
+            , renderVexVar "ScanNodes" renderTList (Just []) plottingNs
+            , renderScanKind scKind
+            , renderNodeAlterations nAlts
+            ]
+
+renderScanKind :: ScanKind -> TL.Text
+renderScanKind (EnvSc envScan) = renderEnvScan envScan
+renderScanKind (KDOESc kdoeScan) = renderKDOEScan kdoeScan
+renderScanKind (EnvKDOEScan envScan kdoeScan x_Axis) =
+    vexWrap "EnvKDOEScan" bLines Nothing
+    where
+        bLines = [
+              renderEnvScan envScan
+            , renderKDOEScan kdoeScan
+            , renderVexVar "X_Axis" showtl Nothing x_Axis
+            ]
+renderScanKind (TwoDEnvScan envScan1 envScan2 doOverLayVs mKDOeScan) =
+    vexWrap "TwoDEnvScan" bLines Nothing
+    where
+        bLines = [
+              renderEnvScan envScan1
+            , renderEnvScan envScan2
+            , renderVexVar "ValuesOnHeatMap" showtl (Just False) doOverLayVs
+            , maybe "" renderKDOEScan mKDOeScan
+            ]
+renderScanKind (ThreeDEnvScan envScan1 envScan2 envScan3 doOverLayVs nAlts) =
+    vexWrap "ThreeDEnvScan" bLines Nothing
+    where
+        bLines = [
+              renderEnvScan envScan1
+            , renderEnvScan envScan2
+            , renderEnvScan envScan3
+            , renderVexVar "ValuesOnHeatMap" showtl (Just False) doOverLayVs
+            , renderNodeAlterations nAlts
+            ]
+
+renderEnvScan :: EnvScan -> TL.Text
+renderEnvScan envScan = renderVexVar "EnvironmentalScan" envScF Nothing envScan
+  where
+    envScF (StepSpecESC nName stepLevels) =
+      TL.fromStrict nName <> ": " <> showtl stepLevels
+    envScF (RangeESC nName stState endState scSteps) = TL.fromStrict nName <>
+      ":" <> showtl stState <> "," <> showtl endState <> "," <> showtl scSteps
+    envScF (WholeESC nName scSteps) =
+      TL.fromStrict nName <> ":" <> showtl scSteps
+
+
+renderKDOEScan :: KDOEScan -> TL.Text
+renderKDOEScan kdoeScan = renderVexVar "KDOEScan" kdoeScF Nothing kdoeScan
+  where
+    kdoeScF (StepSpecKDOESC kdoes lockProbs) =
+      renderKDOEs kdoes <> ": " <> showtl lockProbs
+    kdoeScF (RangeKDOESC kdoes stLockProb endLockProb scSteps) = 
+      renderKDOEs kdoes <> ":" <> showtl stLockProb <> "," <> showtl endLockProb
+      <> "," <> showtl scSteps
+    kdoeScF (WholeKDOESC kdoes scSteps) =
+      renderKDOEs kdoes <> ":" <> showtl scSteps
+    renderKDOEs kds = "(" <> renderPairsTL kds <> ")"
+
+-- Render experiment results
+renderExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOP -> TL.Text
+renderExpOP mM lniBMap (TCO ress) =
+    (TL.intercalate "\n" . fmap (renderTCOutput mM lniBMap)) ress
+renderExpOP mM lniBMap (SCO ress) =
+    (TL.intercalate "\n" . fmap (renderSCOutput mM lniBMap)) ress
+
+renderTCOutput :: ModelMapping
+               -> LayerNameIndexBimap
+               -> (Barcode, RepResults)
+               -> TL.Text
+renderTCOutput mM lniBMap (bc, rRess) = "Barcode, " <>
     (TL.intercalate ", " . fmap renderBar) bc <> "\n" <>
-    "RepResults \n" <> renderRepResults rRess
+    "RepResults \n" <> renderRepResults mM lniBMap rRess
 
 renderBar :: Bar -> TL.Text
 renderBar br = TL.intercalate ", " [bKindT, aSizeT, sNameT, phNamesT]
@@ -621,25 +824,138 @@ renderBarKind (MatchBar slices lColor) =
         slicesT = TL.intercalate "-" $ showtl <$> slices
         lColorT = (TL.pack . SC.sRGB24show) lColor
 
--- We are not rendering the 
-renderRepResults :: RepResults -> TL.Text
-renderRepResults (timelinesss, _) = timelineF timelineTsss
+-- Render bare results 
+renderRepResults :: ModelMapping -> LayerNameIndexBimap -> RepResults -> TL.Text
+renderRepResults mM lniBMap (timelinesss, _) = timelineF timelineTsss
     where
         timelineF = inCF . fmap inCF . (fmap . fmap) inCF
         inCF = TL.intercalate "\n"
-        timelineTsss = (fmap . fmap . fmap) renderTimeline timelinesss
+        timelineTsss =
+            (fmap . fmap . fmap) (renderTimeline mM lniBMap) timelinesss
 
-renderTimeline :: Timeline -> TL.Text
-renderTimeline = undefined
+renderTimeline :: ModelMapping -> LayerNameIndexBimap -> Timeline -> TL.Text
+renderTimeline mM lniBMap tmln = nodeT <> "\n" <> phenotypeT
+    where
+        phenotypeT = TL.intercalate "\n" $ renderPhPrevalence <$> phList
+        phList = concatMap snd switchList
+        nodeT = TL.intercalate "\n" $ renderNodeHistory <$> nodeList
+        (nodeList, switchList) = tpTimeline mM lniBMap tmln
 
-renderSCParams :: SCOutputParameters -> TL.Text
-renderSCParams = undefined
+renderNodeHistory :: NodeHistory -> TL.Text
+renderNodeHistory (nName, tmln) = TL.fromStrict nName <> ", " <> tmlnT
+    where
+        tmlnT = TL.intercalate ", " $ tmlnF <$> tmln
+        tmlnF (nSt, wFcd)
+            | wFcd = showtl nSt <> ":T"
+            | otherwise = showtl nSt <> ":F"
 
-renderSCOutput :: (Barcode, ScanResult) -> TL.Text
-renderSCOutput (bc, scRess) = "Barcode, " <>
+renderPhPrevalence :: PhenotypePrevalence -> TL.Text
+renderPhPrevalence (phName, phPrevs) = TL.fromStrict phName <> ", " <> phPrevT
+    where
+        phPrevT = TL.intercalate ", " $ phPrevF <$> phPrevs
+        phPrevF True = "T"
+        phPrevF False = "F"
+
+-- Timelines are vectors of whole network states. Often, we need vectors of
+-- DMNode time sequences with accompanying Phenotype prevalences. 
+tpTimeline :: ModelMapping -> LayerNameIndexBimap -> Timeline -> TPTimeLine
+tpTimeline mM lniBMap tmln = (namedNodeFirstLists, phPrevalences)
+    where
+        phPrevalences = (fmap . fmap . fmap) annotatorF nonEmptySwPhNs
+        annotatorF phName = (phName,(B.toList . B.map (elem phName)) presPhsVec)
+        nonEmptySwPhNs :: [(SwitchName, [PhenotypeName])]
+        nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
+        nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
+        namedNodeFirstLists :: [(NodeName, [(NodeState, WasForced)])]
+        namedNodeFirstLists = zipWith namerF [0..] nodeFirstLists
+        namerF i x = (lniBMap BM.!> i, x)
+        nodeFirstLists = L.transpose annoLists
+        annoLists :: [[(NodeState, WasForced)]]
+        annoLists = (B.toList . B.map U.toList) anolVecs
+        (anolVecs, presPhsVec) = B.unzip tmln
+
+
+-- Vectors of DMNode time sequences with accompanying Phenotype prevalences. 
+type TPTimeLine = ([NodeHistory], [(SwitchName, [PhenotypePrevalence])])
+type NodeHistory = (NodeName, [(NodeState, WasForced)])
+type PhenotypePrevalence = (PhenotypeName, [WasPresent])
+
+type WasPresent = Bool
+
+
+renderSCOutput :: ModelMapping
+               -> LayerNameIndexBimap
+               -> (Barcode, ScanResult)
+               -> TL.Text
+renderSCOutput mM lniBMap (bc, scRess) = "Barcode, " <>
     (TL.intercalate ", " . fmap renderBar) bc <> "\n" <> "ScanResults \n" <>
-    renderScanResult scRess
+    renderScanResult mM lniBMap scRess
 
-renderScanResult :: ScanResult -> TL.Text
-renderScanResult = undefined
+renderScanResult :: ModelMapping -> LayerNameIndexBimap -> ScanResult -> TL.Text
+renderScanResult mM lniBMap scRes = case scRes of
+  (SKREnv tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
+  (SKRKDOE tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
+  (SKREnvKDOE tmlnsss) -> inCF3 $
+    (fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnsss
+  (SKRTwoEnvWithoutKDOE tmlnsss) -> inCF3 $
+    (fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnsss
+  (SKRTwoEnvWithKDOE tmlnssss) -> inCF4 $
+    (fmap . fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnssss
+  (SKRThreeEnv (tmlnssss, maybeTmlnssss)) -> case maybeTmlnssss of
+    Nothing -> inCF4 $
+      (fmap . fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnssss
+    Just mutTmlnssss -> wildTypeF <> "/n" <> mutantTypeF
+      where
+        wildTypeF = "Wild type:\n" <> (inCF4 . (fmap . fmap . fmap . fmap)
+          (renderTimeline mM lniBMap)) tmlnssss
+        mutantTypeF = "Mutants:\n" <> (inCF4 . (fmap . fmap . fmap . fmap)
+          (renderTimeline mM lniBMap)) mutTmlnssss
+  where
+    inCF4 = inCF . fmap inCF . (fmap . fmap) inCF . (fmap . fmap . fmap) inCF
+    inCF3 = inCF . fmap inCF . (fmap . fmap) inCF
+    inCF2 = inCF . fmap inCF 
+    inCF = TL.intercalate "\n"
+
+-- Render out the data used to make node barcharts.
+renderNBCData :: [[[(NodeName, U.Vector RealNodeState)]]] -> TL.Text
+renderNBCData pairedVecsss = (TL.intercalate "\n" . fmap fDataF1) indexedPVecsss
+  where
+    indexer = showtl <$> [(0 :: Int)..]
+    indexedPVecsss = zip indexer pairedVecsss
+    fDataF1 (j, pairedVecss) = "Chart " <> j <> ":\n" <> body1
+      where
+        body1 = (TL.intercalate "\n" . fmap fDataF2) indexedPVecss
+        indexedPVecss = zip indexer pairedVecss
+        fDataF2 (k, pairedVecs) = "Pulse " <> k <> ":\n" <> body2
+          where
+            body2 = (TL.intercalate "\n" . fmap fDataF3) pairedVecs
+            fDataF3 (nN, nVec) = (TL.fromStrict nN) <> ", " <>
+              (TL.intercalate ", " . fmap showtl . U.toList) nVec
+
+renderPhBCData :: [[(SwitchName, [[(PhenotypeName, U.Vector Double)]])]]
+               -> TL.Text
+renderPhBCData pairss = (TL.intercalate "\n" . fmap fDataF1) indexedPairss
+  where
+    indexer = showtl <$> [(0 :: Int)..]
+    indexedPairss = zip indexer pairss
+    fDataF1 (j, pairs) = "Chart " <> j <> ":\n" <> body1
+      where
+        body1 = (TL.intercalate "\n" . fmap fDataF2) indexedByPulsePairs
+        indexedByPulsePairs = zip indexer (byPulseData pairs)
+        fDataF2 (k, phD) = "Pulse " <> k <> ":\n" <> body2
+          where
+            body2 = (TL.intercalate "\n" . fmap fDataF3) phD
+            fDataF3 (swN, phs) = (TL.fromStrict swN) <> ":\n" <> body3
+              where
+                body3 = (TL.intercalate "\n" . fmap fDataF4) phs
+                fDataF4 (phN, avgs) = (TL.fromStrict phN) <> ", " <>
+                  (TL.intercalate ", " ((fmap showtl . U.toList) avgs))
+
+-- Rearrange Phenotype Barchart data so that it is ordered first by Pulse, 
+-- rather than Switch. 
+byPulseData :: [(NodeName, [[(PhenotypeName, U.Vector Double)]])]
+            -> [[(NodeName, [(PhenotypeName, U.Vector Double)])]]
+byPulseData pairs = zip swNames <$> phData
+    where (swNames, phData) = (fmap L.transpose . unzip) pairs
+
 

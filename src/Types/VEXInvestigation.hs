@@ -7,6 +7,7 @@ import Types.DMModel
 import Types.Simulation
 import qualified Data.Text as T
 import TextShow
+import TextShow.Data.Char (showbString)
 import Types.Figures
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
@@ -147,6 +148,11 @@ type WildTypeVsMutantAlt = NodeAlteration
 data XAxis = EnvX
            | KDOEX
             deriving (Eq, Show)
+
+instance TextShow XAxis where
+    showb EnvX = showbString "EnvX"
+    showb KDOEX = showbString "KDOEX"
+
 
 data EnvScan =
 -- Specify directly which input levels to scan. 
@@ -417,6 +423,11 @@ data ExperimentStep = SynchronousExpStepper
                     | AsynchronousExpStepper
                     deriving (Eq, Show, Ord)
 
+instance TextShow ExperimentStep where
+    showb SynchronousExpStepper = showbString "SynchronousExpStepper"
+    showb (NoisyExpStepper prob) = showbString "NoisyExpStepper " <> showb prob
+    showb AsynchronousExpStepper = showbString "AsynchronousExpStepper"
+
 type ExperimentReps = Int
 
 data FigKinds = FigKinds {
@@ -430,4 +441,8 @@ type DoNodeTimeCourse = Bool
 type DoPhenotypeTimeCourse = Bool
 type AvgBChartNodes = [NodeName]
 type AvgBChartSwitches = [NodeName]
+
+-- Default FigKinds
+defFigKinds :: FigKinds
+defFigKinds = FigKinds True False [] []
 

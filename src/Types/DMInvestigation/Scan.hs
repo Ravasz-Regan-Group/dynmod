@@ -9,8 +9,7 @@ module Types.DMInvestigation.Scan
     , IntKDOEScan
     , ScanVariation
     , ScanResult(..)
-    , ScanOutput(..)
-    , SCOutputParameters
+    , ScanOutput
     , kdoeScNLocks
     , mkDMScan
     , runScan
@@ -99,40 +98,9 @@ data ScanResult = SKREnv [[Timeline]]
                 | SKRThreeEnv ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
                   deriving (Eq, Show)
 
--- The output of a Scan experiment, to be rendered to disk for future use.
-data ScanOutput = ScOutput
-    { scOutputParams :: SCOutputParameters
-    , scOutput :: [(Barcode, ScanResult)]
-    } deriving (Eq, Show)
-
--- Cogent details of a Scan's specification, in case the output is not
--- being read back in by dynmod in conjuntion with a VEX file. 
-data SCOutputParameters = SCPParams
-    { scExpOPMeta :: SCExpOPMeta
-    , scExpOPStepper :: ExpStepperKind
-    , scExpOPMPRNGSeed :: Maybe StdGen
-    } deriving (Eq, Show)
-data SCExpOPMeta = SCEOPM
-    { tcExpOPName :: T.Text
-    , tcExpOPDetails :: T.Text
-    , scExpOPKind :: MetaScanKind
-    } deriving (Eq, Show)
-
-
--- Eventualy we will also want to write just processed result to disk. 
--- Results to be output to disk
--- data TCResultOutput = SCFull [(Barcode, RepResults)]
---                     | SCProc SCProcdOutput
---                     deriving (Eq, Show)
-
--- data SCProcdOutput =
---     SKREnvOP [[Timeline]]
---   | SKRKDOEOP [[Timeline]]
---   | SKREnvKDOEOP [[[Timeline]]]
---   | SKRTwoEnvWithoutKDOEOP [[[Timeline]]]
---   | SKRTwoEnvWithKDOEOP [[[[Timeline]]]]
---   | SKRThreeEnvOP ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
---     deriving (Eq, Show)
+-- The output of a Scan experiment, to be rendered to disk for future use. 
+-- Eventually this will be sum type with various procesed options. 
+type ScanOutput = [(Barcode, ScanResult)]
 
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan

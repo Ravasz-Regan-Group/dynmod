@@ -118,11 +118,9 @@ data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
                                           NudgeProbability
                        deriving (Eq, Show, Ord)
 
--- The output of a TimeCourse experiment, to be rendered to disk for future use. 
-data TimeCourseOutput = TCOutput
-    { tcOutputParams :: TCOutputParameters
-    , tcOutput :: [(Barcode, RepResults)] -- TCResultOutput
-    } deriving (Eq, Show)
+-- The output of a TimeCourse experiment, to be rendered to disk for future use.
+-- Eventually this will be a sum type with various procesed options. 
+type TimeCourseOutput = [(Barcode, RepResults)]
 
 -- Cogent details of a TimeCourse's specification, in case the output is not
 -- being read back in by dynmod in conjuntion with a VEX file. 
@@ -692,10 +690,10 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
                 otherOpts nN = "    " <> nN <> ":1"
 
 runTimeCourse :: (LayerNameIndexBimap, [Phenotype])
-             -> DMTimeCourse
-             -> StdGen
-             -> (Barcode, Attractor)
-             -> (StdGen, (Barcode, RepResults))
+              -> DMTimeCourse
+              -> StdGen
+              -> (Barcode, Attractor)
+              -> (StdGen, (Barcode, RepResults))
 runTimeCourse (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
     where
         bundledRs = (annIplResultReps, pSpacess)

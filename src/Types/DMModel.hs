@@ -7,6 +7,7 @@ module Types.DMModel
     , ModelMapping
     , Switch
     , Phenotype(..)
+    , SwitchName
     , PhenotypeName
     , SubSpace
     , IntSubSpace
@@ -136,7 +137,6 @@ import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
 import Data.Maybe (fromJust)
 import qualified Data.Bifunctor as BF
-import Control.Applicative (liftA2)
 
 -- We need a Hashable version of Colour to put them into HashMaps, but this will
 -- really only work for a Double-esque a in Colour a. I'd rather not use a
@@ -195,7 +195,9 @@ biasOrderNodeName (SpecificState n _) = n
 -- loose map from a subset of the states of the coarse node to subsets of
 -- states of its fine nodes. 
 type ModelMapping = [Switch]
-type Switch = (NodeName, ([NodeName],[Phenotype]))
+type Switch = (SwitchName, ([NodeName],[Phenotype]))
+-- To avoid confusion with NodeNames as individual DMNodes
+type SwitchName = NodeName
 
 -- A Phenotype maps a state of a switch node to a (possibly degenerate)
 -- loop of SubSpaces of its constituent nodes, where SubSpaces are subsets

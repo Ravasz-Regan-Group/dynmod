@@ -354,10 +354,6 @@ figKindsParse = between (symbol "Figures{") (symbol "Figures}")
         <*> toPermutationWithDefault [] (multiIdentifier "AvgBarChartSwitches")
     ))
 
--- Default FigKinds
-defFigKinds :: FigKinds
-defFigKinds = FigKinds True False [] []
-
 -- Do we produce a Node time course figure? Default to True. 
 nodeTimeCourseParse :: Parser DoNodeTimeCourse
 nodeTimeCourseParse = boolVariableParse "NodeTimeCourse"
@@ -505,8 +501,7 @@ xAxisParse = lexeme $ rword "X_Axis" >>
     )
 
 scanCheck :: VEXScan -> Parser VEXScan
-scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs
-    exStep plottingNs) =
+scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep plottingNs) =
     VEXScan <$> scanKindCheck nAlts scKnd
             <*> pure inEnv
             <*> pure nAlts

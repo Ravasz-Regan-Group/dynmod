@@ -7,11 +7,15 @@ module Types.DMInvestigation
     , layerMatch
     , inputOptions
     , textInputOptions
+    , DMExperiment(..)
+    , DMTimeCourse(..)
     , TCExpMeta(..)
     , TCExpKind(..)
     , SCExpMeta(..)
+    , ExpMeta(..)
     , VEXInvestigation
     , VEXLayerExpSpec(..)
+    , LayerExpSpec(..)
     , ISFSpec(..)
     , Sampling(..)
     , SamplingParameters(..)
@@ -21,6 +25,7 @@ module Types.DMInvestigation
     , InitialEnvironment(..)
     , ExperimentStep(..)
     , VEXInputPulse(..)
+    , ManualSeed
     , NodeAlteration(..)
     , WildTypeVsMutantAlt
     , nodeAltName
@@ -32,9 +37,11 @@ module Types.DMInvestigation
     , Duration
     , ExperimentReps
     , VEXInvestigationInvalid(..)
+    , LayerResultIO(..)
     , LayerResult(..)
     , ExperimentResult(..)
     , FigKinds(..)
+    , defFigKinds
     , DoNodeTimeCourse
     , DoPhenotypeTimeCourse
     , AvgBChartNodes
@@ -50,14 +57,17 @@ module Types.DMInvestigation
     , AvgWasForced
     , PhenotypeWeights
     , PulseSpacing
+    , runInvestigation
+    , runTimeCourse
     , DMExpOutput(..)
     , ExpOutput(..)
-    , TimeCourseOutput(..)
+    , ExpOP(..)
+    , ExperimentHook
+    , ExperimentMark
+    , TimeCourseOutput
     , TCOutputParameters(..)
     , TCExpOPMeta(..)
-    , ScanOutput(..)
-    , SCOutputParameters
-    , runInvestigation
+    , ScanOutput
     , pickStates
     , envScanInputName
     , VEXScan(..)
@@ -89,12 +99,13 @@ import Types.DMInvestigation.TimeCourse
 import Types.DMInvestigation.Scan
 import Types.VEXInvestigation
 import Data.Validation
+import Path
 import TextShow
-import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
-import System.Random
-import qualified Data.List as L
+import System.Random (StdGen)
 import Data.Maybe (fromMaybe)
+import qualified Data.HashMap.Strict as M
+import qualified Data.List as L
 
 -- Defining the types that comprise sampling preferences, input space diagram
 -- details, and various virtual experiments to be run on the associated DMModel,
@@ -107,7 +118,7 @@ data LayerExpSpec = LayerExpSpec {
       layerExpMMapping :: ModelMapping
     , layerExpMLayer :: ModelLayer
     , invesIBundle :: Maybe InputBundle -- Should dynmod create a 5D figure?
-    , experiments :: [DMExperiment]
+    , experiments :: [(DMExperiment, VEXExperiment)]
     }
 
 data LayerResult = LayerResult
@@ -121,16 +132,42 @@ data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
                       | ScanExpRes (SCExpMeta, [(Barcode, ScanResult)])
                       deriving (Eq, Show)
 
+
+data ExpMeta = TCEM TCExpMeta
+             | SCEM SCExpMeta
+             deriving (Eq, Show)
+
 data DMExperiment = TCDMEx DMTimeCourse
                   | ScDMex DMScan
 
+data LayerResultIO = LayerResultIO {
+      layerResultMMIO :: ModelMapping
+    , layerResultMLIO :: ModelLayer
+    , layerExperimentHooksIO :: [ExperimentHook]
+    } 
+
+
 data DMExpOutput = DMExpOutput { layerGateSet :: [NodeGate]
                                , layerNIBM :: LayerNameIndexBimap
+                               , layerMM :: ModelMapping
                                , dmExpOutput :: ExpOutput
                                } deriving (Eq, Show)
-data ExpOutput = TCO TimeCourseOutput
-               | SCO ScanOutput
-                 deriving (Eq, Show)
+data ExpOutput = ExpOutput
+    { opVexExp :: VEXExperiment
+    , expOP :: ExpOP
+    , expMark :: ExperimentMark
+    } deriving (Eq, Show)
+
+
+data ExpOP = TCO TimeCourseOutput
+           | SCO ScanOutput
+           deriving (Eq, Show)
+
+
+type ExperimentHook = (ExperimentMark, Path Abs File)
+-- An Int to mark a particular run of a particular experiment, so that we don't
+-- have to validate an experiment that we literally just did. 
+type ExperimentMark = Word
 
 
 ----------------------------------------------------------------------------
@@ -248,9 +285,11 @@ mkInIBFixedVec mL pinnedIs
         pinnedRepeats = (repeated . fmap fst) pinnedIs
 
 mkDMExperiment :: ModelMapping -> ModelLayer -> VEXExperiment
-               -> Validation [VEXInvestigationInvalid] DMExperiment
-mkDMExperiment mM mL (VXTC v) = TCDMEx <$> (mkTimeCourse mM mL v)
-mkDMExperiment mM mL (TXSC e) = ScDMex <$> (mkDMScan mM mL e)
+        -> Validation [VEXInvestigationInvalid] (DMExperiment, VEXExperiment)
+mkDMExperiment mM mL vexExp@(VXTC v) =
+    (flip (,) vexExp . TCDMEx) <$> (mkTimeCourse mM mL v)
+mkDMExperiment mM mL vexExp@(TXSC e) =
+    (flip (,) vexExp . ScDMex) <$> (mkDMScan mM mL e)
 
 ----------------------------------------------------------------------------
 -- Conducting experiments:
@@ -274,7 +313,7 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
         (newGen, eResults) =
             L.mapAccumL (runExperiment phData layerBCG atts) gen exps
         layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
-        exps = experiments lExpSpec
+        exps = (fmap fst . experiments) lExpSpec
         phData = (lniBMap, phs)
         phs = concatMap (snd . snd) mMap
         LayerSpecs lniBMap _ _ _ = layerPrep mL

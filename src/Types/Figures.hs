@@ -40,7 +40,6 @@ module Types.Figures
     , groupInputs
     , nAltTPrep
     , inputCoordText
-    , BarcodeResult
     , resCombine
     ) where    
 
@@ -71,12 +70,10 @@ type PhColorMap = M.HashMap PhenotypeName LocalColor
 type PUCGradient = B.Vector LocalColor
 type StdDev = Double
 
--- BarcodeResult a combines results from TimeCourses or Scans by equality on
--- Barcodes, because all of the (Barcode, RepResults or ScanResult)s for a given
--- Barcode will be turned into figures in one PDF file. 
-type BarcodeResult a = (Barcode, [a])
-
-resCombine :: [(Barcode, a)] -> [BarcodeResult a]
+-- Combines results from TimeCourses or Scans by equality on Barcodes, because
+-- all of the (Barcode, RepResults or ScanResult)s for a given Barcode will be
+-- turned into figures in one PDF file. 
+resCombine :: [(Barcode, a)] -> [(Barcode, [a])]
 resCombine ars = M.toList $ M.fromListWith (<>) preppedArs
     where preppedArs = pure <<$>> ars
 
@@ -259,6 +256,16 @@ data BarcodeFilter =
 -- Exclude if at EVERY point along an attractor it matches to the phenotype
     | ExcludeBarCodesWithAll [(NodeName, PhenotypeName)]
       deriving (Eq, Show, Ord)
+
+instance TextShow BarcodeFilter where
+    showb (OnlyBarCodesWithAny flts) = showbString "OnlyBarCodesWithAny" <>
+        showbList flts
+    showb (OnlyBarCodesWithAll flts) = showbString "OnlyBarCodesWithAll" <>
+        showbList flts
+    showb (ExcludeBarCodesWithAny flts) = showbString "ExcludeBarCodesWithAny" <>
+        showbList flts
+    showb (ExcludeBarCodesWithAll flts) = showbString "ExcludeBarCodesWithAll" <>
+        showbList flts
 
 -- Does an attractor exist at a particular point in the space of environmental
 -- inputs?
