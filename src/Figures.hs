@@ -22,6 +22,15 @@ module Figures
     , phBCDataPrep
     , nBChartDia
     , averagedAttResults
+    , scDifferenceHeatMapDia
+    , sc3DHeatMapDia
+    , scanXAxisData
+    , scHeatMapDias
+    , labelMutantHMDias
+    , envKDOENodeDia
+    , envKDOESWDia
+    , baseScDia
+    , needOverlays
     ) where
 
 import Types.DMModel
@@ -208,7 +217,7 @@ phBarChartStats :: [PhenotypeName]
                    , [[M.HashMap PhenotypeName (Double, StdDev)]])
 phBarChartStats allPhNs (exSRs, pSPss) = (unzip . fmap unzip) stats
     where
-        unzipperF = unzip . fmap unzip
+--         unzipperF = unzip . fmap unzip
         stats = phStatsCalc allPhNs <<$>> preppedStates
         preppedStates = (L.transpose . mconcat) <$> splitByIpSpPhNs
         splitByIpSpPhNs :: [[[[B.Vector [PhenotypeName]]]]]

@@ -79,9 +79,8 @@ renderMMeta (ModelMeta mName mVer paper bOF bOL mInfo) =
             rMNotes = "ModelNotes: " <> note mInfo
             rBOF = "BiasOrderFirst: " <> (T.intercalate ", " $ boShow <$> bOF)
             rBOL = "BiasOrderLast: " <> (T.intercalate ", " $ boShow <$> bOL)
-            boShow (WholeNode n) = "WholeNode: " <> n
-            boShow (SpecificState n i) = "SpecificState: " <>
-                n <> " " <> showt i
+            boShow (WholeNode n) = n
+            boShow (SpecificState n i) = "(" <> n <> ", " <> showt i <> ")"
 
 renderMMaping :: ModelMapping -> T.Text
 renderMMaping mm = (dmmsWrap "ModelMapping" dmmsMMEntries Nothing) <>

@@ -28,7 +28,7 @@ import Path.IO
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import TextShow
-import Diagrams.Prelude (mkWidth, Diagram, vsep)
+import Diagrams.Prelude (mkWidth, Diagram, vsep, frame, hsep)
 import Diagrams.Backend.Cairo (B, renderCairo)
 import qualified Data.Graph.Inductive as Gr
 import qualified Text.Pretty.Simple as PS
@@ -219,44 +219,11 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 let allMarks = fmap fst $
                         concatMap layerExperimentHooksIO layerResultIOs
                 putStrLn $ "Experiment marks: " <> show allMarks
---                 putStrLn "Generating figures..."
---                 let lRFigs = zipWith ($)
---                         (layerRunFigure cMap <$> attSets) invRs
---                 writeVexFigs dmmsPath lRFigs
 
--- This is a simple write to disk of the Diagram Bs for now, until I have a
--- better idea of what they look like. 
-writeScanExpFigures :: Path Abs Dir
-                    -> SCExpMeta
-                    -> (Barcode, [ScanExpFigure])
-                    -> IO ()
-writeScanExpFigures f scExpMt (bc, figs) = do
-    let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-        bcPatternStr = "bc" ++ T.unpack bcPatterns
-    bcDir <- parseRelDir bcPatternStr
-    let fPath = f </> bcDir
-    mapM_ (writeScanExpFigure fPath scExpMt bc) figs
 
-writeScanExpFigure :: Path Abs Dir
-                   -> SCExpMeta
-                   -> Barcode
-                   -> ScanExpFigure
-                   -> IO ()
-writeScanExpFigure f scExpMt bc fig = case fig of
-    EnvScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
-    KDOEScFig bsScFgs -> writeBaseScanFig f scExpMt bc bsScFgs
-    EnvKDOESc swEnvKFig nodeEnvKFig -> do
-        let figs = [("switches", swEnvKFig), ("nodes", nodeEnvKFig)]
-        mapM_ (simpleSCWrite f scExpMt) figs
-    TwoDEnvScWWOKDOE stopPercentHMs swLabeledHMs nodeLabeledHMs -> do
-        let figs = stopPercentHMs <> swLabeledHMs <> nodeLabeledHMs
-        mapM_ (simpleSCWrite f scExpMt) figs
-    ThreeDEnvSc stopPHMBlockFigs swHMBlockFigs nodeHMBlockFigs -> do
-        let figs = stopPHMBlockFigs <> swHMBlockFigs <> nodeHMBlockFigs
-        mapM_ (simpleSCWrite f scExpMt) figs
-
-simpleSCWrite :: Path Abs Dir -> SCExpMeta -> (T.Text, Diagram B) -> IO ()
-simpleSCWrite f _ (fName, dia) = do
+-- A simple write to disk of the Diagram Bs for now. 
+simpleSCWrite :: Path Abs Dir -> (T.Text, Diagram B) -> IO ()
+simpleSCWrite f (fName, dia) = do
     relFileName <- parseRelFile (T.unpack fName)
     relFileNameWExt <- addExtension ".pdf" relFileName
     let absFileNameWExt = (f </> relFileNameWExt) :: Path Abs File
@@ -264,15 +231,8 @@ simpleSCWrite f _ (fName, dia) = do
     ensureDir f
     renderCairo fPath (mkWidth 1600) dia
 
--- Again, this is a simple write to disk of the Diagram Bs for now. 
-writeBaseScanFig :: Path Abs Dir -> SCExpMeta -> Barcode -> BaseScanFigs -> IO ()
-writeBaseScanFig f scExpMt _ (BSFgs stFig tisPhsFigs nAvgFigs) = do
-    let figs = (stFig:tisPhsFigs) <> nAvgFigs
-    mapM_ (simpleSCWrite f scExpMt) figs
-
-
-writeExpBCFig :: Path Abs Dir -> T.Text -> (Int,(Barcode, [Diagram B])) -> IO ()
-writeExpBCFig dirFull expDetails (fID, (bc, expDias)) = do
+writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
+writeExpBCFig dirFull expDetails (bc, expDias) = do
     ensureDir dirFull
     case expDias of
         [] -> do 
@@ -280,8 +240,7 @@ writeExpBCFig dirFull expDetails (fID, (bc, expDias)) = do
             PS.pPrint bc
         [expDia] -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = show fID ++ "bc" ++
-                    (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             relFileName <- parseRelFile rFString
             relFileNameWExt <- addExtension ".pdf" relFileName
             let absFileNameWExt = dirFull </> relFileNameWExt
@@ -289,8 +248,7 @@ writeExpBCFig dirFull expDetails (fID, (bc, expDias)) = do
             renderCairo fPath (mkWidth 1600) expDia
         expDs -> do
             let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
-                rFString = show fID ++ "bc" ++
-                    (T.unpack $ bcPatterns <> "_" <> expDetails)
+                rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
                 intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
                 rFStrings = (rFString <>) <$> intBStrs
                 fStrDiaPairs = zip rFStrings expDs
@@ -793,7 +751,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
         putStrLn $ "Generating figures for " <> expName
         mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark)
-                                                (indexCombine attResults)
+                                                (resCombine attResults)
         return (newGen, (xMark, absFileNameWExt))
     ScDMex scanExp -> do
         let filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
@@ -813,9 +771,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         let absFileNameWExt = noDetailsDir </> relFileNameWExt
         RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
         putStrLn $ "Generating figures for " <> expName
-        let scRunDiaIOF (bc, scRess) =
-            scRunDiaIO fPath cMap mM mL expMeta xMark bc
-        mapM_ (scRunDiaIO fPath cMap mM mL expMeta xMark) (zip [0..] attResults)
+        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attResults
         return (newGen, (xMark, absFileNameWExt))
     where
         attList = HS.toList attSet
@@ -825,7 +781,6 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         layerBCG = mkBarcode cMap mM lniBMap -- Make (BC, Att) pairs
         preOutput = DMExpOutput lGates lniBMap mM
         lGates = (fmap nodeGate . layerNodes) mL
-        indexCombine = zip [0..] . resCombine
 
 
 -- Construct the path to the results or figures of a given DMExperiment. 
@@ -862,9 +817,9 @@ tcRunDiaIO :: Path Abs File
            -> ModelLayer
            -> TCExpMeta
            -> ExperimentMark
-           -> (Int, (Barcode, [RepResults]))
+           -> (Barcode, [RepResults])
            -> IO ()
-tcRunDiaIO fPath cMap mM mL expMeta xMark (figID, (bc, repRs)) = do
+tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
     let figKs = tcExpFigures expMeta
         stripHt = 2.0 :: Double
         params = (stripHt, 24.0) :: (Double, Double)
@@ -880,13 +835,12 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (figID, (bc, repRs)) = do
     when (nodeTimeCourse figKs) $ do
         let nodeTCFigs = nodeTCDia cMap mM mL bc params avgTmlnPSs
         dirNTC <- parseRelDir "NodeTC"
-        writeExpBCFig (figDir </> dirNTC) expDetails (figID, (bc, nodeTCFigs))
+        writeExpBCFig (figDir </> dirNTC) expDetails (bc, nodeTCFigs)
     when (phenotypeTimeCourse figKs) $ do
         let phenotypeTCFigs =
                         phenotypeTCDia cMap mM mL bc expMeta stripHt avgTmlnPSs
         dirPHTC <- parseRelDir "PHTC"
-        let finalDir = figDir </> dirPHTC
-        writeExpBCFig finalDir expDetails (figID, (bc, phenotypeTCFigs))
+        writeExpBCFig (figDir </> dirPHTC) expDetails (bc, phenotypeTCFigs)
     when ((not . null) (nodeAvgBars figKs)) $ do
         let bCHNodeNs = nodeAvgBars figKs
             statRepRVecs :: [[[B.Vector (U.Vector RealNodeState)]]]
@@ -912,8 +866,7 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (figID, (bc, repRs)) = do
         let absDataFileNamesWExt =
                             ((dataDir </> dirNBCH) </>) <$> relDataFileNamesWExt
         mapM_ (uncurry RW.writeFileL) (zip absDataFileNamesWExt formattedData)
-        let rFString = show figID ++ "bc" ++
-                    (T.unpack $ bcPatterns <> "_" <> expDetails)
+        let rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             rFStrings = (((rFString <> "_" )<>) . show) <$> [1..numFigs]
         relFileNames <- mapM parseRelFile rFStrings
         relFileNamesWExt <- mapM (addExtension ".pdf") relFileNames
@@ -956,8 +909,7 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (figID, (bc, repRs)) = do
         let absDataFileNamesWExt =
                         ((dataDir </> dirPHBCH) </>) <$> relDataFileNamesWExt
         mapM_ (uncurry RW.writeFileL) (zip absDataFileNamesWExt formattedData)
-        let rFString = show figID ++ "bc" ++
-                    (T.unpack $ bcPatterns <> "_" <> expDetails)
+        let rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             rFStrings = (((rFString <> "_") <>) . show) <$> [1..numFigs]
         relFileNames <- mapM parseRelFile rFStrings
         relFileNamesWExt <- mapM (addExtension ".pdf") relFileNames
@@ -966,39 +918,82 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (figID, (bc, repRs)) = do
             fStrDiaPairs = zip absFileNamesWExt phBChartFgs
             renderF (f, d) = renderCairo (toFilePath f) (mkWidth 1600) d
         mapM_ renderF fStrDiaPairs
-        
-            
 
 scRunDiaIO :: Path Abs File
            -> ColorMap
            -> ModelMapping
            -> ModelLayer
            -> SCExpMeta
-           -> ExperimentMark
-           -> (Int, (Barcode, ScanResult))
+           -> (Barcode, ScanResult)
            -> IO ()
-scRunDiaIO cMap mM mL exMeta xMark (figID, (bc, scRes)) = case scRes of
-  (SKREnv scBundle) -> baseScDiaIOF scBundle
-  (SKRKDOE scBundle) -> baseScDiaIOF scBundle
-  (SKREnvKDOE scBundles) -> do
-    envKDOESWDiaIO phCMap switchMap exMeta figID bc scBundles
-    envKDOENodeDiaIO cMap mL exMeta figID bc scBundles
-  (SKRTwoEnvWithoutKDOE scBundles) ->
-    scHeatMapDiasIO mL overLayVs switchMap exMeta figID bc scBundles
-  (SKRTwoEnvWithKDOE scBundless) -> do
---   These L.transposes are so that the KDOE is at the top level, so that we
---   may generate the figures. 
-    let tpBundless = (L.transpose . fmap L.transpose) scBundless
-        hmFigs = scHeatMapDias mL overLayVs switchMap exMeta <$> tpBundless
-        (offAxisTitle, offAxisRange) =
-            (last . scanXAxisData . scMetaScanKind) exMeta
-            
-  where
+scRunDiaIO fPath cMap mM mL exMeta (bc, scRes) = do
+  let
+    bcPatternStr = "bc" ++  (T.unpack . mconcat . fmap barFNPattern) bc
     overLayVs = needOverlays exMeta
-    baseScDiaIOF = baseScDiaIO cMap phCMap lniBMap switchMap exMeta figID bc
     LayerSpecs lniBMap _ _ _ = layerPrep mL
     phCMap = mkPhColorMap mM cMap
-    switchMap = M.fromList nonEmptySwPhNs
+    switchMap = HM.fromList nonEmptySwPhNs
     nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
     nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
+  figDir <- mkExpPath fPath (SCEM exMeta) ""
+  bcDir <- parseRelDir bcPatternStr
+  let
+    bcAbsDir = figDir </> bcDir
+    baseScDiaF = baseScDia cMap phCMap lniBMap switchMap exMeta
+  case scRes of
+    (SKREnv scBundle) -> do
+      let
+        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scBundle
+        flatFigs = stopDFig : (timeInSwitchFigs <> avgNValueFigs)
+      mapM_ (simpleSCWrite bcAbsDir) flatFigs
+    (SKRKDOE scBundle) -> do
+      let
+        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scBundle
+        flatFigs = stopDFig : (timeInSwitchFigs <> avgNValueFigs)
+      mapM_ (simpleSCWrite bcAbsDir) flatFigs
+    (SKREnvKDOE scBundles) -> do
+      let
+        swFig = envKDOESWDia phCMap switchMap exMeta scBundles
+        nodeFig = envKDOENodeDia cMap mL exMeta scBundles
+        flatFigs = [("switches", swFig), ("nodes", nodeFig)]
+      mapM_ (simpleSCWrite bcAbsDir) flatFigs
+    (SKRTwoEnvWithoutKDOE scBundles) -> do
+      let
+        (stopPercentFigs, switchHMFigs, nodeHMFigs) = 
+          scHeatMapDias mL overLayVs switchMap exMeta scBundles
+        flatFigs = stopPercentFigs <> switchHMFigs <> nodeHMFigs
+      mapM_ (simpleSCWrite bcAbsDir) flatFigs
+    (SKRTwoEnvWithKDOE scBundless) -> do
+--   These L.transposes are so that the KDOE is at the top level, so that we
+--   may generate the figures. 
+      let
+        tpBundless = (L.transpose . fmap L.transpose) scBundless
+        hmFigs = scHeatMapDias mL overLayVs switchMap exMeta <$> tpBundless
+        (offAxisTitle, offAxisRange) =
+          (last . scanXAxisData . scMetaScanKind) exMeta
+        offAxisPairs = zip (repeat offAxisTitle) offAxisRange
+        map3 f (a, b, c) = (f a, f b, f c)
+        figs = unzip3 $ zipWith labelMutantHMDias hmFigs offAxisPairs
+        concatF :: [(T.Text, Diagram B)] -> (T.Text, Diagram B)
+        concatF [] = (mempty, mempty)
+        concatF ps = ((fst . head) ps, (hsep 50 . fmap snd) ps)
+        joinedFigs = map3 ((fmap concatF) . L.transpose) figs
+        framerF = map3 ((fmap . fmap) (frame 20))
+        (stopDFigs, switchHMFigs, nodeHMFigs) = framerF joinedFigs
+        flatFigs = stopDFigs <> switchHMFigs <> nodeHMFigs
+      mapM_ (simpleSCWrite bcAbsDir) flatFigs
+--  Take care to distinguish between when [WildTypeVsMutantAlt] are [] and not. 
+    (SKRThreeEnv (scBundless, mScBundless)) -> case mScBundless of
+      Just scbs -> do
+        let
+          (stopPlotFigs, swFigs, nFigs) = scDifferenceHeatMapDia mL overLayVs
+                                            switchMap exMeta (scBundless, scbs)
+          flatFigs = stopPlotFigs <> swFigs <> nFigs
+        mapM_ (simpleSCWrite bcAbsDir) flatFigs
+      Nothing -> do
+        let
+          (stPhFigs, swFigs, nodeFigs) = sc3DHeatMapDia mL overLayVs switchMap
+                                                            exMeta scBundless
+          flatFigs = stPhFigs <> swFigs <> nodeFigs
+        mapM_ (simpleSCWrite bcAbsDir) flatFigs
 

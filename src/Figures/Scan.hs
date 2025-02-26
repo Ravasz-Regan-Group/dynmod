@@ -5,6 +5,15 @@ module Figures.Scan
     ( scRunDia
     , ScanExpFigure (..)
     , BaseScanFigs(..)
+    , sc3DHeatMapDia
+    , scDifferenceHeatMapDia
+    , scanXAxisData
+    , scHeatMapDias
+    , labelMutantHMDias
+    , envKDOENodeDia
+    , envKDOESWDia
+    , baseScDia
+    , needOverlays
     ) where    
 
 import Types.DMModel
@@ -848,6 +857,8 @@ sc3DHeatMapDia mL overLayVs switchMap exMeta scBs = (stPhFigs, swFigs, nodeFigs)
         phValuesF = zip (zip phNames (repeat 1)) . L.transpose .
             fmap L.transpose . (fmap . fmap) L.transpose
         bareValuess = bValuesF trimmedSCBs
+        trimmedSCBs = trimmer scBs
+        trimmer = (fmap . fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
         bValuesF = (fmap . fmap . fmap) (phDistribution phNames)
         phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
         stPhFigs = sc3DBlock "StopAt" overLayVs rangeData <$> stopPlotValuesss
@@ -855,8 +866,6 @@ sc3DHeatMapDia mL overLayVs switchMap exMeta scBs = (stPhFigs, swFigs, nodeFigs)
         stopPlotValuesss = mkStopPhValues3D stopDsss
         stopDsss :: [[[([(PhenotypeName, Double)], Double)]]]
         stopDsss = (fmap . fmap . fmap) (stopDistribution stopPhNames) scBs
-        trimmedSCBs = trimmer scBs
-        trimmer = (fmap . fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
         rangeData = case (take 3 . scanXAxisData . scMetaScanKind) exMeta of
             [] -> ((blankR, blankR), blankR)
             [x] -> ((x,x),x)
@@ -865,10 +874,10 @@ sc3DHeatMapDia mL overLayVs switchMap exMeta scBs = (stPhFigs, swFigs, nodeFigs)
         blankR = ("blank", [0 :: Double, 1])
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
--- Produce a figures for a non-mutant ThreeDEnvSc.
+-- Produce a figure for a non-mutant ThreeDEnvSc.
 sc3DBlock :: T.Text
           -> DoOverlayValues
-          ->(((String,[Double]),(String,[Double])),(String, [Double]))
+          -> (((String,[Double]),(String,[Double])),(String, [Double]))
           -> ((T.Text, Double), [[[Double]]])
           -> NamedFigure
 sc3DBlock fileTag overLayVs range3Data ((plainN, rTop), plainD) =
