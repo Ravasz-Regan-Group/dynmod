@@ -778,8 +778,9 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         phData = (lniBMap, phs)
         phs = concatMap (snd . snd) mM
         LayerSpecs lniBMap _ _ _ = layerPrep mL
+        lRanges = layerRanges mL
         layerBCG = mkBarcode cMap mM lniBMap -- Make (BC, Att) pairs
-        preOutput = DMExpOutput lGates lniBMap mM
+        preOutput = DMExpOutput lGates lniBMap lRanges mM 
         lGates = (fmap nodeGate . layerNodes) mL
 
 

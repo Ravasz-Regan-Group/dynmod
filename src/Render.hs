@@ -109,7 +109,7 @@ renderPhenotype ph =
     "            " <>
     phenotypeName ph <>
     ":" <>
-    ((T.pack . show . switchNodeState) ph) <>
+    ((showt . switchNodeState) ph) <>
     " *= " <>
     (T.intercalate " -> " $ renderSubSpace <$> (fingerprint ph))
 
@@ -185,7 +185,7 @@ renderDiscreteG r ng = dmmsWrap "DiscreteLogic" entries Nothing
             | otherwise = T.intercalate "\n" rExprs
         rExprs = ("\t" <>) <$> (zipWith ((<> ) . (<> " *= "))
                             gStates $ renderExpr boolNS <$> exprs)
-        gStates = ((assignName <>) . T.pack . show . fst) <$> assigns
+        gStates = ((assignName <>) . showt . fst) <$> assigns
         exprs = snd <$> assigns
 --      We never write out the zeroth state in a dmms, so only take the tail
 --      of the gate assignments. 
@@ -216,7 +216,7 @@ renderTableG ng = dmmsWrap "TruthTable" entries Nothing
         topLine = T.intercalate "\t" $ gateOrder ng <> [gNodeName ng]
         rows = L.sort $ zipWith (<>) inputRows tOutputs
         inputRows = (T.intercalate "\t" . fmap showt . U.toList) <$> vecs
-        tOutputs = ((<>) "\t" . T.pack . show) <$> outputs
+        tOutputs = ((<>) "\t" . showt) <$> outputs
         (vecs, outputs) = (unzip . Map.toList . gateTable) ng
 
 renderNamedLink :: (NodeName, DMLink) -> T.Text
@@ -230,8 +230,8 @@ renderNamedLinkContent (dmL, inName) = entries
         entries = T.intercalate "\n"
             [rInNode, rEffect, rType, rDesc, rNotes]
         rInNode = "InputNode: " <> inName
-        rEffect = "LinkEffect: " <> ((T.pack . show . linkEffect) dmL)
-        rType = "LinkType: " <> ((T.pack . show . linkType) dmL)
+        rEffect = "LinkEffect: " <> ((showt . linkEffect) dmL)
+        rType = "LinkType: " <> ((showt . linkType) dmL)
         rDesc = "LinkDescription: " <> desc lInfo
         rNotes = "LinkNotes: " <> note lInfo
         lInfo = linkInfo dmL
@@ -450,14 +450,14 @@ renderLTEDiff :: LTEDiff -> T.Text
 renderLTEDiff (LTEDiff nN lT lE) = case (lT, lE) of
     (Nothing, Nothing) -> "Inlink " <> nN <> " perfectly shared."
     (Just t, Nothing) -> "Inlink " <> nN <> " has differing NodeTypes: " <>
-        ((T.pack . show . fst) t) <> " vs " <> ((T.pack . show . fst) t)
+        ((showt . fst) t) <> " vs " <> ((showt . fst) t)
     (Nothing, Just e) -> "Inlink " <> nN <> " has differing NodeEffects: " <>
-        ((T.pack . show . fst) e) <> " vs " <> ((T.pack . show . fst) e)
+        ((showt . fst) e) <> " vs " <> ((showt . fst) e)
     (Just t, Just e) -> "Inlink " <> nN <>
         " has differing NodeTypes: " <>
-        ((T.pack . show . fst) t) <> " vs " <> ((T.pack . show . fst) t) <>
+        ((showt . fst) t) <> " vs " <> ((showt . fst) t) <>
         "\n" <> "and NodeEffects: " <>
-        ((T.pack . show . fst) e) <> " vs " <> ((T.pack . show . fst) e)
+        ((showt . fst) e) <> " vs " <> ((showt . fst) e)
 
 renderTableDiff :: TableDiff -> T.Text
 renderTableDiff (nodes, (SD (LD lTable) (RD rTable) _)) = case rows of
@@ -473,7 +473,7 @@ renderTableDiff (nodes, (SD (LD lTable) (RD rTable) _)) = case rows of
             (T.intercalate "\t" . fmap showt . U.toList) <$> vecs
         tOutputs = ((<>) "\t") <$> outs
         (vecs, outs) = unzip $ L.sortBy (compare `on` fst) $ zipdLR
-        zipdLR = ((<>) "\t" . T.pack . show) <<$>> (zipWith zipper lList rList)
+        zipdLR = ((<>) "\t" . showt) <<$>> (zipWith zipper lList rList)
         zipper (x, y) (_, b) = (x, (y, b))
         lList = L.sortBy (compare `on` fst) $ Map.toList lTable
         rList = L.sortBy (compare `on` fst) $ Map.toList rTable
@@ -538,21 +538,46 @@ renderDMExpOutput :: DMExpOutput -> TL.Text
 renderDMExpOutput dmExpOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
     where
         expOPT = (renderSingleExpOP mM lniBMap . dmExpOutput) dmExpOP
-        layerGatesT = "Layer Gates: " <> TL.intercalate ", " gateTs
-        gateTs = renderLGate <$> (layerGateSet dmExpOP)
+        layerGatesT = "Layer Gates: " <> TL.intercalate "\n" gateTs
+        lRange = opLayerRange dmExpOP
+        gateTs = renderDiscreteGL lRange <$> (layerGateSet dmExpOP)
         lniBMapT = "LayerNameIndexBimap: " <> TL.intercalate ", " lniBMapPairTs
         lniBMapPairTs = (fmap (TL.pack . show) . BM.toList) lniBMap
         lniBMap = layerNIBM dmExpOP
         mM = layerMM dmExpOP
 
-
-renderLGate :: NodeGate -> TL.Text
-renderLGate nGate = TL.intercalate ", " (tlNName:ttPairTs)
+renderDiscreteGL :: LayerRange -> NodeGate -> TL.Text
+renderDiscreteGL r ng
+    | length assigns == 1
+                = "\t" <> nName <>" *= " <> (renderExprL boolNS $ last exprs)
+    | otherwise = TL.intercalate "\n" rExprs
     where
-        tlNName = (TL.fromStrict . gNodeName) nGate
-        ttPairTs = ttPairF <$> tablePairs
-        ttPairF (inputV, opState) = showtl inputV <> ":" <> showtl opState
-        tablePairs = (Map.toList . gateTable) nGate
+        rExprs = ("\t" <>) <$> (zipWith ((<> ) . (<> " *= "))
+                            gStates $ renderExprL boolNS <$> exprs)
+        gStates = ((assignName <>) . showtl . fst) <$> assigns
+        exprs = snd <$> assigns
+--      We never write out the zeroth state in a dmms, so only take the tail
+--      of the gate assignments. 
+        assigns = (tail . gateAssigns) ng
+        assignName = nName <> ":"
+        nName = (TL.fromStrict . gNodeName) ng
+        boolNS = (Map.keysSet . Map.filter (== 1)) r
+
+renderExprL :: Set.HashSet NodeName -> NodeExpr -> TL.Text
+renderExprL _ (GateLit b) = showtl b
+renderExprL s (GateConst n st) = case Set.member n s of
+    True -> case st of
+        0 -> "not " <> tlN
+        _ -> tlN
+    False -> tlN <> ":" <> showtl st
+    where
+        tlN = TL.fromStrict n
+renderExprL s (Not expr) = "not " <> renderExprL s expr
+renderExprL s (Pars expr) = "(" <> renderExprL s expr <> ")"
+renderExprL s (Binary And expr1 expr2) =
+    (renderExprL s expr1) <> " and " <> (renderExprL s expr2)
+renderExprL s (Binary Or expr1 expr2) =
+    (renderExprL s expr1) <> " or " <> (renderExprL s expr2)
 
 renderSingleExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOutput -> TL.Text
 renderSingleExpOP mM lniBMap expOutPut = "Experiment: \n" <> vexExpT <>
@@ -888,10 +913,18 @@ renderSCOutput :: ModelMapping
                -> TL.Text
 renderSCOutput mM lniBMap (bc, scRess) = "Barcode, " <>
     (TL.intercalate ", " . fmap renderBar) bc <> "\n" <> "ScanResults \n" <>
-    renderScanResult mM lniBMap scRess
+    renderRawScanResult mM lniBMap scRess
 
-renderScanResult :: ModelMapping -> LayerNameIndexBimap -> ScanResult -> TL.Text
-renderScanResult mM lniBMap scRes = case scRes of
+-- Render the results of a DMScan, after being processed down to stop phenotype
+-- distributions, phenotype prevelances, and node averages. 
+-- renderScanResult
+
+-- Render the unprocessed recults of a DMScan. 
+renderRawScanResult :: ModelMapping
+                    -> LayerNameIndexBimap
+                    -> ScanResult
+                    -> TL.Text
+renderRawScanResult mM lniBMap scRes = case scRes of
   (SKREnv tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
   (SKRKDOE tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
   (SKREnvKDOE tmlnsss) -> inCF3 $

@@ -40,6 +40,7 @@ import TextShow
 import qualified Data.List as L
 import Text.Printf (printf)
 import GHC.IO (unsafePerformIO)
+import qualified Debug.Trace as TR
 
 data ScanExpFigure =
       EnvScFig BaseScanFigs
@@ -492,7 +493,7 @@ nodeAvgFig cMap lniBMap exMeta trScanRuns scanNode = (,) scanNode $
         nColor = (opaque . (cMap M.!)) <$> [scanNode]
 
 -- Average (and eventualy StdDev) information on a DMNode over the result of a
--- single ScanVariation. 
+-- single ScanVariation. Only ever pass this stop Phenotype trimmed Timelines. 
 scanNodeStats :: LayerNameIndexBimap
               -> ScanNode
               -> [Timeline]
@@ -906,8 +907,8 @@ mkStopPhValues2D stopData = noStopDataPair : (mkStPhV <$> tpStPhData)
         mkStPhV [] = ("", [])
         mkStPhV xs = ((fst . head . head) xs, snd <<$>> xs)
         tpStPhData = (L.transpose . fmap L.transpose) stPhData
-        noStopDataPair = ("NoStopPhenotype", tnNoStData)
-        tnNoStData = (L.transpose) noStopData
+        noStopDataPair = ("NoStopPhenotype", noStopData)
+--         tnNoStData = L.transpose noStopData
         noStopData = snd <<$>> stopData
         stPhData = fst <<$>> stopData
 
@@ -921,8 +922,9 @@ mkStopPhValues3D stopData = noStopDataPair : (mkStPhV <$> tpStPhData)
                      (fmap . fmap . fmap) snd xs)
         tpStPhData = (L.transpose . fmap L.transpose. (fmap . fmap) L.transpose)
             stPhData
-        noStopDataPair = (("NoStopPhenotype", 1), tnNoStData)
-        tnNoStData = (L.transpose . fmap L.transpose) noStopData
+        noStopDataPair = TR.trace ("noStopData: " ++ show noStopData)
+                ((("NoStopPhenotype", 1), noStopData))
+--         tnNoStData =  noStopData
         noStopData = (fmap . fmap . fmap) snd stopData
         stPhData = (fmap . fmap . fmap) fst stopData
 

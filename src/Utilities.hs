@@ -215,6 +215,8 @@ genGen i gen = go 0 [] gen
             | otherwise = let (newG, seed) = split g
                           in go (k + 1) (newG:gs) seed        
 
+genPair :: StdGen -> a -> (StdGen, (StdGen, a))
+genPair gen x = let (newGen, seed) = split gen in (newGen, (seed, x))
 
 quadUncurry :: (a -> b -> c -> d -> e) -> ((a, b), (c, d)) -> e
 quadUncurry f ((a, b), (c, d)) = f a b c d

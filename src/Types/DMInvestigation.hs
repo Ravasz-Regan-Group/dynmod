@@ -149,6 +149,7 @@ data LayerResultIO = LayerResultIO {
 
 data DMExpOutput = DMExpOutput { layerGateSet :: [NodeGate]
                                , layerNIBM :: LayerNameIndexBimap
+                               , opLayerRange :: LayerRange
                                , layerMM :: ModelMapping
                                , dmExpOutput :: ExpOutput
                                } deriving (Eq, Show)

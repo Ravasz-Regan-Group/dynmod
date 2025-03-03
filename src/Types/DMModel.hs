@@ -428,6 +428,13 @@ instance Texy LinkEffect where
     texy Context_Dependent = math $ commS "leftblackspoon" 
     texy Inapt = math $ commS "perp"
 
+instance TextShow LinkEffect where
+    showb Undefined_LE = showbString "Undefined_LE"
+    showb Activation = showbString "Activation"
+    showb Repression = showbString "Repression"
+    showb Context_Dependent = showbString "Context_Dependent"
+    showb Inapt = showbString "Inapt"
+
 data LinkType =   Undefined_LT
                 | Enforced_Env
                 | Indirect
@@ -494,6 +501,39 @@ instance Texy LinkType where
     texy Acetylation          = (footnotesize . fromLaTeX . TeXRaw) "Acet"
     texy Deacetylation        = (footnotesize . fromLaTeX . TeXRaw) "Deacet"
     texy Hydroxylation        = (footnotesize . fromLaTeX . TeXRaw) "-OH"
+
+instance TextShow LinkType where
+    showb Undefined_LT = showbString "Undefined_LT"
+    showb Enforced_Env = showbString "Enforced_Env"
+    showb Indirect = showbString "Indirect"
+    showb Complex_Process = showbString "Complex_Process"
+    showb Persistence = showbString "Persistence"
+    showb Transcription = showbString "Transcription"
+    showb Translation = showbString "Translation"
+    showb Ligand_Binding = showbString "Ligand_Binding"
+    showb Complex_Formation = showbString "Complex_Formation"
+    showb Inhibitory_Binding = showbString "Inhibitory_Binding"
+    showb Localization = showbString "Localization"
+    showb Binding_Localization = showbString "Binding_Localization"
+    showb Protective_Binding = showbString "Protective_Binding"
+    showb Unbinding = showbString "Unbinding"
+    showb Phosphorylation = showbString "Phosphorylation"
+    showb Dephosphorylation = showbString "Dephosphorylation"
+    showb Phosphorylation_Localization =
+        showbString "Phosphorylation_Localization"
+    showb Ubiquitination = showbString "Ubiquitination"
+    showb Degradation = showbString "Degradation"
+    showb GEF_Activity = showbString "GEF_Activity"
+    showb GAP_Activity = showbString "GAP_Activity"
+    showb Proteolysis = showbString "Proteolysis"
+    showb Catalysis = showbString "Catalysis"
+    showb Epigenetic = showbString "Epigenetic"
+    showb Transcription_Conflict = showbString "Transcription_Conflict"
+    showb Secretion = showbString "Secretion"
+    showb RNAi = showbString "RNAi"
+    showb Acetylation = showbString "Acetylation"
+    showb Deacetylation = showbString "Deacetylation"
+    showb Hydroxylation = showbString "Hydroxylation"
 
 type EntrezGeneID = Int
 type NodeName = T.Text

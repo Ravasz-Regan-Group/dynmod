@@ -497,8 +497,12 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
             | L.null intNAlts = (resWMutationsGen, Nothing)
             | otherwise = fmap Just $ (L.mapAccumL . L.mapAccumL . L.mapAccumL)
                 rVarF resWMutationsGen varsWMutations
+--         res = (fmap . fmap . fmap) (uncurry rVarF) seedVPs
         (resWMutationsGen, res) =
             (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+        seedVPs :: [[[(StdGen, ScanVariation)]]]
+        (tGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+            genPair gen vars
         varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
         vars = (fmap . fmap) (envSpread intEnv1) tier2
         tier2 = fmap (envSpread intEnv2) tier1
