@@ -896,8 +896,7 @@ mkStopPhValues2D stopData = noStopDataPair : (mkStPhV <$> tpStPhData)
         mkStPhV [] = ("", [])
         mkStPhV xs = ((fst . head . head) xs, snd <<$>> xs)
         tpStPhData = (L.transpose . fmap L.transpose) stPhData
-        noStopDataPair = ("NoStopPhenotype", tnNoStData)
-        tnNoStData = (L.transpose) noStopData
+        noStopDataPair = ("NoStopPhenotype", noStopData)
         noStopData = snd <<$>> stopData
         stPhData = fst <<$>> stopData
 
@@ -911,8 +910,7 @@ mkStopPhValues3D stopData = noStopDataPair : (mkStPhV <$> tpStPhData)
                      (fmap . fmap . fmap) snd xs)
         tpStPhData = (L.transpose . fmap L.transpose. (fmap . fmap) L.transpose)
             stPhData
-        noStopDataPair = (("NoStopPhenotype", 1), tnNoStData)
-        tnNoStData = (L.transpose . fmap L.transpose) noStopData
+        noStopDataPair = (("NoStopPhenotype", 1), noStopData)
         noStopData = (fmap . fmap . fmap) snd stopData
         stPhData = (fmap . fmap . fmap) fst stopData
 
