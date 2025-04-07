@@ -9,6 +9,9 @@ import Types.Figures
 import Types.VEXInvestigation
 import Data.Validation
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import TextShow
+import TextShow.Data.Char (showbString)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
@@ -42,6 +45,7 @@ data TCExpMeta = TCEMeta {
     , expReps :: ExperimentReps -- Times to repeat this experiment.
     , tcExpKind :: TCExpKind -- Was the parsed VEXTimeCourse general or preset?
     , tcExpFigures :: FigKinds
+    , tcManualSeed :: ManualSeed
     }  deriving (Eq, Show)
 
 data TCExpKind = P1
@@ -49,6 +53,12 @@ data TCExpKind = P1
                | KDOEAtTr
                | GenExp
                deriving (Eq, Show)
+
+instance TextShow TCExpKind where
+    showb P1 = showbString "P1"
+    showb KDOE = showbString "KDOE"
+    showb KDOEAtTr = showbString "KDOEAtTr"
+    showb GenExp = showbString "GenExp"
 
 data InputPulse = InputPulse { realInputCoord :: RealInputCoord
                              , intNodeAlterations :: [IntNodeAlteration]
@@ -73,6 +83,7 @@ type WasForced = Bool
 -- Partial Timeline. This comes up often enough that it saves space
 type PTimeLine = B.Vector (U.Vector (NodeState, WasForced))
 
+type RealExpSpreadResults = [RealTimeline]
 type RealTimeline = B.Vector (RealAnnotatedLayerVec, PhenotypeWeights)
 -- RealAnnotatedLayerVec represents the average NodeState of a series of
 -- repeated experiments, associated with various properties.
@@ -88,6 +99,16 @@ data ExpStepper = SD PSStepper
                 | SN PNStepper'
                 | AD PAStepper'
 
+data ExpStepperKind = SynchronousDeterministic
+                    | SynchronousNoisy
+                    | AsynchronousDeterministic
+                    deriving (Eq, Show, Ord)
+
+instance TextShow ExpStepperKind where
+    showb SynchronousDeterministic = showbString "SynchronousDeterministic"
+    showb SynchronousNoisy = showbString "SynchronousNoisy"
+    showb AsynchronousDeterministic = showbString "AsynchronousDeterministic"
+
 -- The inner run of stepping through the network should be fast-ish, so looking
 -- up the NodeIndex each time for node alterations is a bad idea. 
 data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
@@ -97,16 +118,57 @@ data IntNodeAlteration = IntNodeLock NodeIndex NodeState LockProbability
                                           NudgeProbability
                        deriving (Eq, Show, Ord)
 
+-- The output of a TimeCourse experiment, to be rendered to disk for future use.
+-- Eventually this will be a sum type with various procesed options. 
+type TimeCourseOutput = [(Barcode, RepResults)]
+
+-- Cogent details of a TimeCourse's specification, in case the output is not
+-- being read back in by dynmod in conjuntion with a VEX file. 
+data TCOutputParameters = TCPParams
+    { tcExpOPMeta :: TCExpOPMeta
+    , tcExpOPStepper :: ExpStepperKind
+    , tcExpOPPulseSps :: [[PulseSpacing]]
+    , tcExpOPMPRNGSeed :: ManualSeed
+    } deriving (Eq, Show)
+data TCExpOPMeta = TCEOPM
+    { tcExpOPName :: TL.Text
+    , tcExpOPDetails :: TL.Text
+    , tcExpOPReps :: ExperimentReps
+    , tcExpOPKind :: TCExpKind
+    } deriving (Eq, Show)
+
+-- Eventualy we will also want to write just processed result to disk. 
+-- Results to be output to disk
+-- data TCResultOutput = TCFull [(Barcode, RepResults)]
+--                     | TCProc TCProcdOutput
+--                     deriving (Eq, Show)
+
+-- data TCProcdOutput = TCProcdOutput
+--   { timeCourseOP :: Maybe (Barcode, [[(RealExpSpreadResults
+--                                                     , [PulseSpacing])]])
+--   , nodeBarChartOP :: Maybe 
+--   , phBarChartOP :: Maybe
+--   } deriving (Eq, Show)
+
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
 mkTimeCourse mM mL (GeneralTC exNm inEnv expStep vexPlss exReps fkds
                                                                 mPRMNGSeed) =
-    TCExp <$> mkTCExpMeta mM mL exNm exNm initialCs exReps GenExp fkds
+    TCExp <$> expMeta
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper expStep mL)
           <*> (const <$> listedPulses)
           <*> pure (mkStdGen <$> mPRMNGSeed)
         where
+            expMeta = mkTCExpMeta mM
+                                  mL
+                                  exNm
+                                  exNm
+                                  initialCs
+                                  exReps
+                                  GenExp
+                                  fkds
+                                  mPRMNGSeed
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
 mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
@@ -120,7 +182,15 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
               <*> (const <$> listedPulses)
               <*> pure (mkStdGen <$> mPRMNGSeed)
         where
-            expM = mkTCExpMeta mM mL expName expDetails initialCs exReps P1 fkds
+            expM = mkTCExpMeta mM
+                               mL
+                               expName
+                               expDetails
+                               initialCs
+                               exReps
+                               P1
+                               fkds
+                               mPRMNGSeed
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
             vexPlss = [startPl, p1Pl, endPl]
             startPl = VEXInPt initialCs [] t_0
@@ -132,10 +202,10 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
             -- Switch from NodeStates to RealNodeStates. 
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             expName = "pulse1_" <> pName <> "_wInputs_" <> textInputs
-            expDetails = "pulse1_" <> pName <> "-" <> tShow pState <>
-                "-" <> tShow dur <> "_wInputs_" <> textInputs
-            textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-            initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+            expDetails = "pulse1_" <> pName <> "-" <> showt pState <>
+                "-" <> showt dur <> "_wInputs_" <> textInputs
+            textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+            inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
                                                                 mPRMNGSeed) =
     TCExp <$> expM
@@ -144,7 +214,15 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
           <*> (const <$> listedPulses)
           <*> pure (mkStdGen <$> mPRMNGSeed)
     where
-        expM = mkTCExpMeta mM mL expName expDetails initialCs exReps KDOE fkds
+        expM = mkTCExpMeta mM
+                           mL
+                           expName
+                           expDetails
+                           initialCs
+                           exReps
+                           KDOE
+                           fkds
+                           mPRMNGSeed
         listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
         vexPlss = [startPl, kdoePl, endPl]
         startPl = VEXInPt initialCs [] t_0
@@ -154,8 +232,8 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
         initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
         expName = "KD_OE_" <> kdoeName nAlts <> "_wInputs_" <> textInputs
         expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
-        textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-        initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+        textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+        inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts 
                                                     exReps fkds mPRMNGSeed)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
@@ -167,8 +245,15 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
               <*> mkKDOEAtTrF mL initialCs flipedInitialCs nAlts stp pDur
               <*> pure (mkStdGen <$> mPRMNGSeed)
         where
-            expM =
-                mkTCExpMeta mM mL expNm expDtls initialCs exReps KDOEAtTr fkds
+            expM = mkTCExpMeta mM
+                               mL
+                               expNm
+                               expDtls
+                               initialCs
+                               exReps
+                               KDOEAtTr
+                               fkds
+                               mPRMNGSeed
             stp = (t_0, t_end)
             flipedInitialCs = case L.find ((pN ==) . fst) initialCs of
                 Nothing -> (pN, pSt):initialCs
@@ -179,23 +264,23 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
                 "_wInputs_" <> textInputs
             expDtls = "KDOEAtTr_" <> kdoeDetails nAlts <> "_wPulse_" <>
                 pulseDetails <> "_wInputs_" <> textInputs
-            pulseDetails = pN <> "-" <> tShow pSt <> "-" <> tShow pDur
-            textInputs = T.intercalate "_" $ initShow <$> (initCoord inEnv)
-            initShow (aNN, aNS) = aNN <> "-" <> tShow aNS
+            pulseDetails = pN <> "-" <> showt pSt <> "-" <> showt pDur
+            textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
+            inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
 
 kdoeName :: [NodeAlteration] -> T.Text
 kdoeName alts = T.intercalate "_" $ kdoeName' <$> alts
     where
         kdoeName' (NodeLock nN _ _) = "Lock_" <> nN
-        kdoeName' (GradientNudge nN nD _) = tShow nD <> nN
+        kdoeName' (GradientNudge nN nD _) = showt nD <> nN
 
 kdoeDetails :: [NodeAlteration] -> T.Text
 kdoeDetails alts = T.intercalate "_" $ kdoeName' <$> alts
     where
-        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> "-" <> tShow nS <>
-            "-" <> tShow lP
-        kdoeName' (GradientNudge nN nD nP) = tShow nD <> nN <> "-"
-            <> tShow nP
+        kdoeName' (NodeLock nN nS lP) = "Lock_" <> nN <> "-" <> showt nS <>
+            "-" <> showt lP
+        kdoeName' (GradientNudge nN nD nP) = showt nD <> nN <> "-"
+            <> showt nP
 
 mkAttFilter :: ModelMapping -> ModelLayer -> InitialEnvironment
             -> Validation [VEXInvestigationInvalid]
@@ -424,14 +509,16 @@ mkInputPulse mL (VEXInPt vexRICs vexNAlts vexDuration) =
 
 mkTCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
             -> [(NodeName, RealNodeState)] -> ExperimentReps -> TCExpKind
-            -> FigKinds -> Validation [VEXInvestigationInvalid] TCExpMeta
-mkTCExpMeta mM mL expName expDetails initialCs exReps exKnd figureKinds = 
+            -> FigKinds -> ManualSeed
+            -> Validation [VEXInvestigationInvalid] TCExpMeta
+mkTCExpMeta mM mL expName expDetails initialCs exReps exKnd figKinds mMSeed = 
     TCEMeta <$> pure expName
             <*> pure expDetails
             <*> mkRealInputCoordinate mL initialCs
             <*> pure exReps
             <*> pure exKnd
-            <*> mkFigKinds mM mL figureKinds
+            <*> mkFigKinds mM mL figKinds
+            <*> pure mMSeed
 
 -- Construct a RealInputCoord that pins inputs. This follows the convention that
 -- each level of a multi-node input is indicated by a one of the nodenames
@@ -487,7 +574,7 @@ realTextInputOptions inPtNDs = T.intercalate "\n" $ realTxtInputOpt <$> inPtNDs
         realTxtInputOpt [] = T.empty
         realTxtInputOpt [n] = nName <> theRange
             where
-                theRange = ":x, x ∈ [0, " <> tShow nRange <> "]"
+                theRange = ":x, x ∈ [0, " <> showt nRange <> "]"
                 (nName, nRange) = nodeRange n
         realTxtInputOpt ns = T.intercalate "\n" $ firstRange:
             (otherOpts <$> rNS)
@@ -550,7 +637,7 @@ txtNodeLockOpts oobLocks mlNodeRanges =
         txtNodeLockOpt :: [NodeRange] -> (NodeName, NodeState) -> T.Text
         txtNodeLockOpt nRanges (altName, _) = altName <> theRange
             where
-                theRange = ":x, x ∈ " <> tShow [0..rTop]
+                theRange = ":x, x ∈ " <> showt [0..rTop]
                 -- txtNodeLockOpts is never evaluated unless I already know that
                 -- the node in the NodeLock exists in the ModelLayer
                 rTop = (snd . fromJust . L.find ((==) altName . fst)) nRanges
@@ -593,7 +680,7 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
         txtInputOpt [] = T.empty
         txtInputOpt [n] = T.intercalate "\n" $ nName:(iLine <$> [0..nRange])
             where
-                iLine i = "    " <> nName <> ":" <> tShow i
+                iLine i = "    " <> nName <> ":" <> showt i
                 (nName, nRange) = nodeRange n
         txtInputOpt ns = T.intercalate "\n" $ nName:("    " <> nName <> ":0"):
                  (otherOpts <$> rNS)
@@ -603,10 +690,10 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
                 otherOpts nN = "    " <> nN <> ":1"
 
 runTimeCourse :: (LayerNameIndexBimap, [Phenotype])
-             -> DMTimeCourse
-             -> StdGen
-             -> (Barcode, Attractor)
-             -> (StdGen, (Barcode, RepResults))
+              -> DMTimeCourse
+              -> StdGen
+              -> (Barcode, Attractor)
+              -> (StdGen, (Barcode, RepResults))
 runTimeCourse (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
     where
         bundledRs = (annIplResultReps, pSpacess)

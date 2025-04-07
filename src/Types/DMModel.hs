@@ -7,6 +7,7 @@ module Types.DMModel
     , ModelMapping
     , Switch
     , Phenotype(..)
+    , SwitchName
     , PhenotypeName
     , SubSpace
     , IntSubSpace
@@ -124,6 +125,10 @@ import qualified Data.Colour.SRGB as SC
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Instances()
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString, showbChar)
+import TextShow.Data.UnorderedContainers()
+import TextShow.Data.Vector()
 import qualified Data.Graph.Inductive as Gr
 import qualified Data.HashMap.Strict as Map
 import qualified Data.HashSet as Set
@@ -132,7 +137,6 @@ import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
 import Data.Maybe (fromJust)
 import qualified Data.Bifunctor as BF
-import Control.Applicative (liftA2)
 
 -- We need a Hashable version of Colour to put them into HashMaps, but this will
 -- really only work for a Double-esque a in Colour a. I'd rather not use a
@@ -191,7 +195,9 @@ biasOrderNodeName (SpecificState n _) = n
 -- loose map from a subset of the states of the coarse node to subsets of
 -- states of its fine nodes. 
 type ModelMapping = [Switch]
-type Switch = (NodeName, ([NodeName],[Phenotype]))
+type Switch = (SwitchName, ([NodeName],[Phenotype]))
+-- To avoid confusion with NodeNames as individual DMNodes
+type SwitchName = NodeName
 
 -- A Phenotype maps a state of a switch node to a (possibly degenerate)
 -- loop of SubSpaces of its constituent nodes, where SubSpaces are subsets
@@ -373,6 +379,39 @@ instance Texy NodeType where
     texy Cell_Surgace_Ligand
                             = (footnotesize . fromLaTeX . TeXRaw) "SLig"
 
+instance TextShow NodeType where
+    showb Undefined_NT = showbString "Undefined_NT"
+    showb Cell = showbString "Cell"
+    showb DM_Switch = showbString "DM_Switch"
+    showb Connector = showbString "Connector"
+    showb Environment = showbString "Undefined_NT"
+    showb Process = showbString "Process"
+    showb Macro_Structure = showbString "Macro_Structure"
+    showb Metabolite = showbString "Metabolite"
+    showb MRNA = showbString "MRNA"
+    showb MicroRNA = showbString "MicroRNA"
+    showb Protein_Complex = showbString "Protein_Complex"
+    showb Receptor = showbString "Receptor"
+    showb Adaptor_Protein = showbString "Adaptor_Protein"
+    showb Secreted_Protein = showbString "Secreted_Protein"
+    showb TF_Protein = showbString "TF_Protein"
+    showb Kinase = showbString "Kinase"
+    showb Phosphatase = showbString "Phosphatase"
+    showb Ubiquitin_Ligase = showbString "Ubiquitin_Ligase"
+    showb Protease = showbString "Protease"
+    showb DNase = showbString "DNase"
+    showb CAM = showbString "CAM"
+    showb CDK = showbString "CDK"
+    showb CDKI = showbString "CDKI"
+    showb GEF = showbString "GEF"
+    showb GAP = showbString "GAP"
+    showb GTPase = showbString "GTPase"
+    showb Enzyme = showbString "Enzyme"
+    showb Protein = showbString "Protein"
+    showb Membrane_Potential = showbString "Membrane_Potential"
+    showb LncRNA = showbString "LncRNA"
+    showb Cell_Surgace_Ligand = showbString "Cell_Surgace_Ligand"
+
 data LinkEffect = Undefined_LE
                 | Activation
                 | Repression
@@ -388,6 +427,13 @@ instance Texy LinkEffect where
     -- from fdsymbol font
     texy Context_Dependent = math $ commS "leftblackspoon" 
     texy Inapt = math $ commS "perp"
+
+instance TextShow LinkEffect where
+    showb Undefined_LE = showbString "Undefined_LE"
+    showb Activation = showbString "Activation"
+    showb Repression = showbString "Repression"
+    showb Context_Dependent = showbString "Context_Dependent"
+    showb Inapt = showbString "Inapt"
 
 data LinkType =   Undefined_LT
                 | Enforced_Env
@@ -456,6 +502,39 @@ instance Texy LinkType where
     texy Deacetylation        = (footnotesize . fromLaTeX . TeXRaw) "Deacet"
     texy Hydroxylation        = (footnotesize . fromLaTeX . TeXRaw) "-OH"
 
+instance TextShow LinkType where
+    showb Undefined_LT = showbString "Undefined_LT"
+    showb Enforced_Env = showbString "Enforced_Env"
+    showb Indirect = showbString "Indirect"
+    showb Complex_Process = showbString "Complex_Process"
+    showb Persistence = showbString "Persistence"
+    showb Transcription = showbString "Transcription"
+    showb Translation = showbString "Translation"
+    showb Ligand_Binding = showbString "Ligand_Binding"
+    showb Complex_Formation = showbString "Complex_Formation"
+    showb Inhibitory_Binding = showbString "Inhibitory_Binding"
+    showb Localization = showbString "Localization"
+    showb Binding_Localization = showbString "Binding_Localization"
+    showb Protective_Binding = showbString "Protective_Binding"
+    showb Unbinding = showbString "Unbinding"
+    showb Phosphorylation = showbString "Phosphorylation"
+    showb Dephosphorylation = showbString "Dephosphorylation"
+    showb Phosphorylation_Localization =
+        showbString "Phosphorylation_Localization"
+    showb Ubiquitination = showbString "Ubiquitination"
+    showb Degradation = showbString "Degradation"
+    showb GEF_Activity = showbString "GEF_Activity"
+    showb GAP_Activity = showbString "GAP_Activity"
+    showb Proteolysis = showbString "Proteolysis"
+    showb Catalysis = showbString "Catalysis"
+    showb Epigenetic = showbString "Epigenetic"
+    showb Transcription_Conflict = showbString "Transcription_Conflict"
+    showb Secretion = showbString "Secretion"
+    showb RNAi = showbString "RNAi"
+    showb Acetylation = showbString "Acetylation"
+    showb Deacetylation = showbString "Deacetylation"
+    showb Hydroxylation = showbString "Hydroxylation"
+
 type EntrezGeneID = Int
 type NodeName = T.Text
 type NodeState = Int
@@ -493,7 +572,7 @@ prettyTTable :: NodeName -> GateOrder -> TruthTable -> (NodeName, T.Text)
 prettyTTable nN gO tT = (nN, gatePrint <> T.singleton '\n' <> prettyRows)
     where
         prettyRows = T.unlines textRows
-        textRows = (T.concat . (L.intersperse (T.singleton '\t')) . fmap tShow)
+        textRows = (T.concat . (L.intersperse (T.singleton '\t')) . fmap showt)
             <$> joinedRows
         joinedRows = (\(v, y) -> U.toList v <> [y]) <$> rows
         rows = (L.sortOn fst . Map.toList) tT
@@ -530,8 +609,8 @@ tTInputOutput gO tT = zip exprInputs outputs
         inputLists = U.toList <$> vecs
         (vecs, outputs) = unzip $ (L.sortOn fst . Map.toList) tT
 
-data NodeExpr
-  = GateLit Bool
+data NodeExpr =
+    GateLit Bool
   | GateConst NodeName NodeState
   | Not NodeExpr
   | Binary BinOp NodeExpr NodeExpr
@@ -547,6 +626,16 @@ instance Show NodeExpr where
     show (Binary Or expr1 expr2) =
         show expr1 ++ " or " ++ show expr2
     show (Pars expr) = "(" <> show expr <> ")"
+
+instance TextShow NodeExpr where
+    showb (GateLit b) = showb b
+    showb (GateConst n s) = showb n <> showbChar ':' <> showb s
+    showb (Not expr) = showbString "not " <> showb expr
+    showb (Binary And expr1 expr2) =
+        showb expr1 <> showbString " and " <> showb expr2
+    showb (Binary Or expr1 expr2) =
+        showb expr1 <> showbString " or " <> showb expr2
+    showb (Pars expr) = showbChar '(' <> showb expr <> showbChar ')'
 
 data BinOp
   = And
@@ -585,7 +674,7 @@ prettyGateEval :: GateOrder
 prettyGateEval gO assigns nInput = prettify output
     where
         prettify = (((prettyInput <> T.singleton '\t') <>) . T.pack . show)
-        prettyInput = (T.intersperse '\t' . T.concat . fmap tShow) orderedInput
+        prettyInput = (T.intersperse '\t' . T.concat . fmap showt) orderedInput
         orderedInput = fromJust <$> (sequenceA (Map.lookup <$> gO) nInput)
         output = fromJust $ gateEval assigns nInput
 
@@ -700,6 +789,27 @@ data GateInvalid = InconsistentNames
                  | TableDisNameMismatch TableDisNameMismatch
                  | TruthTableIncomplete TruthTableIncomplete
     deriving (Show, Eq)
+
+instance TextShow GateInvalid where
+    showb InconsistentNames = showbString "InconsistentNames"
+    showb DuplicateAssigns = showbString "DuplicateAssigns"
+    showb ZeroAssigned = showbString "ZeroAssigned"
+    showb (MissingOrTooHigh nSts) =
+        showbString "MissingOrTooHigh" <> showbSpace <> showbList nSts
+    showb OutOfOrder = showbString "OutOfOrder"
+    showb EmptyGate = showbString "EmptyGate"
+    showb (ContradictoryExprSet ceSet) =
+        showbString "ContradictoryExprSet" <> showbSpace <> showb ceSet
+    showb (TableExprInNodeMismatch nNames) =
+        showbString "TableExprInNodeMismatch" <> showbSpace <> showbList nNames
+    showb (TableExprStateMismatch mMatchT) =
+        showbString "TableExprStateMismatch" <> showbSpace <> showb mMatchT
+    showb (TableExprOutputMismatch mMatch) =
+        showbString "TableExprOutputMismatch" <> showbSpace <> showb mMatch
+    showb (TableDisNameMismatch mMatch) = showbString "TableDisNameMismatch" <>
+        showbSpace <> showb mMatch
+    showb (TruthTableIncomplete ttInc) = showbString "TruthTableIncomplete" <>
+        showbSpace <> showb ttInc
 
 -- If there are internal contradictions in a gate, this provides the relevant
 -- expressions, expression states, inputs, and gate states affected. 

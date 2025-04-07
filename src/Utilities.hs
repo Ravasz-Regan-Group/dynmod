@@ -215,6 +215,8 @@ genGen i gen = go 0 [] gen
             | otherwise = let (newG, seed) = split g
                           in go (k + 1) (newG:gs) seed        
 
+genPair :: StdGen -> a -> (StdGen, (StdGen, a))
+genPair gen x = let (newGen, seed) = split gen in (newGen, (seed, x))
 
 quadUncurry :: (a -> b -> c -> d -> e) -> ((a, b), (c, d)) -> e
 quadUncurry f ((a, b), (c, d)) = f a b c d
@@ -263,9 +265,6 @@ filterByLength p = filter (p . length) . L.group . L.sort
 
 allUnique :: Ord a => [a] -> Bool
 allUnique = all ( (==) 1 . length) . L.group . L.sort
-
-tShow :: Show a => a -> T.Text
-tShow = T.pack . show
 
 -- Very naively, make some guess as to how wide given T.Text would be printed, 
 -- by counting capital letters. Take a lower case m as the base. 

@@ -6,6 +6,8 @@ import Utilities
 import Types.DMModel
 import Types.Simulation
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString)
 import Types.Figures
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
@@ -96,7 +98,6 @@ data VEXScan = VEXScan
     [(NodeName, PhenotypeName)]
     ExperimentStep
     PlottingNodes
-    ManualSeed
     deriving (Eq, Show)
 
 -- Maximum length of a given run. 
@@ -147,6 +148,11 @@ type WildTypeVsMutantAlt = NodeAlteration
 data XAxis = EnvX
            | KDOEX
             deriving (Eq, Show)
+
+instance TextShow XAxis where
+    showb EnvX = showbString "EnvX"
+    showb KDOEX = showbString "KDOEX"
+
 
 data EnvScan =
 -- Specify directly which input levels to scan. 
@@ -273,7 +279,7 @@ vexErrorPrep (NonInputNodesInISDPinnedInput nNms) =
     "NonInputNodesInISDPinnedInput: " <> T.intercalate ", " nNms
 vexErrorPrep (InValidISDPinnedInputs badPairs properPairText) =
     "InValidISDPinnedInputs: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+        T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep (ExcessUnpinnedISDInputs pChs) =
     "ExcessUnpinnedISDInputs: " <> pChs
 vexErrorPrep (BCFSwitchRepeats nNms) = "BCFSwitchRepeats: " <>
@@ -283,11 +289,11 @@ vexErrorPrep (BCFPhenotypeRepeats nNms) = "BCFPhenotypeRepeats: " <>
 vexErrorPrep (UnknownSwitchesInBCFilter nNms) =
     "UnknownSwitchesInBCFilter: " <> T.intercalate ", " nNms
 vexErrorPrep (UnknownPhenotypesInBCFilter badPairs) =
-    "UnknownPhenotypesInBCFilter: " <> T.intercalate ", " (tShow <$> badPairs)
+    "UnknownPhenotypesInBCFilter: " <> T.intercalate ", " (showt <$> badPairs)
 vexErrorPrep (MismatchedBCFPhenotypes mismatches) =
-    "MismatchedBCFPhenotypes: " <> T.intercalate ", " (tShow <$> mismatches)
+    "MismatchedBCFPhenotypes: " <> T.intercalate ", " (showt <$> mismatches)
 vexErrorPrep (Pulse1FlipDoesNotChangeStartingModelState badPair) =
-    "Pulse1FlipDoesNotChangeStartingModelState: " <> tShow badPair
+    "Pulse1FlipDoesNotChangeStartingModelState: " <> showt badPair
 vexErrorPrep (SMSPinnedInputsHaveRepeats nNms) =
     "SMSPinnedInputsHaveRepeats: " <> T.intercalate ", " nNms
 vexErrorPrep (UnknownNodesInSMSPinnedInputs nNms) =
@@ -296,7 +302,7 @@ vexErrorPrep (NonInputNodesInSMSPinnedInput nNms) =
     "NonInputNodesInSMSPinnedInput: " <> T.intercalate ", " nNms
 vexErrorPrep (InValidSMSPinnedInputs badPairs properPairText) =
     "InValidSMSPinnedInputs: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+        T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep (UnpinnedSMSInputs pChs) = "UnpinnedSMSInputs: " <> pChs
 vexErrorPrep (NodeAltPinnedInputsHaveRepeats nNms) =
     "NodeAltPinnedInputsHaveRepeats: " <> T.intercalate ", " nNms
@@ -306,7 +312,7 @@ vexErrorPrep (NonInputNodesInNodeAltPinnedInput nNms) =
     "NonInputNodesInNodeAltPinnedInput: " <> T.intercalate ", " nNms
 vexErrorPrep (InValidRealPinnedInputs badPairs properPairText) =
     "InValidRealPinnedInputs: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+        T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep (NodeAltsRepeat nNms) = "NodeAltsRepeat" <> T.intercalate ", " nNms
 vexErrorPrep (UnknownNodesInNodeAlts nNms) = "UnknownNodesInNodeAlts: " <>
     T.intercalate ", " nNms
@@ -314,7 +320,7 @@ vexErrorPrep (InputsInNodeAlts nNms) = "InputsInNodeAlts: " <>
     T.intercalate ", " nNms
 vexErrorPrep (InvalidNodeAltLocks badPairs properPairText) =
     "InvalidNodeAltLocks: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+        T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep AbsentSwitchProfiles =
     "AbsentSwitchProfiles: " <>
         "There are no SwitchProfiles in the DMMS file, so we cannot make an \
@@ -340,7 +346,7 @@ vexErrorPrep (InvalidInputLimits oobLimitations) = "InvalidInputLimits; The \
             where
                 psh = T.pack . show
 vexErrorPrep (KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)) =
-    "KDOEATFlipDoesNotChangeStartingModelState: " <> tShow (pN, pSt)
+    "KDOEATFlipDoesNotChangeStartingModelState: " <> showt (pN, pSt)
 vexErrorPrep (UnknownNodesInNodeBarChart nNms) =
     "UnknownNodesInNodeBarChart: " <> T.intercalate ", " nNms
 vexErrorPrep (UnknownOrNonPhenotypedSwitchesInPHBarChart nNms) =
@@ -354,14 +360,14 @@ vexErrorPrep (DuplicateEnvScanNodeInScan nName) =
 vexErrorPrep (InputScanNodeNotTopLevel nName) =
     "InputScanNodeNotTopLevel: " <> nName
 vexErrorPrep (InValidInputScanStart nName startSt rnge) =
-    "InValidInputScanStart: " <> nName <> ": " <> tShow startSt <>
-        "; actual range: " <> tShow rnge
+    "InValidInputScanStart: " <> nName <> ": " <> showt startSt <>
+        "; actual range: " <> showt rnge
 vexErrorPrep (InValidInputScanEnd nName startSt rnge) =
-    "InValidInputScanEnd: " <> nName <> ": " <> tShow startSt <>
-        "; actual range: " <> tShow rnge
+    "InValidInputScanEnd: " <> nName <> ": " <> showt startSt <>
+        "; actual range: " <> showt rnge
 vexErrorPrep (InvalidInputScanValues nName oobSteps rnge) =
-    "InvalidInputScanValues: " <> nName <> ": " <> tShow oobSteps <>
-        "; actual range: " <> tShow rnge
+    "InvalidInputScanValues: " <> nName <> ": " <> showt oobSteps <>
+        "; actual range: " <> showt rnge
 vexErrorPrep (KDOEScanLocksRepeat nNms) =
     "KDOEScanLocksRepeat" <> T.intercalate ", " nNms
 vexErrorPrep (UnknownNodesInKDOEScanLocks nNms) =
@@ -370,7 +376,7 @@ vexErrorPrep (InputsInKDOEScanLocks nNms) = "InputsInKDOEScanLocks: " <>
     T.intercalate ", " nNms
 vexErrorPrep (InvalidKDOEScanLocks badPairs properPairText) =
     "InvalidKDOEScanLocks: " <>
-        T.intercalate ", " (tShow <$> badPairs) <> properPairText
+        T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep (KDOESharedNodesInSteppedAndAlts sharedNodeAlts) =
     "KDOESharedNodesInSteppedAndAlts: " <>
         T.intercalate ", " sharedNodeAlts
@@ -395,12 +401,12 @@ vexErrorPrep (UnknownSwitchesInStopPhenotype nNms) =
     "UnknownSwitchesInStopPhenotype: " <> T.intercalate ", " nNms
 vexErrorPrep (UnknownPhenotypesInStopPhenotype badPairs) =
     "UnknownPhenotypesInStopPhenotype: " <>
-        T.intercalate ", " (tShow <$> badPairs)
+        T.intercalate ", " (showt <$> badPairs)
 vexErrorPrep (MismatchedStopPhenotypes mismatches) =
-    "MismatchedStopPhenotypes: " <> T.intercalate ", " (tShow <$> mismatches)
+    "MismatchedStopPhenotypes: " <> T.intercalate ", " (showt <$> mismatches)
 vexErrorPrep (LoopStopPhenotypes loopPhNames) = "LoopStopPhenotypes: " <> 
     "Only point phenotypes may be stop conditions: " <>
-    T.intercalate ", " (tShow <$> loopPhNames)
+    T.intercalate ", " (showt <$> loopPhNames)
 vexErrorPrep EmptyScanSwitchesAndScanNodes = "EmptyScanSwitchesAndScanNodes: "
     <> "At least one ScanSwitch or ScanNode is needed"
 
@@ -417,6 +423,11 @@ data ExperimentStep = SynchronousExpStepper
                     | AsynchronousExpStepper
                     deriving (Eq, Show, Ord)
 
+instance TextShow ExperimentStep where
+    showb SynchronousExpStepper = showbString "SynchronousExpStepper"
+    showb (NoisyExpStepper prob) = showbString "NoisyExpStepper " <> showb prob
+    showb AsynchronousExpStepper = showbString "AsynchronousExpStepper"
+
 type ExperimentReps = Int
 
 data FigKinds = FigKinds {
@@ -430,4 +441,8 @@ type DoNodeTimeCourse = Bool
 type DoPhenotypeTimeCourse = Bool
 type AvgBChartNodes = [NodeName]
 type AvgBChartSwitches = [NodeName]
+
+-- Default FigKinds
+defFigKinds :: FigKinds
+defFigKinds = FigKinds True False [] []
 

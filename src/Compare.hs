@@ -40,8 +40,8 @@ data LeftDiff a = LD a deriving (Show, Eq)
 data RightDiff a = RD a deriving (Show, Eq)
 data FurtherCompute a = FC a deriving (Show, Eq)
 
-data DMModelDiff
-    = CoarseDiff MappingDiff LayerDiff DMModelDiff
+data DMModelDiff =
+      CoarseDiff MappingDiff LayerDiff DMModelDiff
     | FineDiff LayerDiff
     deriving (Show, Eq)
 
@@ -84,6 +84,27 @@ dmMCompare mL mR
                        (layerCompare mL1 mL2)
                        (dmMCompare' dM1 dM2)
         dmMCompare' (Fine mL1) (Fine mL2) = FineDiff $ layerCompare mL1 mL2
+        dmMCompare' _ _ = emptyDMModelDiff
+
+emptyDMModelDiff :: DMModelDiff
+emptyDMModelDiff = FineDiff (((mempty, mempty), (mempty, mempty))
+                            , SD (LD mempty) (RD mempty) (FC mempty))
+-- emptyNodeDiff = NodeDiff mempty
+--                          Nothing
+--                          emptylinkDiff
+--                         (Left (emptyNodeGate, emptyNodeGate))
+-- emptylinkDiff :: LinkDiff
+-- emptylinkDiff = SD (LD mempty)
+--                    (RD mempty)
+--                    (FC mempty)
+-- emptyDMLink = DMLink Undefined_LE Undefined_LT emptyLitInfo
+-- emptyLitInfo = LitInfo mempty mempty mempty mempty
+-- emptyNodeGate = NodeGate mempty
+--                          mempty
+--                          mempty
+--                          mempty
+--                          Both
+
 
 mapCompare :: ModelMapping -> ModelMapping -> MappingDiff
 mapCompare mL mR = ( dmmsMapCompare lDMMSMMaping rDMMSMMaping

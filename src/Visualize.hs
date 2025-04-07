@@ -340,9 +340,16 @@ gmlGroupsMatch dmm gml
                                 , (fromJust . findGMLName gns) n)
 --      (ID, GID) of all fine nodes
         gFNIDGID = idgidGet <$> gFineNodes
-        idgidGet gn = (i, j)
-            where [(_, GInt i)] = (filter (\(k, _) -> k == "id") gn)
-                  [(_, GInt j)] = (filter (\(k, _) -> k == "gid") gn)
+        idgidGet gn = (fromJust idInt, fromJust gidInt)
+            where
+                idInt = case snd idPair of
+                    GInt i -> Just i
+                    _ -> Nothing
+                idPair = head $ filter (\(k, _) -> k == "id") gn
+                gidInt = case snd gidPair of
+                    GInt j -> Just j
+                    _ -> Nothing
+                gidPair = head $ filter (\(k, _) -> k == "gid") gn
 --      All the GML nodes that have a GID
         gFineNodes = filter hasGID gNodes
         hasGID n = case L.lookup "gid" n of

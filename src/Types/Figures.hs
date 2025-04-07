@@ -40,7 +40,6 @@ module Types.Figures
     , groupInputs
     , nAltTPrep
     , inputCoordText
-    , BarcodeResult
     , resCombine
     ) where    
 
@@ -48,6 +47,8 @@ import Types.DMModel
 import Types.Simulation
 import Utilities
 import qualified Data.Text as T
+import TextShow
+import TextShow.Data.Char (showbString, showbChar)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
@@ -69,12 +70,10 @@ type PhColorMap = M.HashMap PhenotypeName LocalColor
 type PUCGradient = B.Vector LocalColor
 type StdDev = Double
 
--- BarcodeResult a combines results from TimeCourses or Scans by equality on
--- Barcodes, because all of the (Barcode, RepResults or ScanResult)s for a given
--- Barcode will be turned into figures in one PDF file. 
-type BarcodeResult a = (Barcode, [a])
-
-resCombine :: [(Barcode, a)] -> [BarcodeResult a]
+-- Combines results from TimeCourses or Scans by equality on Barcodes, because
+-- all of the (Barcode, RepResults or ScanResult)s for a given Barcode will be
+-- turned into figures in one PDF file. 
+resCombine :: [(Barcode, a)] -> [(Barcode, [a])]
 resCombine ars = M.toList $ M.fromListWith (<>) preppedArs
     where preppedArs = pure <<$>> ars
 
@@ -102,6 +101,10 @@ data NudgeDirection = NudgeUp
                     | NudgeDown
                     deriving (Eq, Show, Ord, Enum)
 
+instance TextShow NudgeDirection where
+    showb NudgeUp = showbString "NudgeUp"
+    showb NudgeDown = showbString "NudgeDown"
+
 type LockProbability = Probability
 -- NudgeDirection is its own sum type, but we need nudging to be fast-ish
 -- when we alter NodeStates in the middle of a DMExperiment, so:
@@ -116,6 +119,10 @@ data GeneralDuration a = DefaultD a | UserD a
 instance Functor GeneralDuration where
     fmap f (DefaultD x) = DefaultD $ f x
     fmap f (UserD x) = UserD $ f x
+
+instance (TextShow a) => TextShow (GeneralDuration a) where
+    showb (DefaultD x) = showbString "DefaultD" <> showbSpace <> showb x
+    showb (UserD x) = showbString "UserD" <> showbSpace <> showb x
 
 -- DefaultD is a default duration, and may be altered by the length of the
 -- Attractor that the pulse starts in. UserD is specified by the user, and may
@@ -202,12 +209,19 @@ data BarKind = FullMiss BarHeight
                         LocalColor
              deriving (Eq, Show, Generic)
 instance Hashable BarKind
+
 type BarHeight = Int
 
 data Slice = Match AttractorSize AttractorMatchIndices PhenotypeName
            | Miss AttractorSize
            deriving (Eq, Show, Generic)
 instance Hashable Slice
+instance TextShow Slice where
+    showb (Match attSize attMatchIndices phName) = showbString "Match " <>
+        showb attSize <> showbChar ' ' <> showb attMatchIndices <>
+        showbChar ' ' <> showb phName
+    showb (Miss attSize) = showbString "Miss " <> showb attSize
+
 type AttractorSize = Int
 type AttractorMatchIndices = [[Int]]
 
@@ -242,6 +256,16 @@ data BarcodeFilter =
 -- Exclude if at EVERY point along an attractor it matches to the phenotype
     | ExcludeBarCodesWithAll [(NodeName, PhenotypeName)]
       deriving (Eq, Show, Ord)
+
+instance TextShow BarcodeFilter where
+    showb (OnlyBarCodesWithAny flts) = showbString "OnlyBarCodesWithAny" <>
+        showbList flts
+    showb (OnlyBarCodesWithAll flts) = showbString "OnlyBarCodesWithAll" <>
+        showbList flts
+    showb (ExcludeBarCodesWithAny flts) = showbString "ExcludeBarCodesWithAny" <>
+        showbList flts
+    showb (ExcludeBarCodesWithAll flts) = showbString "ExcludeBarCodesWithAll" <>
+        showbList flts
 
 -- Does an attractor exist at a particular point in the space of environmental
 -- inputs?
@@ -503,9 +527,9 @@ groupInputs inputNames lniBMap inputV = inputStates
         namedCoordL = (BF.first (lniBMap BM.!>)) <$> (U.toList inputV)
 
 nAltTPrep :: NodeAlteration -> T.Text
-nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> tShow nlS <> "@" <>
-    tShow nlP
-nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tShow gP
+nAltTPrep (NodeLock nlN nlS nlP) = nlN <> " to " <> showt nlS <> "@" <>
+    showt nlP
+nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> showt gP
     where
         shND NudgeUp = "up"
         shND NudgeDown = "down"
@@ -515,7 +539,7 @@ nAltTPrep (GradientNudge gN gDir gP) = gN <> " " <> shND gDir <> "@" <> tShow gP
 -- and belongs to the [[DMNode]] (inputs) and LayerNameIndexBimap in question. 
 inputCoordText :: [(NodeName, RealNodeState)] -> T.Text
 inputCoordText [] = ""
-inputCoordText [(nN, nS)] = nN <> ":" <> tShow nS
-inputCoordText ipts = nN <> ":" <> tShow nS
+inputCoordText [(nN, nS)] = nN <> ":" <> showt nS
+inputCoordText ipts = nN <> ":" <> showt nS
     where (nN, nS) = fromMaybe (L.last ipts) (L.find ((> 0) . snd) ipts)
 
