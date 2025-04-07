@@ -820,6 +820,6 @@ stringText' tHt t = F.svgText def t # F.fit_height tHt
 
 -- A diverging pallete for differences of heatmap data. 
 divergingP :: P.ColourMap
-divergingP = P.colourMap $ zip [1..] --[blue, white, red]
-    [sRGB24 202 0 32, sRGB24 244 165 130, sRGB24 247 247 247, sRGB24 146 197 222
-    , sRGB24 5 113 176]
+divergingP = P.colourMap $ zip [1..] --[red, white, blue]
+    [sRGB24 5 113 176, sRGB24 146 197 222, sRGB24 247 247 247,
+     sRGB24 244 165 130, sRGB24 202 0 32]
