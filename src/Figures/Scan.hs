@@ -2,8 +2,7 @@
 
 
 module Figures.Scan
-    ( scRunDia
-    , ScanExpFigure (..)
+    ( ScanExpFigure (..)
     , BaseScanFigs(..)
     , sc3DHeatMapDia
     , scDifferenceHeatMapDia
@@ -18,7 +17,6 @@ module Figures.Scan
 
 import Types.DMModel
 import Types.DMInvestigation
-import Types.Simulation
 import Types.Figures
 import Utilities
 import Diagrams.Prelude
@@ -31,16 +29,12 @@ import qualified Plots as P
 import Plots.Axis.Line (axisLine, axisLineStyle)
 import qualified Data.Colour.Names as CN
 import qualified Data.HashMap.Strict as M
-import qualified Data.Bimap as BM
-import qualified Data.Vector as B
-import qualified Data.Vector.Unboxed as U
-import Statistics.Sample (meanVarianceUnb)
 import qualified Data.Text as T
 import TextShow
 import qualified Data.List as L
+import qualified Data.Bifunctor as BF
 import Text.Printf (printf)
 import GHC.IO (unsafePerformIO)
-import qualified Debug.Trace as TR
 
 data ScanExpFigure =
       EnvScFig BaseScanFigs
@@ -67,57 +61,7 @@ type AverageNodeValueFig = NamedFigure
 
 type StopDistributionHMFig = NamedFigure
 type SwitchHMFig = NamedFigure
-type NodeHMFig = NamedFigure
-
-
-scRunDia :: ColorMap
-         -> ModelMapping
-         -> ModelLayer
-         -> SCExpMeta
-         -> ScanResult
-         -> ScanExpFigure
-scRunDia cMap mM mL exMeta scRes = case scRes of
-    (SKREnv scBundle) -> EnvScFig $ baseScDiaF scBundle
-    (SKRKDOE scBundle) -> KDOEScFig $ baseScDiaF scBundle
-    (SKREnvKDOE scBundles) -> EnvKDOESc swFig nodeFig
-        where
-            swFig = envKDOESWDia phCMap switchMap exMeta scBundles
-            nodeFig = envKDOENodeDia cMap mL exMeta scBundles
-    (SKRTwoEnvWithoutKDOE scBundles) -> uncurry3 TwoDEnvScWWOKDOE $
-        scHeatMapDias mL overLayVs switchMap exMeta scBundles
-    (SKRTwoEnvWithKDOE scBundless) -> uncurry3
-        TwoDEnvScWWOKDOE $ (map3 ((fmap . fmap) (frame 20))) joinedFigs
-        where
---     This L.transpose is so that the different phenotypes are the top level, 
---     and the KDOE scans are joined into single Diagram Bs. 
-            joinedFigs = map3 ((fmap concatF) . L.transpose) figs
-            concatF :: [(T.Text, Diagram B)] -> (T.Text, Diagram B)
-            concatF [] = (mempty, mempty)
-            concatF ps = ((fst . head) ps, (hsep 50 . fmap snd) ps)
-            figs = unzip3 $ zipWith labelMutantHMDias hmFigs offAxisPairs
-            map3 f (a, b, c) = (f a, f b, f c)
-            offAxisPairs = zip (repeat offAxisTitle) offAxisRange
-            (offAxisTitle, offAxisRange) =
-                (last . scanXAxisData . scMetaScanKind) exMeta
---     These L.transposes are so that the KDOE is at the top level, so that we
---     may generate the figures
-            hmFigs = scHeatMapDias mL overLayVs switchMap exMeta <$>
-                        ((L.transpose . fmap L.transpose) scBundless)
---  Take care to distinguish between when [WildTypeVsMutantAlt] are [] and not. 
-    (SKRThreeEnv (scBundless, mScBundless)) -> case mScBundless of
-        Just scbs -> uncurry3 ThreeDEnvSc $ scDifferenceHeatMapDia
-            mL overLayVs switchMap exMeta (scBundless, scbs)
-        Nothing -> uncurry3 ThreeDEnvSc $
-            sc3DHeatMapDia mL overLayVs switchMap exMeta scBundless
-    where
-        overLayVs = needOverlays exMeta
-        baseScDiaF = baseScDia cMap phCMap lniBMap switchMap exMeta
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
-        phCMap = mkPhColorMap mM cMap
-        switchMap = M.fromList nonEmptySwPhNs
-        nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
-        nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
-        
+type NodeHMFig = NamedFigure        
 
 labelMutantHMDias :: ([NamedFigure], [NamedFigure], [NamedFigure])
                   -> (String, Double)
@@ -134,17 +78,17 @@ labelMutantHMDias (stpFigs, swFigs, nFigs) (offAxisTitle, stepDouble) =
 
 baseScDia :: ColorMap
           -> PhColorMap
-          -> LayerNameIndexBimap
           -> M.HashMap ScanSwitch [PhenotypeName]
           -> SCExpMeta
-          -> [[Timeline]]
+          -> ScanStats
           -> BaseScanFigs
-baseScDia cMap phCMap lniBMap switchMap exMeta scanRuns =
-    BSFgs stopDistFig timeInSwFigs nodeAvgsFig
+baseScDia cMap phCMap switchMap exMeta
+    (allStopDs, allPhDists, allNStats) =
+        BSFgs stopDistFig timeInSwFigs nodeAvgsFig
     where
-        nodeAvgsFig = nodeAvgFig cMap lniBMap exMeta trScanRuns <$> scanNNs
+        nodeAvgsFig = nodeAvgFig cMap exMeta allNStats <$> scanNNs
         scanNNs = scExpScanNodes exMeta
-        timeInSwFigs = timeInSwPhsDia phCMap exMeta trScanRuns <$> scanSwsPairs
+        timeInSwFigs = timeInSwPhsDia phCMap exMeta allPhDists <$> scanSwsPairs
         scanSwsPairs = (zip scanSws . fmap (switchMap M.!)) scanSws
         scanSws = scExpSwitches exMeta
         stopDistFig =("stopPhs", (fst . runBackendR dEnv . toRenderable) layout)
@@ -179,16 +123,16 @@ baseScDia cMap phCMap lniBMap switchMap exMeta scanRuns =
         showRound :: Double -> String; showRound = printf "%.2f"
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
-        stopDs = stopDistribution stopPhNames <$> scanRuns
-        trScanRuns = trimPhStoppedTmln stopPhNames <<$>> scanRuns
+        stopDs = (BF.first stopDF) <$> allStopDs
+        stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
 timeInSwPhsDia :: ColorMap
                -> SCExpMeta
-               -> [[Timeline]]
+               -> [PhDistribution]
                -> (ScanSwitch, [PhenotypeName])
                -> TimeInSwitchPhsFig
-timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) = (,) scSw $
+timeInSwPhsDia cMap exMeta allPhDists (scSw, phNs) = (,) scSw $
     (fst . runBackendR dEnv . toRenderable) layout
     where
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
@@ -220,7 +164,8 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) = (,) scSw $
         xPlotLabels = showRound <$> xRange
         showRound :: Double -> String
         showRound = printf "%.2f"
-        plotValues = phDistribution phNs <$> trScanRuns
+        plotValues = plotVF phNs <$> allPhDists
+        plotVF ns phDM = (phDM M.!) <$> ns
         layoutTitle = scExpName exMeta <> ", Time In: " <> scSw
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         phNColors = (opaque . (cMap M.!)) <$> phNs
@@ -228,9 +173,9 @@ timeInSwPhsDia cMap exMeta trScanRuns (scSw, phNs) = (,) scSw $
 envKDOESWDia :: PhColorMap
              -> M.HashMap ScanSwitch [PhenotypeName]
              -> SCExpMeta
-             -> [[[Timeline]]]
+             -> [ScanStats]
              -> Diagram B
-envKDOESWDia phCMap switchMap exMeta scBundles =
+envKDOESWDia phCMap switchMap exMeta scanStatss =
     frame 10 $ swTitleDia === swDiaBlock
     where
         swTitleDia = center $ (text ((T.unpack . scExpName) exMeta)
@@ -250,16 +195,17 @@ envKDOESWDia phCMap switchMap exMeta scBundles =
         (offAxisTitle, offAxisRange) = 
             (last . scanXAxisData . scMetaScanKind) exMeta
         swLayouts :: [[Layout PlotIndex Double]]
-        swLayouts = envKDOEVertLayout phCMap switchMap exMeta <$> scBundles
+        swLayouts = envKDOEVertLayout phCMap switchMap exMeta <$> scanStatss
 
 envKDOEVertLayout :: PhColorMap
                   -> M.HashMap ScanSwitch [PhenotypeName]
                   -> SCExpMeta
-                  -> [[Timeline]]
+                  -> ScanStats
                   -> [Layout PlotIndex Double]
-envKDOEVertLayout cMap switchMap exMeta scanRuns = stopPHlayout:timeInSwlayouts
+envKDOEVertLayout cMap switchMap exMeta (allStopDs, allPhDists, _) =
+    stopPHlayout:timeInSwlayouts
     where
-        timeInSwlayouts = envKDOELayout cMap exMeta trScanRuns <$> scanSwsPairs
+        timeInSwlayouts = envKDOELayout cMap exMeta allPhDists <$> scanSwsPairs
         scanSwsPairs = (zip scanSws . fmap (switchMap M.!)) scanSws
         scanSws = scExpSwitches exMeta
         stopPHlayout =
@@ -288,16 +234,16 @@ envKDOEVertLayout cMap switchMap exMeta scanRuns = stopPHlayout:timeInSwlayouts
         xPlotLabels = show <$> xRange
         xRange = (snd . head . scanXAxisData . scMetaScanKind) exMeta
         plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
-        stopDs = stopDistribution stopPhNames <$> scanRuns
-        trScanRuns = trimPhStoppedTmln stopPhNames <<$>> scanRuns
+        stopDs = (BF.first stopDF) <$> allStopDs
+        stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
 envKDOELayout :: ColorMap
               -> SCExpMeta
-              -> [[Timeline]]
+              -> [PhDistribution]
               -> (ScanSwitch, [PhenotypeName])
               -> Layout PlotIndex Double
-envKDOELayout cMap exMeta trScanRuns (swName, phNs) = layout
+envKDOELayout cMap exMeta allPhDists (swName, phNs) = layout
   where
     layout =
         layout_legend .~ legend
@@ -331,29 +277,13 @@ envKDOELayout cMap exMeta trScanRuns (swName, phNs) = layout
               EnvX -> "% lock of " <> xTitleBase
             _ -> ""
           yTitle = T.unpack swName ++ ": % in Phenotypes"
-          plotValues = phDistribution phNs <$> trScanRuns
+          plotValues = plotVF phNs <$> allPhDists
+          plotVF ns phDM = (phDM M.!) <$> ns
           xPlotLabels = showRound <$> xRange
           showRound :: Double -> String
           showRound = printf "%.2f"
           (xTitleBase, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
           phNColors = (opaque . (cMap M.!)) <$> phNs
-
--- What fraction of all the time steps in a [Timeline] is each Phenotype
--- present? 
-phDistribution :: [PhenotypeName]
-               -> [Timeline]
-               -> [Double]
-phDistribution switchPhNs scanRun = snd <$> presPhList
-    where
-        presPhList = (sortWithOrderOn fst switchPhNs . M.toList) presPhMap
-        presPhMap = M.map (/ divisor) rMap
-        rMap = L.foldl' foldF mapAccum allSteps
-        mapAccum :: M.HashMap PhenotypeName Double
-        mapAccum = M.fromList $ zip switchPhNs $ repeat 0
-        foldF phMap (_, presentPhNs) = L.foldl' foldF' phMap presentPhNs
-            where foldF' phM phN = M.adjust (+1) phN phM
-        divisor = ((fromIntegral . B.length) allSteps) :: Double
-        allSteps = B.concat scanRun
 
 -- Pull out what being scanned over, and the range of the scan. 
 scanXAxisData :: MetaScanKind -> [(String, [Double])]
@@ -387,42 +317,6 @@ needOverlays exMeta = case scMetaScanKind exMeta of
     (MetaTwoDEnvScan _ _ _ needOLs) -> needOLs
     (MetaThreeDEnvScan _ _ _ needOLs) -> needOLs
 
-
--- What fraction of all the Timelines in a Scan run is each stop Phenotype
--- responsible for stopping, plus the fraction of Timelines in the Scan run
--- which a Max_N or Relevant_N is responsible for stopping.
-stopDistribution :: [PhenotypeName]
-                 -> [Timeline]
-                 -> ([(PhenotypeName, Double)], Double)
-stopDistribution [] scanRun = ([], sum $ (fromIntegral . B.length) <$> scanRun)
-stopDistribution stopPhNames scanRun = (stPhList, fracMaxStop)
-    where
-        stPhList = (sortWithOrderOn fst stopPhNames . M.toList) stPhMap
-        fracMaxStop = fromIntegral rMaxStop / fracDiv
-        stPhMap = M.map (\x -> fromIntegral x / fracDiv) rMap
-        fracDiv = (fromIntegral divisor) :: Double
-        (rMap, rMaxStop, divisor) =L.foldl' foldF (mapAccum, 0, 0) stopDurations
-        mapAccum = M.fromList $ zip stopPhNames $ repeat 0
-        foldF (durMap, maxOutAccum, totalAccum) (dur, phNs) = case phNs of
-            [] -> (durMap, maxOutAccum + dur, totalAccum + dur)
-            _ -> (L.foldl' foldF' durMap phNs, maxOutAccum, totalAccum + dur)
-                where foldF' dMap phN = M.adjust (+ dur) phN dMap
-        stopDurations :: [(Int, [PhenotypeName])]
-        stopDurations = zipWith (,) runDurations stoppedAtPhs
-        runDurations = B.length <$> trScanRun
-        trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
-        stoppedAtPhs = getStopPhs stopPhNames <$> scanRun
-
--- Which, if any, stop Phenotypes are present at the end of a Timeline? 
-getStopPhs :: [PhenotypeName] -> Timeline -> [PhenotypeName]
-getStopPhs stopPHNs = filter (flip elem stopPHNs) . snd . B.last
-
--- If a Timeline was stopped at a stop Phenotype, we don't want its last step. 
-trimPhStoppedTmln :: [PhenotypeName] -> Timeline -> Timeline
-trimPhStoppedTmln stopPHNs tmln = case getStopPhs stopPHNs tmln of
-    [] -> tmln
-    _  -> B.init tmln
-
 -- Add a x-axis title to the top Layout in a column of an EnvKDOE Scan. 
 xTitleColumn :: SCExpMeta
              -> String
@@ -451,12 +345,11 @@ stripLRows (leftL:lss) = leftL:(stripper <$> lss)
                         $ layout
 
 nodeAvgFig :: ColorMap
-           -> LayerNameIndexBimap
            -> SCExpMeta
-           -> [[Timeline]]
+           -> [ScanNodeStats]
            -> ScanNode
            -> AverageNodeValueFig
-nodeAvgFig cMap lniBMap exMeta trScanRuns scanNode = (,) scanNode $
+nodeAvgFig cMap exMeta allNStats scanNode = (,) scanNode $
     (fst . runBackendR dEnv . toRenderable) layout
     where
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
@@ -487,31 +380,17 @@ nodeAvgFig cMap lniBMap exMeta trScanRuns scanNode = (,) scanNode $
         showRound = printf "%.2f"
 --         Just the average values for now. 
         plotValues = (\(x, _) -> [x]) <$> plotData
-        plotData = scanNodeStats lniBMap scanNode <$> trScanRuns
+        plotData = (flip (M.!) scanNode) <$> allNStats
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         layoutTitle = scExpName exMeta <> ", Time In: " <> scanNode
         nColor = (opaque . (cMap M.!)) <$> [scanNode]
 
--- Average (and eventualy StdDev) information on a DMNode over the result of a
--- single ScanVariation. Only ever pass this stop Phenotype trimmed Timelines. 
-scanNodeStats :: LayerNameIndexBimap
-              -> ScanNode
-              -> [Timeline]
-              -> (RealNodeState, StdDev)
-scanNodeStats lniBMap scNName trSCRun = meanVarianceUnb bareStateV
-    where
-        bareStateV :: B.Vector RealNodeState
-        bareStateV = B.map (fromIntegral . (U.! scNdIndex)) bareStateVs
-        scNdIndex = lniBMap BM.! scNName
-        bareStateVs :: B.Vector (U.Vector NodeState)
-        bareStateVs = (B.map (fst . U.unzip . fst) . B.concat) trSCRun
-
 envKDOENodeDia :: ColorMap
                -> ModelLayer
                -> SCExpMeta
-               -> [[[Timeline]]]
+               -> [ScanStats]
                -> Diagram B
-envKDOENodeDia cMap mL exMeta scBundles = nDia
+envKDOENodeDia cMap mL exMeta scanStatss = nDia
     where
         nDia = frame 10 $ nTitleDia === nDiaBlock
         nTitleDia = center $ (text ((T.unpack . scExpName) exMeta)
@@ -531,27 +410,25 @@ envKDOENodeDia cMap mL exMeta scBundles = nDia
         (offAxisTitle, offAxisRange) = 
             (last . scanXAxisData . scMetaScanKind) exMeta
         nLayouts :: [[Layout PlotIndex Double]]
-        nLayouts = envKDOENodeLayouts cMap mL exMeta <$> scBundles
+        nLayouts = envKDOENodeLayouts cMap mL exMeta <$> scanStatss
         
 envKDOENodeLayouts :: ColorMap
                    -> ModelLayer
                    -> SCExpMeta
-                   -> [[Timeline]]
+                   -> ScanStats
                    -> [Layout PlotIndex Double]
-envKDOENodeLayouts cMap mL exMeta scanRuns = nLayouts
+envKDOENodeLayouts cMap mL exMeta (_, _, allNStats) = nLayouts
     where
-        nLayouts = envKDOENodeLayout cMap mL exMeta trScanRuns <$> scNodes
-        trScanRuns = trimPhStoppedTmln stopPhNames <<$>> scanRuns
-        stopPhNames = (fmap fst . stopPhenotypes) exMeta
+        nLayouts = envKDOENodeLayout cMap mL exMeta allNStats <$> scNodes
         scNodes = scExpScanNodes exMeta
 
 envKDOENodeLayout :: ColorMap
                   -> ModelLayer
                   -> SCExpMeta
-                  -> [[Timeline]]
+                  -> [ScanNodeStats]
                   -> ScanNode
                   -> Layout PlotIndex Double
-envKDOENodeLayout cMap mL exMeta trScanRuns scNName = layout
+envKDOENodeLayout cMap mL exMeta allNStats scNName = layout
     where
         layout =
             layout_y_axis . laxis_generate .~ scaledAxis def yBoundsPair
@@ -578,21 +455,20 @@ envKDOENodeLayout cMap mL exMeta trScanRuns scNName = layout
         showRound = printf "%.2f"
 --         Just the average values for now. 
         plotValues = (\(x, _) -> [x]) <$> plotData
-        plotData = scanNodeStats lniBMap scNName <$> trScanRuns
+        plotData = (flip (M.!) scNName) <$> allNStats
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
         nColor = (opaque . (cMap M.!)) <$> [scNName]
         yBoundsPair :: (Double, Double)
         yBoundsPair = (0, fromIntegral $ lRangeMap M.! scNName)
         lRangeMap = layerRanges mL
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
 
 scHeatMapDias :: ModelLayer
               -> DoOverlayValues
               -> M.HashMap ScanSwitch [PhenotypeName]
               -> SCExpMeta
-              -> [[[Timeline]]]
+              -> [ScanStats]
               -> ([StopDistributionHMFig], [SwitchHMFig], [NodeHMFig])
-scHeatMapDias mL overLayVs switchMap exMeta scanRunss =
+scHeatMapDias mL overLayVs switchMap exMeta scanStatss =
     (stopPhFigs, swfigs, nodeFigs)
     where
         nodeFigs = nodeHeatMapF <$> nodeValues
@@ -603,10 +479,9 @@ scHeatMapDias mL overLayVs switchMap exMeta scanRunss =
         nodeValues :: [(ScanNode, [[Double]])]
 --         Ditch the StdDevs for now. 
         nodeValues = (fmap . fmap . fmap . fmap) fst $
-            mkNodeValues lniBMap trScanRunss <$> scNNames
+            mkSSNodeValues (thdOf3 <$> scanStatss) <$> scNNames
         scNNames = scExpScanNodes exMeta
         lRangeMap = layerRanges mL
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
         stopPhFigs = stopHMF <$> stopPlotValuess
         stopHMF stpPair = ("StopAt_" <> (fst stpPair), stpHMFig)
             where stpHMFig = scHeatMapDia overLayVs (0, 1) rangeData stpPair
@@ -620,14 +495,14 @@ scHeatMapDias mL overLayVs switchMap exMeta scanRunss =
         phValues :: [(PhenotypeName, [[Double]])]
         phValues =  (zip phNames . L.transpose . fmap L.transpose) barePhValues
         barePhValues :: [[[Double]]]
-        barePhValues = phDistribution phNames <<$>> trScanRunss
+        barePhValues = (fmap (plotVF phNames) . sndOf3) <$> scanStatss
+        plotVF ns phDM = (phDM M.!) <$> ns
         phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
         stopPlotValuess :: [(T.Text, [[Double]])]
         stopPlotValuess = mkStopPhValues2D stopDss
         stopDss :: [[([(PhenotypeName, Double)], Double)]]
-        stopDss = stopDistribution stopPhNames <<$>> scanRunss
-        trScanRunss = (fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
-                        scanRunss
+        stopDss = (fmap (BF.first stopDF) . fstOf3) <$> scanStatss
+        stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
 scHeatMapDia :: DoOverlayValues
@@ -746,7 +621,7 @@ scDifferenceHeatMapDia :: ModelLayer
                        -> DoOverlayValues
                        -> M.HashMap ScanSwitch [PhenotypeName]
                        -> SCExpMeta
-                       -> (([[[[Timeline]]]], [[[[Timeline]]]]))
+                       -> ([[ScanStats]], [[ScanStats]])
                        -> ([StopDistributionHMFig], [SwitchHMFig], [NodeHMFig])
 scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
     (stopPlotFigs, swFigs, nFigs)
@@ -757,20 +632,21 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
             where tagPair = (fst x, (fromIntegral . (lRangeMap M.!)) (fst x))
         diffNValues = zipWith diffF nodeValuesWM nodeValuesWOM
         nodeValuesWOM, nodeValuesWM :: [(ScanNode, [[[Double]]])]
-        (nodeValuesWOM, nodeValuesWM) = isoBimap nodeValuesF trimmedSCBsPair
-        nodeValuesF :: [[[[Timeline]]]] -> [(ScanNode, [[[Double]]])]
-        nodeValuesF = concatF . removeStdDevs . seqAF
+        (nodeValuesWOM, nodeValuesWM) = isoBimap nodeValuesF scBsPair
+        nodeValuesF :: [[ScanStats]] -> [(ScanNode, [[[Double]]])]
+        nodeValuesF = concatF . removeStdDevs . seqAF . pickerF
         concatF :: [[(ScanNode, [[Double]])]] -> [(ScanNode, [[[Double]]])]
         concatF xs = concatF' <$> xs
             where
                 concatF' [] = ("", [])
                 concatF' excessPs = ((fst . head) excessPs, snd <$> excessPs)
-        seqAF tvs = (sequenceA (mkNodeValues lniBMap <$> tvs)) <$> scNNames
+        seqAF tvs = (sequenceA (mkSSNodeValues <$> tvs)) <$> scNNames
 --         Ditch the StdDevs for now. 
         removeStdDevs = (fmap . fmap . fmap . fmap . fmap) fst
+--         Pull out the ScanNodeStats
+        pickerF = (fmap . fmap) thdOf3
         scNNames = scExpScanNodes exMeta
         lRangeMap = layerRanges mL
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
         swFigs = scDiffHMBlock "Switch" overLayVs rangeData <$> phVals
         phVals = zipWith3 swTupleValsF phValuessWOM phValuessWM diffPhValues
         swTupleValsF x y z = ((fst x, 1), (snd x, snd y, snd z))
@@ -778,8 +654,9 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         (phValuessWOM, phValuessWM) = isoBimap phValuesF bareValuessPair
         phValuesF = zip phNames . L.transpose . fmap L.transpose .
             (fmap . fmap) L.transpose
-        bareValuessPair = isoBimap bValuesF trimmedSCBsPair
-        bValuesF = (fmap . fmap . fmap) (phDistribution phNames)
+        bareValuessPair = isoBimap bValuesF scBsPair
+        bValuesF = (fmap . fmap) (fmap (plotVF phNames) . sndOf3)
+        plotVF ns phDM = (phDM M.!) <$> ns
         phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
         stopPlotFigs = scDiffHMBlock "StopAt" overLayVs rangeData <$> stPlValues
         stPlValues = zipWith3 tupleValsF
@@ -792,11 +669,9 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
             isoBimap mkStopPhValues3D stopDsssPair
         stopDsssPair :: ([[[([(PhenotypeName, Double)], Double)]]], 
                      [[[([(PhenotypeName, Double)], Double)]]])
-        stopDsssPair = isoBimap ((fmap . fmap . fmap)
-                                        (stopDistribution stopPhNames)) scBsPair
-        trimmedSCBsPair :: ([[[[Timeline]]]], [[[[Timeline]]]])
-        trimmedSCBsPair = isoBimap trimmer scBsPair
-        trimmer = (fmap . fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
+        stopDsssPair = isoBimap ((fmap . fmap)
+                            (fmap (BF.first stopDF) . fstOf3)) scBsPair
+        stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         rangeData :: (((String,[Double]),(String,[Double])),(String, [Double]))
         rangeData = case (take 3 . scanXAxisData . scMetaScanKind) exMeta of
             [] -> ((blankR, blankR), blankR)
@@ -806,7 +681,7 @@ scDifferenceHeatMapDia mL overLayVs switchMap exMeta scBsPair =
         blankR = ("blank", [0 :: Double, 1])
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
--- Produce a figures for a mutant ThreeDEnvSc.
+-- Produce a figure for a mutant ThreeDEnvSc.
 scDiffHMBlock :: T.Text
               -> DoOverlayValues
               -> (((String,[Double]),(String,[Double])),(String, [Double]))
@@ -834,9 +709,10 @@ sc3DHeatMapDia :: ModelLayer
                -> DoOverlayValues
                -> M.HashMap ScanSwitch [PhenotypeName]
                -> SCExpMeta
-               -> [[[[Timeline]]]]
+               -> [[ScanStats]]
                -> ([StopDistributionHMFig], [SwitchHMFig], [NodeHMFig])
-sc3DHeatMapDia mL overLayVs switchMap exMeta scBs = (stPhFigs, swFigs, nodeFigs)
+sc3DHeatMapDia mL overLayVs switchMap exMeta scanStatsss =
+    (stPhFigs, swFigs, nodeFigs)
     where
         nodeFigs = sc3DBlock "Node" overLayVs rangeData <$> rangedNodeValues
         rangedNodeValues :: [((ScanNode, Double), [[[Double]]])]
@@ -849,24 +725,23 @@ sc3DHeatMapDia mL overLayVs switchMap exMeta scBs = (stPhFigs, swFigs, nodeFigs)
         nodeValues :: [[(ScanNode, [[Double]])]]
 --         Ditch the StdDevs for now. 
         nodeValues = (fmap . fmap . fmap . fmap . fmap) fst $
-            (sequenceA (mkNodeValues lniBMap <$> trimmedSCBs)) <$> scNNames
+            (sequenceA (mkSSNodeValues <$> allScanNodeStatssss)) <$> scNNames
+        allScanNodeStatssss = thdOf3 <<$>> scanStatsss
         scNNames = scExpScanNodes exMeta
         lRangeMap = layerRanges mL
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
         swFigs = sc3DBlock "Switch" overLayVs rangeData <$> phValuess
         phValuess = phValuesF bareValuess
         phValuesF = zip (zip phNames (repeat 1)) . L.transpose .
             fmap L.transpose . (fmap . fmap) L.transpose
-        bareValuess = bValuesF trimmedSCBs
-        trimmedSCBs = trimmer scBs
-        trimmer = (fmap . fmap . fmap . fmap) (trimPhStoppedTmln stopPhNames)
-        bValuesF = (fmap . fmap . fmap) (phDistribution phNames)
+        bareValuess = (fmap (plotVF phNames) . sndOf3) <<$>> scanStatsss
+        plotVF ns phDM = (phDM M.!) <$> ns
         phNames = (concatMap (switchMap M.!) . scExpSwitches) exMeta
         stPhFigs = sc3DBlock "StopAt" overLayVs rangeData <$> stopPlotValuesss
         stopPlotValuesss :: [((T.Text, Double), [[[Double]]])]
         stopPlotValuesss = mkStopPhValues3D stopDsss
         stopDsss :: [[[([(PhenotypeName, Double)], Double)]]]
-        stopDsss = (fmap . fmap . fmap) (stopDistribution stopPhNames) scBs
+        stopDsss = (fmap (BF.first stopDF) . fstOf3) <<$>> scanStatsss
+        stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         rangeData = case (take 3 . scanXAxisData . scMetaScanKind) exMeta of
             [] -> ((blankR, blankR), blankR)
             [x] -> ((x,x),x)
@@ -891,13 +766,13 @@ sc3DBlock fileTag overLayVs range3Data ((plainN, rTop), plainD) =
         rowTitles = (T.pack . ((zTitle ++ "@") ++) . show) <$> zRange
         (range2Data, (zTitle, zRange)) = range3Data
 
--- Prepare DMNode average and StdDev values for heat map figures
-mkNodeValues :: LayerNameIndexBimap
-             -> [[[Timeline]]]
-             -> ScanNode
-             -> (ScanNode, [[(RealNodeState, StdDev)]])
-mkNodeValues lniBMap trScanRunss snNName = (snNName, nodeValues)
-    where nodeValues = scanNodeStats lniBMap snNName <<$>> trScanRunss
+-- Prepare DMNode average and StdDev values for heat map figures. 
+mkSSNodeValues :: [[ScanNodeStats]]
+               -> ScanNode
+               -> (ScanNode, [[(RealNodeState, StdDev)]])
+mkSSNodeValues allNStatss snNName = (snNName, nodeValues)
+    where nodeValues = (flip (M.!) snNName) <<$>> allNStatss
+
 
 -- Prepare stop Phenotype data for 2D heat map Scans. 
 mkStopPhValues2D :: [[([(PhenotypeName, Double)], Double)]]
@@ -922,8 +797,7 @@ mkStopPhValues3D stopData = noStopDataPair : (mkStPhV <$> tpStPhData)
                      (fmap . fmap . fmap) snd xs)
         tpStPhData = (L.transpose . fmap L.transpose. (fmap . fmap) L.transpose)
             stPhData
-        noStopDataPair = TR.trace ("noStopData: " ++ show noStopData)
-                ((("NoStopPhenotype", 1), noStopData))
+        noStopDataPair = (("NoStopPhenotype", 1), noStopData)
 --         tnNoStData =  noStopData
         noStopData = (fmap . fmap . fmap) snd stopData
         stPhData = (fmap . fmap . fmap) fst stopData

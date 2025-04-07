@@ -737,7 +737,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
             expMeta = tcExpMeta tcExp
             expName = (T.unpack . tcExpName) expMeta
             (markGen, attResults) =
-                L.mapAccumL (runTimeCourse phData tcExp) expGen filteredAtts
+                L.mapAccumL (runTimeCourse tcPhData tcExp) expGen filteredAtts
             (xMark, newGen) = uniform markGen
             dmXOutput = preOutput (ExpOutput vexEx (TCO attResults) xMark)
         putStrLn $ "Running experiment: " <> expName
@@ -757,10 +757,12 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         let filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
             expMeta = scExpMeta scanExp
             expName = (T.unpack . scExpName) expMeta
-            (markGen, attResults) =
-                L.mapAccumL (runScan phData scanExp) gen filteredAtts
+            (markGen, preppedRess) =
+                L.mapAccumL (runScanPrep scPhData scanExp) gen filteredAtts
             (xMark, newGen) = uniform markGen
-            dmXOutput = preOutput (ExpOutput vexEx (SCO attResults) xMark)
+--             exOp = ExpOutput vexEx (SCO (ScRe attResults)) xMark
+            exOp = ExpOutput vexEx (SCO (ScPr preppedRess)) xMark
+            dmXOutput = preOutput exOp
         putStrLn $ "Running experiment: " <> expName
         fullDir <- mkExpPath fPath (SCEM expMeta) "Results"
         let noDetailsDir = parent fullDir
@@ -771,11 +773,12 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         let absFileNameWExt = noDetailsDir </> relFileNameWExt
         RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
         putStrLn $ "Generating figures for " <> expName
-        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attResults
+        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) preppedRess
         return (newGen, (xMark, absFileNameWExt))
     where
         attList = HS.toList attSet
-        phData = (lniBMap, phs)
+        tcPhData = (lniBMap, phs)
+        scPhData = (lniBMap, mM)
         phs = concatMap (snd . snd) mM
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         lRanges = layerRanges mL
@@ -925,13 +928,12 @@ scRunDiaIO :: Path Abs File
            -> ModelMapping
            -> ModelLayer
            -> SCExpMeta
-           -> (Barcode, ScanResult)
+           -> (Barcode, ScanPrep)
            -> IO ()
-scRunDiaIO fPath cMap mM mL exMeta (bc, scRes) = do
+scRunDiaIO fPath cMap mM mL exMeta (bc, scPrep) = do
   let
     bcPatternStr = "bc" ++  (T.unpack . mconcat . fmap barFNPattern) bc
     overLayVs = needOverlays exMeta
-    LayerSpecs lniBMap _ _ _ = layerPrep mL
     phCMap = mkPhColorMap mM cMap
     switchMap = HM.fromList nonEmptySwPhNs
     nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
@@ -940,36 +942,41 @@ scRunDiaIO fPath cMap mM mL exMeta (bc, scRes) = do
   bcDir <- parseRelDir bcPatternStr
   let
     bcAbsDir = figDir </> bcDir
-    baseScDiaF = baseScDia cMap phCMap lniBMap switchMap exMeta
-  case scRes of
-    (SKREnv scBundle) -> do
+    baseScDiaF = baseScDia cMap phCMap switchMap exMeta
+  case scPrep of
+    SPREnv scanStats -> do
       let
-        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scBundle
+        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scanStats
         flatFigs = stopDFig : (timeInSwitchFigs <> avgNValueFigs)
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
-    (SKRKDOE scBundle) -> do
+    SPRKDOE scanStats -> do
       let
-        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scBundle
+        BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scanStats
         flatFigs = stopDFig : (timeInSwitchFigs <> avgNValueFigs)
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
-    (SKREnvKDOE scBundles) -> do
+    SPREnvKDOE scanStatss -> do
       let
-        swFig = envKDOESWDia phCMap switchMap exMeta scBundles
-        nodeFig = envKDOENodeDia cMap mL exMeta scBundles
+        swFig = envKDOESWDia phCMap switchMap exMeta scanStatss
+        nodeFig = envKDOENodeDia cMap mL exMeta scanStatss
         flatFigs = [("switches", swFig), ("nodes", nodeFig)]
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
-    (SKRTwoEnvWithoutKDOE scBundles) -> do
+    (SPRTwoEnvWithoutKDOE scanStatss) -> do
       let
         (stopPercentFigs, switchHMFigs, nodeHMFigs) = 
-          scHeatMapDias mL overLayVs switchMap exMeta scBundles
+          scHeatMapDias mL overLayVs switchMap exMeta scanStatss
         flatFigs = stopPercentFigs <> switchHMFigs <> nodeHMFigs
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
-    (SKRTwoEnvWithKDOE scBundless) -> do
+    (SPRTwoEnvWithKDOE scanStatsss) -> do
 --   These L.transposes are so that the KDOE is at the top level, so that we
 --   may generate the figures. 
       let
-        tpBundless = (L.transpose . fmap L.transpose) scBundless
-        hmFigs = scHeatMapDias mL overLayVs switchMap exMeta <$> tpBundless
+        (stopDsss, phDistsss, nodeStatsss) = (unzip3 . fmap unzip3) scanStatsss
+        tpStopDsss = (L.transpose . fmap L.transpose) stopDsss
+        tpPhDistsss = (L.transpose . fmap L.transpose) phDistsss
+        tpNodeStatsss = (L.transpose . fmap L.transpose) nodeStatsss
+        rezippedSSsss =
+            ((zipWith3 . zipWith3) (,,)) tpStopDsss tpPhDistsss tpNodeStatsss
+        hmFigs = scHeatMapDias mL overLayVs switchMap exMeta <$> rezippedSSsss
         (offAxisTitle, offAxisRange) =
           (last . scanXAxisData . scMetaScanKind) exMeta
         offAxisPairs = zip (repeat offAxisTitle) offAxisRange
@@ -983,18 +990,18 @@ scRunDiaIO fPath cMap mM mL exMeta (bc, scRes) = do
         (stopDFigs, switchHMFigs, nodeHMFigs) = framerF joinedFigs
         flatFigs = stopDFigs <> switchHMFigs <> nodeHMFigs
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
---  Take care to distinguish between when [WildTypeVsMutantAlt] are [] and not. 
-    (SKRThreeEnv (scBundless, mScBundless)) -> case mScBundless of
-      Just scbs -> do
+--  Take care to distinguish between when [WildTypeVsMutantAlt] are [] and not.
+    (SPRThreeEnv wTriple mTriple) -> case mTriple of
+      Just mutantTriple -> do
         let
           (stopPlotFigs, swFigs, nFigs) = scDifferenceHeatMapDia mL overLayVs
-                                            switchMap exMeta (scBundless, scbs)
+                            switchMap exMeta (wTriple, mutantTriple)
           flatFigs = stopPlotFigs <> swFigs <> nFigs
         mapM_ (simpleSCWrite bcAbsDir) flatFigs
       Nothing -> do
         let
-          (stPhFigs, swFigs, nodeFigs) = sc3DHeatMapDia mL overLayVs switchMap
-                                                            exMeta scBundless
+          (stPhFigs, swFigs, nodeFigs) =
+             sc3DHeatMapDia mL overLayVs switchMap exMeta wTriple
           flatFigs = stPhFigs <> swFigs <> nodeFigs
         mapM_ (simpleSCWrite bcAbsDir) flatFigs
 

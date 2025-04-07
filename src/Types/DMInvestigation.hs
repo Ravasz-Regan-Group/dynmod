@@ -67,7 +67,13 @@ module Types.DMInvestigation
     , TimeCourseOutput
     , TCOutputParameters(..)
     , TCExpOPMeta(..)
-    , ScanOutput
+    , ScanOutput(..)
+    , ScanResult(..)
+    , ScanPrep(..)
+    , ScanStats
+    , StopDistribution
+    , PhDistribution
+    , ScanNodeStats
     , pickStates
     , envScanInputName
     , VEXScan(..)
@@ -80,7 +86,6 @@ module Types.DMInvestigation
     , kdoeScNLocks
     , DoOverlayValues
     , XAxis(..)
-    , ScanResult(..)
     , DMScan(..)
     , MetaScanKind(..)
     , SCExpKind(..)
@@ -88,7 +93,7 @@ module Types.DMInvestigation
     , IntKDOEScan
     , ScanVariation
     , mkDMScan
-    , runScan
+    , runScanPrep
     ) where
 
 import Utilities
@@ -344,7 +349,7 @@ runExperiment phData layerBCG attSet gen ex = case ex of
     ScDMex scanExp -> (newGen, ScanExpRes (expMeta, attResults))
         where
             (newGen, attResults) =
-                L.mapAccumL (runScan phData scanExp) gen filteredAtts
+                L.mapAccumL (runScanRaw phData scanExp) gen filteredAtts
             filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
             expMeta = scExpMeta scanExp
     where

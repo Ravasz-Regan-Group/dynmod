@@ -8,11 +8,18 @@ module Types.DMInvestigation.Scan
     , IntEnvScan
     , IntKDOEScan
     , ScanVariation
+    , ScanOutput(..)
     , ScanResult(..)
-    , ScanOutput
+    , ScanPrep(..)
+    , ScanStats
+    , StopDistribution
+    , PhDistribution
+    , ScanNodeStats
     , kdoeScNLocks
     , mkDMScan
-    , runScan
+    , runScanPrep
+    , runScanRaw
+--     , mkScanPrep
     ) where
 
 import Utilities
@@ -26,11 +33,14 @@ import qualified Data.Text as T
 import TextShow
 import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
+import Statistics.Sample (meanVarianceUnb)
 import qualified Data.Bimap as BM
 import qualified Data.HashMap.Strict as M
+import qualified Control.Parallel.Strategies as P
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
 import Data.Maybe (mapMaybe, fromJust)
+import Control.DeepSeq (force)
 import System.Random
 
 data DMScan = Sc {
@@ -98,10 +108,32 @@ data ScanResult = SKREnv [[Timeline]]
                 | SKRThreeEnv ([[[[Timeline]]]], Maybe [[[[Timeline]]]])
                   deriving (Eq, Show)
 
--- The output of a Scan experiment, to be rendered to disk for future use. 
--- Eventually this will be sum type with various procesed options. 
-type ScanOutput = [(Barcode, ScanResult)]
 
+-- Prepped data for making scan figures and writing out the results of a Scan. 
+data ScanPrep =
+      SPREnv ScanStats
+    | SPRKDOE ScanStats
+    | SPREnvKDOE [ScanStats]
+    | SPRTwoEnvWithoutKDOE [ScanStats]
+    | SPRTwoEnvWithKDOE [[ScanStats]]
+    | SPRThreeEnv [[ScanStats]] (Maybe [[ScanStats]])
+    deriving (Eq, Show)
+-- the basic unit of statistics that we collect for Scans. Represents a single
+-- dimension of ScanVariations. 
+type ScanStats = ([StopDistribution], [PhDistribution], [ScanNodeStats])
+-- What fraction of the Timelines in a ScanVariation is each stop Phenotype
+-- responsible for stopping, plus the fraction of Timelines in the Scan run
+-- which a Max_N or Relevant_N is responsible for stopping.
+type StopDistribution = (M.HashMap PhenotypeName Double, Double)
+-- What fraction of the Timelines in a ScanVariation is each Phenotype present?
+type PhDistribution = M.HashMap PhenotypeName Double
+-- Average and StdDev information of a layer's DMNodes over the result of a
+-- single ScanVariation. 
+type ScanNodeStats = M.HashMap NodeName (RealNodeState, StdDev)
+-- The output of a Scan experiment, to be rendered to disk for future use. 
+data ScanOutput = ScRe [(Barcode, ScanResult)]
+                | ScPr [(Barcode, ScanPrep)]
+                deriving (Eq, Show)
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
          -> Validation [VEXInvestigationInvalid] DMScan
@@ -458,48 +490,58 @@ mkKDOEDetails kdoeScan = "KDOEScan_" <> nLocksT <> "_over_" <> showt rnge
         nodeLocks = kdoeScNLocks kdoeScan
         lockShow (nN, nLSt) = nN <> "_" <> showt nLSt
 
-runScan :: (LayerNameIndexBimap, [Phenotype])
-        -> DMScan
-        -> StdGen
-        -> (Barcode, Attractor)
-        -> (StdGen, (Barcode, ScanResult))
-runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
-  IntEnvSc intEnv -> (newGen, (bc, SKREnv res))
+runScanPrep :: (LayerNameIndexBimap, ModelMapping)
+            -> DMScan
+            -> StdGen
+            -> (Barcode, Attractor)
+            -> (StdGen, (Barcode, ScanPrep))
+runScanPrep lInfo scanEx gen (bc, att) = case scanKind scanEx of
+  IntEnvSc intEnv -> (newGen, (bc, SPREnv (mconcat res)))
     where            
-      (newGen, res) = L.mapAccumL rVarF gen envVars
+      res = paraDSMap1 (uncurry rVarF) seedVPs
+      (newGen, seedVPs) = L.mapAccumL genPair gen envVars
       envVars = mkEnvVars intEnv
-  IntKDOESc intKDOE -> (newGen, (bc, SKRKDOE res))
+  IntKDOESc intKDOE -> (newGen, (bc, SPRKDOE (mconcat res)))
     where
-      (newGen, res) = L.mapAccumL rVarF gen kdoeVars
+      res = paraDSMap1 (uncurry rVarF) seedVPs
+      (newGen, seedVPs) = L.mapAccumL genPair gen kdoeVars
       kdoeVars = mkKDOEVars intKDOE
-  IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
+  IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SPREnvKDOE concatRuns))
     where
-      (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+      concatRuns = mconcat <$> res
+      res = paraDSMap2 (uncurry rVarF) seedVPs
+      (newGen, seedVPs) = (L.mapAccumL . L.mapAccumL)
+            genPair gen variations
       variations = case xAx of
         EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
         KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
   IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
-    (newGen, (bc, SKRTwoEnvWithoutKDOE res))
+    (newGen, (bc, SPRTwoEnvWithoutKDOE (mconcat <$> res)))
     where
-        (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+        res = paraDSMap2 (uncurry rVarF) seedVPs
+        (newGen, seedVPs) = (L.mapAccumL . L.mapAccumL)
+            genPair gen variations
         variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
   IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
-    (newGen, (bc, SKRTwoEnvWithKDOE res))
+    (newGen, (bc, SPRTwoEnvWithKDOE (mconcat <<$>> res)))
     where
-        (newGen, res) = (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+        res = paraDSMap3 (uncurry rVarF) seedVPs
+        (newGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+            genPair gen vars
         vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
         tier2 = fmap (envSpread intEnv1) tier1
         tier1 = mkEnvVars intEnv2
   IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
-    (newGen, (bc, SKRThreeEnv (res, resWMutations)))
+    (newGen, (bc, SPRThreeEnv (force concatRes) (force concatResWMutations)))
     where
-        (newGen, resWMutations)
-            | L.null intNAlts = (resWMutationsGen, Nothing)
-            | otherwise = fmap Just $ (L.mapAccumL . L.mapAccumL . L.mapAccumL)
-                rVarF resWMutationsGen varsWMutations
---         res = (fmap . fmap . fmap) (uncurry rVarF) seedVPs
-        (resWMutationsGen, res) =
-            (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+        concatResWMutations = (fmap . fmap . fmap) mconcat resWMutations
+        concatRes = mconcat <<$>> res
+        resWMutations
+            | L.null intNAlts = Nothing
+            | otherwise = Just $ paraDSMap3 (uncurry rVarF) mSeedVPs
+        (newGen, mSeedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+            genPair tGen varsWMutations
+        res = paraDSMap3 (uncurry rVarF) seedVPs        
         seedVPs :: [[[(StdGen, ScanVariation)]]]
         (tGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
             genPair gen vars
@@ -508,7 +550,10 @@ runScan lInfo scanEx gen (bc, att) = case scanKind scanEx of
         tier2 = fmap (envSpread intEnv2) tier1
         tier1 = mkEnvVars intEnv3
   where
-    rVarF = runVariation lInfo scanEx att
+    rVarF = force . runVariationPrep lInfo scanEx att
+    paraDSMap3 = P.parMap P.rdeepseq . P.parMap P.rdeepseq . P.parMap P.rdeepseq
+    paraDSMap2 = P.parMap P.rdeepseq . P.parMap P.rdeepseq
+    paraDSMap1 = P.parMap P.rdeepseq
 
 insertNAlts :: [IntNodeAlteration] -> ScanVariation -> ScanVariation
 insertNAlts intNAlts (SCVar rIC scanNAlts) = SCVar rIC (intNAlts <> scanNAlts)
@@ -574,20 +619,30 @@ envSpread intEnvSc (SCVar rIC nAlts) = flip SCVar nAlts <$> newRICs
         newRICs = (U.++ rIC) <$> scanRics
         scanRics = mkRealICS intEnvSc
 
-runVariation :: (LayerNameIndexBimap, [Phenotype])
-             -> DMScan
-             -> Attractor
-             -> StdGen
-             -> ScanVariation
-             -> (StdGen, [Timeline])
-runVariation (lniBMap, phs) scanEx att gen (SCVar rIC actNAlts) = (newGen, res)
+runVariationPrep ::
+    (LayerNameIndexBimap, ModelMapping)
+    -> DMScan
+    -> Attractor
+    -> StdGen
+    -> ScanVariation
+    -> ([StopDistribution], [PhDistribution], [ScanNodeStats])
+runVariationPrep (lniBMap, mM) scanEx att gen (SCVar rIC actNAlts) =
+     (stopDMap, phDistMap, nodeStatMap)
   where
-    res = L.unfoldr scanResUnfoldF unFSeed
-    unFSeed = (0, expGen)
-    (expGen, newGen) = split gen
+    nodeStatMap = pure $ force $ scanNodeStats lniBMap trScanRun
+    phDistMap = pure $ force $ phDistribution allPhNames trScanRun
+    stopDMap = pure $ force $ stopDistribution stopPhNames trScanRun
+    trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
+    stopPhNames = (fmap fst . stopPhenotypes . scExpMeta) scanEx
+    allPhNames :: [PhenotypeName]
+    allPhNames = concatMap (fmap phenotypeName . snd . snd) nonEPhs
+    nonEPhs = nonEmptyPhenotypes mM
+    scanRun = L.unfoldr scanResUnfoldF unFSeed
+    unFSeed = (0, gen)
     mRIC = scanInputFix scanEx
     relN = requiredSteps scanEx
     maxN = maxRunSteps scanEx
+    phs = concatMap (snd . snd) mM
     scanResUnfoldF (relStAcc, g)
       | relStAcc >= relN = Nothing
       | otherwise = Just (tmln, newSeed)
@@ -668,3 +723,272 @@ mkInitAnnoLayerVec mRIC att gen
                 (rAtt, nGen) = BF.first (att B.!) (randomR (0, attL - 1) gen)
     where
     attL = B.length att
+
+-----------------------------------------------------------------------------
+-- Functions for prepping the results of Scans for figure- and output-making.
+
+-- What fraction of all the Timelines in a Scan run is each stop Phenotype
+-- responsible for stopping, plus the fraction of Timelines in the Scan run
+-- which a Max_N or Relevant_N is responsible for stopping.
+stopDistribution :: [PhenotypeName]
+                 -> [Timeline]
+                 -> StopDistribution
+stopDistribution [] scanRun =
+    (mempty, sum $ (fromIntegral . B.length) <$> scanRun)
+stopDistribution stopPhNames scanRun = (stPhMap, fracMaxStop)
+    where
+        fracMaxStop = force (fromIntegral rMaxStop / fracDiv)
+        stPhMap = force (M.map (\x -> fromIntegral x / fracDiv) rMap)
+        fracDiv = (fromIntegral divisor) :: Double
+        (rMap, rMaxStop, divisor) =
+            L.foldl' foldF (mapAccum, 0, 0) stopDurations
+        mapAccum = M.fromList $ zip stopPhNames $ repeat 0
+        foldF (durMap, maxOutAccum, totalAccum) (dur, phNs) = case phNs of
+            [] -> (durMap, maxOutAccum + dur, totalAccum + dur)
+            _ -> (L.foldl' foldF' durMap phNs, maxOutAccum, totalAccum + dur)
+                where foldF' dMap phN = M.adjust (+ dur) phN dMap
+        stopDurations :: [(Int, [PhenotypeName])]
+        stopDurations = zipWith (,) runDurations stoppedAtPhs
+        runDurations = B.length <$> trScanRun
+        trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
+        stoppedAtPhs = getStopPhs stopPhNames <$> scanRun
+
+-- Which, if any, stop Phenotypes are present at the end of a Timeline? 
+getStopPhs :: [PhenotypeName] -> Timeline -> [PhenotypeName]
+getStopPhs stopPHNs = filter (flip elem stopPHNs) . snd . B.last
+
+-- If a Timeline was stopped at a stop Phenotype, we don't want its last step. 
+trimPhStoppedTmln :: [PhenotypeName] -> Timeline -> Timeline
+trimPhStoppedTmln stopPHNs tmln = case getStopPhs stopPHNs tmln of
+    [] -> tmln
+    _  -> B.init tmln
+
+-- What fraction of all the time steps in a [Timeline] is each Phenotype
+-- present? 
+phDistribution :: [PhenotypeName]
+               -> [Timeline]
+               -> PhDistribution
+phDistribution switchPhNs scanRun = force $ M.map (/ divisor) rMap
+    where
+        rMap = L.foldl' foldF mapAccum allSteps
+        mapAccum :: M.HashMap PhenotypeName Double
+        mapAccum = M.fromList $ zip switchPhNs $ repeat 0
+        foldF phMap (_, presentPhNs) = L.foldl' foldF' phMap presentPhNs
+            where foldF' phM phN = M.adjust (+1) phN phM
+        divisor = ((fromIntegral . B.length) allSteps) :: Double
+        allSteps = B.concat scanRun
+
+scanNodeStats :: LayerNameIndexBimap -> [Timeline] -> ScanNodeStats
+scanNodeStats lniBMap trSCRun = M.fromList statPairs
+    where
+        statPairs = zip ((lniBMap BM.!>) <$> [0..]) statList
+        statList = (force . meanVarianceUnb . U.fromList) <$> bareStateLs
+        bareStateLs :: [[RealNodeState]]
+        bareStateLs = ((fmap . fmap) fromIntegral . L.transpose . B.toList .
+            B.map U.toList) bareStateVs
+        bareStateVs :: B.Vector (U.Vector NodeState)
+        bareStateVs = (B.map (fst . U.unzip . fst) . B.concat) trSCRun
+
+-- Run a Scan, but do not prep the data for figures
+runScanRaw :: (LayerNameIndexBimap, [Phenotype])
+           -> DMScan
+           -> StdGen
+           -> (Barcode, Attractor)
+           -> (StdGen, (Barcode, ScanResult))
+runScanRaw lInfo scanEx gen (bc, att) = case scanKind scanEx of
+  IntEnvSc intEnv -> (newGen, (bc, SKREnv res))
+    where            
+      (newGen, res) = L.mapAccumL rVarF gen envVars
+      envVars = mkEnvVars intEnv
+  IntKDOESc intKDOE -> (newGen, (bc, SKRKDOE res))
+    where
+      (newGen, res) = L.mapAccumL rVarF gen kdoeVars
+      kdoeVars = mkKDOEVars intKDOE
+  IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
+    where
+      (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+      variations = case xAx of
+        EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
+        KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
+  IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
+    (newGen, (bc, SKRTwoEnvWithoutKDOE res))
+    where
+        (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+        variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
+  IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
+    (newGen, (bc, SKRTwoEnvWithKDOE res))
+    where
+        (newGen, res) =
+            (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+        vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
+        tier2 = fmap (envSpread intEnv1) tier1
+        tier1 = mkEnvVars intEnv2
+  IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
+    (newGen, (bc, SKRThreeEnv (res, resWMutations)))
+    where
+        (newGen, resWMutations)
+            | L.null intNAlts = (resWMutationsGen, Nothing)
+            | otherwise = fmap Just $
+                (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+                  rVarF resWMutationsGen varsWMutations
+--         res = (fmap . fmap . fmap) (uncurry rVarF) seedVPs
+        (resWMutationsGen, res) =
+            (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+--         seedVPs :: [[[(StdGen, ScanVariation)]]]
+--         (tGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+--             genPair gen vars
+        varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
+        vars = (fmap . fmap) (envSpread intEnv1) tier2
+        tier2 = fmap (envSpread intEnv2) tier1
+        tier1 = mkEnvVars intEnv3
+  where
+    rVarF = runVariationRaw lInfo scanEx att
+
+-- Run an ScanVariation, but do not prep for figures. 
+runVariationRaw :: (LayerNameIndexBimap, [Phenotype])
+                -> DMScan
+                -> Attractor
+                -> StdGen
+                -> ScanVariation
+                -> (StdGen, [Timeline])
+runVariationRaw (lniBMap, phs) scanEx att gen (SCVar rIC actNAlts) =
+    (newGen, res)
+  where
+    res = L.unfoldr scanResUnfoldF unFSeed
+    unFSeed = (0, expGen)
+    (expGen, newGen) = split gen
+    mRIC = scanInputFix scanEx
+    relN = requiredSteps scanEx
+    maxN = maxRunSteps scanEx
+    scanResUnfoldF (relStAcc, g)
+      | relStAcc >= relN = Nothing
+      | otherwise = Just (tmln, newSeed)
+        where
+          newSeed = (relStAcc + B.length tmln, nG)
+          tmln = B.zip pTmln $ phenotypeMatch lniBMap phs lVecs
+          lVecs = B.map (fst . U.unzip) pTmln
+--        We keep the last of a Timeline stopped by a stop Phenotype in order
+--        to be able to do stats on it later. 
+          pTmln = case scExpStepper scanEx of
+            (SD stepper) -> B.unfoldr sdUnfoldF tmlnSeed
+              where
+                sdUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+                  | isStopPh = Nothing
+                  | otherwise = Just (iALV, nSeed)
+                  where
+                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+                    nStP = any (isAtStopPH lniBMap lVec)
+                            ((stopPhenotypes . scExpMeta) scanEx)
+                    (nextAnolVec, nGen) =
+                      expStepPrime rIC iNAlts aGen nextVec
+                    nextVec = stepper lVec
+                    lVec = (fst . U.unzip) iALV
+            (SN stepper) -> B.unfoldr snUnfoldF tmlnSeed
+              where
+                snUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+                  | isStopPh = Nothing
+                  | otherwise = Just (iALV, nSeed)
+                  where
+                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+                    nStP = any (isAtStopPH lniBMap lVec)
+                            ((stopPhenotypes . scExpMeta) scanEx)
+                    (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
+                    (nVec, iGen) = (flip stepper aGen) lVec
+                    lVec = (fst . U.unzip) iALV
+            (AD stepper) -> B.unfoldr adUnfoldF tmlnSeed
+              where
+                adUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+                  | isStopPh = Nothing
+                  | otherwise = Just (iALV, nSeed)
+                  where
+                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+                    nStP = any (isAtStopPH lniBMap lVec)
+                            ((stopPhenotypes . scExpMeta) scanEx)
+                    (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
+                    (nVec, iGen) = (flip stepper aGen) lVec
+                    lVec = (fst . U.unzip) iALV
+          iNAlts = (scanNodeAlts scanEx) <> actNAlts
+          tmlnSeed = (initLVec, relStAcc, 0, tmlnGen, False)
+          (initLVec, nG) = mkInitAnnoLayerVec mRIC att initLVGen
+          (tmlnGen, initLVGen) = split g
+
+
+-- mkScanPrep :: ModelMapping
+--            -> ModelLayer
+--            -> SCExpMeta
+--            -> ScanResult
+--            -> ScanPrep
+-- mkScanPrep mM mL exMeta scRes = case scRes of
+--     SKREnv scanRuns -> SPREnv (stopDs, phDists, nodeStats)
+--         where
+--             nodeStats = scanNodeStats lniBMap <$> trScanRuns
+--             phDists = phDistribution allPhNames <$> scanRuns
+--             stopDs = stopDistribution stopPhNames <$> trScanRuns
+--             trScanRuns = trimPhStoppedTmln stopPhNames <<$>> scanRuns
+--     SKRKDOE scanRuns -> SPRKDOE (stopDs, phDists, nodeStats)
+--         where
+--             nodeStats = scanNodeStats lniBMap <$> trScanRuns
+--             phDists = phDistribution allPhNames <$> scanRuns
+--             stopDs = stopDistribution stopPhNames <$> trScanRuns
+--             trScanRuns = trimPhStoppedTmln stopPhNames <<$>> scanRuns
+--     SKREnvKDOE scanRunss -> SPREnvKDOE $ zip3 stopDss phDistss nodeStatss
+--         where
+--             nodeStatss = scanNodeStats lniBMap <<$>> trScanRunss
+--             phDistss = phDistribution allPhNames <<$>> scanRunss
+--             stopDss = stopDistribution stopPhNames <<$>> trScanRunss
+--             trScanRunss = (fmap . fmap . fmap)
+--                 (trimPhStoppedTmln stopPhNames) scanRunss
+--     SKRTwoEnvWithoutKDOE scanRunss ->
+--         SPRTwoEnvWithoutKDOE $ zip3 stopDss phDistss nodeStatss
+--         where
+--             nodeStatss = scanNodeStats lniBMap <<$>> trScanRunss
+--             phDistss = phDistribution allPhNames <<$>> scanRunss
+--             stopDss = stopDistribution stopPhNames <<$>> trScanRunss
+--             trScanRunss = (fmap . fmap . fmap)
+--                 (trimPhStoppedTmln stopPhNames) scanRunss
+--     SKRTwoEnvWithKDOE scanRunsss -> SPRTwoEnvWithKDOE $
+--         ((zipWith3 . zipWith3) (,,)) stopDsss phDistsss nodeStatsss
+--         where
+--             nodeStatsss = (fmap . fmap . fmap)
+--                 (scanNodeStats lniBMap) trScanRunsss
+--             phDistsss = (fmap . fmap . fmap)
+--                 (phDistribution allPhNames) scanRunsss
+--             stopDsss = (fmap . fmap . fmap)
+--                 (stopDistribution stopPhNames) trScanRunsss
+--             trScanRunsss = (fmap . fmap . fmap . fmap)
+--                 (trimPhStoppedTmln stopPhNames) scanRunsss
+--     SKRThreeEnv (scanRunsss, mScanRunsss) -> SPRThreeEnv wTriple mTriple
+--         where
+--             mTriple = case mScanRunsss of
+--                 Nothing -> Nothing
+--                 Just mutantScanRunsss -> Just $ ((zipWith3 . zipWith3) (,,))
+--                     mStopDsss mPhDistsss mNodeStatsss
+--                     where
+--                         mNodeStatsss = (fmap . fmap . fmap)
+--                             (scanNodeStats lniBMap) mTrScanRunsss
+--                         mPhDistsss = (fmap . fmap . fmap)
+--                             (phDistribution allPhNames) mutantScanRunsss
+--                         mStopDsss = (fmap . fmap . fmap)
+--                             (stopDistribution stopPhNames) mTrScanRunsss
+--                         mTrScanRunsss = (fmap . fmap . fmap . fmap)
+--                             (trimPhStoppedTmln stopPhNames) mutantScanRunsss
+--             wTriple =
+--                 ((zipWith3 . zipWith3) (,,)) stopDsss phDistsss nodeStatsss
+--             nodeStatsss = (fmap . fmap . fmap)
+--                 (scanNodeStats lniBMap) trScanRunsss
+--             phDistsss = (fmap . fmap . fmap)
+--                 (phDistribution allPhNames) scanRunsss
+--             stopDsss = (fmap . fmap . fmap)
+--                 (stopDistribution stopPhNames) trScanRunsss
+--             trScanRunsss = (fmap . fmap . fmap . fmap)
+--                 (trimPhStoppedTmln stopPhNames) scanRunsss
+--     where
+--         stopPhNames = (fmap fst . stopPhenotypes) exMeta
+--         allPhNames :: [PhenotypeName]
+--         allPhNames = concatMap (fmap phenotypeName . snd . snd) nonEPhs
+--         nonEPhs = nonEmptyPhenotypes mM
+--         LayerSpecs lniBMap _ _ _ = layerPrep mL
+

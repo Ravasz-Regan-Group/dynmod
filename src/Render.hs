@@ -820,8 +820,12 @@ renderKDOEScan kdoeScan = renderVexVar "KDOEScan" kdoeScF Nothing kdoeScan
 renderExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOP -> TL.Text
 renderExpOP mM lniBMap (TCO ress) =
     (TL.intercalate "\n" . fmap (renderTCOutput mM lniBMap)) ress
-renderExpOP mM lniBMap (SCO ress) =
-    (TL.intercalate "\n" . fmap (renderSCOutput mM lniBMap)) ress
+renderExpOP mM lniBMap (SCO ress) = case ress of
+    ScRe rawRess ->
+        (TL.intercalate "\n" . fmap (renderRawScanResult mM lniBMap)) rawRess
+    ScPr preppedRess ->
+        (TL.intercalate "\n" . fmap renderScanResult) preppedRess
+    
 
 renderTCOutput :: ModelMapping
                -> LayerNameIndexBimap
@@ -850,12 +854,9 @@ renderBarKind (MatchBar slices lColor) =
 
 -- Render bare results 
 renderRepResults :: ModelMapping -> LayerNameIndexBimap -> RepResults -> TL.Text
-renderRepResults mM lniBMap (timelinesss, _) = timelineF timelineTsss
-    where
-        timelineF = inCF . fmap inCF . (fmap . fmap) inCF
-        inCF = TL.intercalate "\n"
-        timelineTsss =
-            (fmap . fmap . fmap) (renderTimeline mM lniBMap) timelinesss
+renderRepResults mM lniBMap (timelinesss, _) = inCF3 timelineTsss
+  where
+    timelineTsss = (fmap . fmap . fmap) (renderTimeline mM lniBMap) timelinesss
 
 renderTimeline :: ModelMapping -> LayerNameIndexBimap -> Timeline -> TL.Text
 renderTimeline mM lniBMap tmln = nodeT <> "\n" <> phenotypeT
@@ -906,47 +907,144 @@ type PhenotypePrevalence = (PhenotypeName, [WasPresent])
 
 type WasPresent = Bool
 
-
-renderSCOutput :: ModelMapping
-               -> LayerNameIndexBimap
-               -> (Barcode, ScanResult)
-               -> TL.Text
-renderSCOutput mM lniBMap (bc, scRess) = "Barcode, " <>
-    (TL.intercalate ", " . fmap renderBar) bc <> "\n" <> "ScanResults \n" <>
-    renderRawScanResult mM lniBMap scRess
-
 -- Render the results of a DMScan, after being processed down to stop phenotype
 -- distributions, phenotype prevelances, and node averages. 
--- renderScanResult
+renderScanResult :: (Barcode, ScanPrep) -> TL.Text
+renderScanResult (bc, scPrep) = preface <> body
+  where
+    preface = "Barcode, " <> (TL.intercalate ", " . fmap renderBar) bc <> "\n"
+      <> "ScanResults\n"
+    body = case scPrep of
+      SPREnv (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <> stopDsBody
+        <> "\n" <> phDistsPreface <> "/n" <> phDistsBody <> "/n" <>
+        nodeStatsPreface <> "/n" <> nodeStatsBody
+        where
+          stopDsBody = inCF $ renderStopDistribution <$> stopDs
+          phDistsBody = inCF $ renderPhDistribution <$> phDists
+          nodeStatsBody = inCF $ renderScanNodeStats <$> nodeStats
+      SPRKDOE (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <>
+        stopDsBody <> "\n" <> phDistsPreface <> "/n" <> phDistsBody <> "/n" <>
+        nodeStatsPreface <> "/n" <> nodeStatsBody
+        where
+          stopDsBody = inCF $ renderStopDistribution <$> stopDs
+          phDistsBody = inCF $ renderPhDistribution <$> phDists
+          nodeStatsBody = inCF $ renderScanNodeStats <$> nodeStats
+      SPREnvKDOE scanStatss -> stopDsPreface <> "\n" <> stopDssBody <> "\n" <>
+        phDistsPreface <> "/n" <> phDistssBody <> "/n" <> nodeStatsPreface <>
+        "/n" <> nodeStatssBody
+        where
+          stopDssBody = inCF2 $ renderStopDistribution <<$>> stopDss
+          phDistssBody = inCF2 $ renderPhDistribution <<$>> phDistss
+          nodeStatssBody = inCF2 $ renderScanNodeStats <<$>> nodeStatss
+          (stopDss, phDistss, nodeStatss) = unzip3 scanStatss
+      SPRTwoEnvWithoutKDOE scanStatss -> stopDsPreface <> "\n" <> stopDssBody <>
+        "\n" <> phDistsPreface <> "/n" <> phDistssBody <> "/n" <>
+        nodeStatsPreface <> "/n" <> nodeStatssBody
+        where
+          stopDssBody = inCF2 $ renderStopDistribution <<$>> stopDss
+          phDistssBody = inCF2 $ renderPhDistribution <<$>> phDistss
+          nodeStatssBody = inCF2 $ renderScanNodeStats <<$>> nodeStatss
+          (stopDss, phDistss, nodeStatss) = unzip3 scanStatss
+      SPRTwoEnvWithKDOE scanStatsss -> stopDsPreface <> "\n" <> stopDsssBody <>
+        "\n" <> phDistsPreface <> "/n" <> phDistsssBody <> "/n" <>
+        nodeStatsPreface <> "/n" <> nodeStatsssBody
+        where
+          stopDsssBody = inCF3Fmap renderStopDistribution stopDsss
+          phDistsssBody = inCF3Fmap renderPhDistribution phDistsss
+          nodeStatsssBody = inCF3Fmap renderScanNodeStats nodeStatsss
+          (stopDsss, phDistsss, nodeStatsss) =(unzip3 . fmap unzip3) scanStatsss
+      SPRThreeEnv scanStatsss mScanStatsss -> "Wildtype stats:\n" <>
+        wildTypeBody <> "\nMutant stats:\n" <> mutantBody
+        where
+          wildTypeBody = stopDsPreface <> "\n" <> stopDsssBody <> "\n" <>
+            phDistsPreface <> "/n" <> phDistsssBody <> "/n" <> nodeStatsPreface
+            <> "/n" <> nodeStatsssBody
+          stopDsssBody = inCF3Fmap renderStopDistribution stopDsss
+          phDistsssBody = inCF3Fmap renderPhDistribution phDistsss
+          nodeStatsssBody = inCF3Fmap renderScanNodeStats nodeStatsss
+          (stopDsss, phDistsss, nodeStatsss) =(unzip3 . fmap unzip3) scanStatsss
+          mutantBody = case mScanStatsss of 
+            Nothing -> ""
+            Just mutantScanStatsss -> stopDsPreface <> "\n"
+              <> mStopDsssBody <> "\n" <> phDistsPreface <> "/n" <>
+              mPhDistsssBody <> "/n" <> nodeStatsPreface <> "/n" <>
+              mNodeStatsssBody
+              where
+                mStopDsssBody = inCF3Fmap renderStopDistribution mStopDsss
+                mPhDistsssBody = inCF3Fmap renderPhDistribution mPhDistsss
+                mNodeStatsssBody = inCF3Fmap renderScanNodeStats mNodeStatsss
+                (mStopDsss, mPhDistsss, mNodeStatsss) =
+                  (unzip3 . fmap unzip3) mutantScanStatsss
+    stopDsPreface = "Stop Phenotype Occurrence Stats: "
+    phDistsPreface = "Phenotype Prevalence Stats: "
+    nodeStatsPreface = "DMNode State Stats: "
+    inCF3Fmap x y = (inCF3 . (fmap . fmap . fmap) x) y
+
+-- Useful recursive intercalation functions:
+inCF :: [TL.Text] -> TL.Text
+inCF = TL.intercalate "\n"
+
+inCF2 :: [[TL.Text]] -> TL.Text
+inCF2 = inCF . fmap inCF
+
+inCF3 :: [[[TL.Text]]] -> TL.Text
+inCF3 = inCF2 . (fmap . fmap) inCF
+
+inCF4 :: [[[[TL.Text]]]] -> TL.Text
+inCF4 = inCF3 . (fmap . fmap . fmap) inCF
+ 
+renderStopDistribution :: StopDistribution -> TL.Text
+renderStopDistribution (stopMap, noStopFrac) =
+    "Fraction of runs not Phenotype stopped :" <> showtl noStopFrac <> "\n" <>
+    "Run stop fractions by Phenotype:\n" <> mapTL
+    where
+        mapTL = (TL.intercalate ", " . fmap pairF . Map.toList) stopMap
+        pairF (phN, phFrac) = showtl phN <> ":" <> showtl phFrac
+
+renderPhDistribution :: PhDistribution -> TL.Text
+renderPhDistribution phDistMap = "Run Phenotype prevalence:\n" <> mapTL
+    where
+        mapTL = (TL.intercalate ", " . fmap pairF . Map.toList) phDistMap
+        pairF (phN, phFrac) = showtl phN <> ":" <> showtl phFrac
+
+renderScanNodeStats :: ScanNodeStats -> TL.Text
+renderScanNodeStats nodeStatMap =
+    "Run DMNode average and standard deviations:\n" <> mapTL
+    where
+        mapTL = (TL.intercalate ", " . fmap pairF . Map.toList) nodeStatMap
+        pairF (nName, (nAvg, nStdDev)) = showtl nName <> ": (" <> showtl nAvg <>
+            ", " <> showtl nStdDev <> ")"
 
 -- Render the unprocessed recults of a DMScan. 
 renderRawScanResult :: ModelMapping
                     -> LayerNameIndexBimap
-                    -> ScanResult
+                    -> (Barcode, ScanResult)
                     -> TL.Text
-renderRawScanResult mM lniBMap scRes = case scRes of
-  (SKREnv tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
-  (SKRKDOE tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
-  (SKREnvKDOE tmlnsss) -> inCF3 $
-    (fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnsss
-  (SKRTwoEnvWithoutKDOE tmlnsss) -> inCF3 $
-    (fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnsss
-  (SKRTwoEnvWithKDOE tmlnssss) -> inCF4 $
-    (fmap . fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnssss
-  (SKRThreeEnv (tmlnssss, maybeTmlnssss)) -> case maybeTmlnssss of
-    Nothing -> inCF4 $
-      (fmap . fmap . fmap . fmap) (renderTimeline mM lniBMap) tmlnssss
-    Just mutTmlnssss -> wildTypeF <> "/n" <> mutantTypeF
-      where
-        wildTypeF = "Wild type:\n" <> (inCF4 . (fmap . fmap . fmap . fmap)
-          (renderTimeline mM lniBMap)) tmlnssss
-        mutantTypeF = "Mutants:\n" <> (inCF4 . (fmap . fmap . fmap . fmap)
-          (renderTimeline mM lniBMap)) mutTmlnssss
-  where
-    inCF4 = inCF . fmap inCF . (fmap . fmap) inCF . (fmap . fmap . fmap) inCF
-    inCF3 = inCF . fmap inCF . (fmap . fmap) inCF
-    inCF2 = inCF . fmap inCF 
-    inCF = TL.intercalate "\n"
+renderRawScanResult mM lniBMap (bc, scRes) = preface <> body
+    where
+        preface = "Barcode, " <> (TL.intercalate ", " . fmap renderBar) bc <>
+            "\n" <> "ScanResults\n"
+        body = case scRes of
+            (SKREnv tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
+            (SKRKDOE tmlnss) -> inCF2 $ renderTimeline mM lniBMap <<$>> tmlnss
+            (SKREnvKDOE tmlnsss) -> inCF3 $ (fmap . fmap . fmap)
+                 (renderTimeline mM lniBMap) tmlnsss
+            (SKRTwoEnvWithoutKDOE tmlnsss) -> inCF3 $ (fmap . fmap . fmap)
+                (renderTimeline mM lniBMap) tmlnsss
+            (SKRTwoEnvWithKDOE tmlnssss) -> inCF4 $ (fmap . fmap . fmap . fmap)
+                (renderTimeline mM lniBMap) tmlnssss
+            (SKRThreeEnv (tmlnssss, maybeTmlnssss)) -> case maybeTmlnssss of
+                Nothing -> inCF4 $ (fmap . fmap . fmap . fmap)
+                    (renderTimeline mM lniBMap) tmlnssss
+                Just mutTmlnssss -> wildTypeF <> "/n" <> mutantTypeF
+                    where
+                        wildTypeF = "Wild type:\n" <>
+                            (inCF4 . (fmap . fmap . fmap . fmap)
+                            (renderTimeline mM lniBMap)) tmlnssss
+                        mutantTypeF = "Mutants:\n" <>
+                            (inCF4 . (fmap . fmap . fmap . fmap)
+                            (renderTimeline mM lniBMap)) mutTmlnssss
+
 
 -- Render out the data used to make node barcharts.
 renderNBCData :: [[[(NodeName, U.Vector RealNodeState)]]] -> TL.Text
