@@ -655,7 +655,7 @@ vexWrap keyword bLines mComment =
         body = (TL.intercalate "\n" . filter (not . TL.null)) bLines
         commentT = maybe "" (\cNote -> " // " <> cNote) mComment
 
--- Render a VEX file assignment that might have a default value that 
+-- Render a VEX file assignment that might have a default value that we
 -- want rewritten. 
 renderVexVar :: (Show a, Eq a)
               => TL.Text
@@ -665,7 +665,7 @@ renderVexVar :: (Show a, Eq a)
               -> TL.Text
 renderVexVar vName renderF mDefault vexV = case (vexV ==) <$> mDefault of
     Nothing -> vName <> ": " <> renderF vexV
-    Just False -> vName <> ": " <>  renderF vexV
+    Just False -> vName <> ": " <> renderF vexV
     Just True -> ""
 
 renderManualSeed :: ManualSeed -> TL.Text
@@ -746,13 +746,14 @@ renderUserDuration vexVarName (UserD i) = vexVarName <> ": " <> showtl i <> "\n"
 
 -- Render Scans
 renderScanVEXExperiment :: VEXScan -> TL.Text
-renderScanVEXExperiment (VEXScan scKind inEnv nAlts iFix maxN relN stopPhs
+renderScanVEXExperiment (VEXScan scKind inEnv mScNm nAlts iFix maxN relN stopPhs
     expStep (plottingSws, plottingNs)) = vexWrap "Scan" bLines Nothing
     where
         bLines = [
               renderInitialEnvironment inEnv
             , renderVexVar "Max_T" showtl Nothing maxN
             , renderVexVar "Relevant_T" showtl Nothing relN
+            , maybe "" (renderVexVar "ScanName" showtl Nothing) mScNm
             , renderVexVar "InputFix" renderPairsTL (Just []) iFix
             , renderVexVar "StopPhenotypes" renderPairsTL (Just []) stopPhs
             , renderExperimentStep expStep

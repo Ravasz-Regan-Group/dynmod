@@ -138,7 +138,7 @@ data ScanOutput = ScRe [(Barcode, ScanResult)]
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
          -> Validation [VEXInvestigationInvalid] DMScan
 mkDMScan mM mL
-  (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep pltNds) =
+  (VEXScan scKnd inEnv mScanName nAlts iFix maxN relN stopPhs exStep pltNds) =
     case mkSCExpKind mL scKnd of
     Failure errs -> Failure errs
     Success intScKnd ->
@@ -152,7 +152,9 @@ mkDMScan mM mL
            <*> (traverse (mkRealInputCoordinate mL) mIFix)
         where
             expDetails = mkScDetails scKnd
-            expName = mkScName scKnd
+            expName = case mScanName of
+                Nothing -> mkScName scKnd
+                Just scName -> scName
             mIFix = case iFix of
                 [] -> Nothing
                 iFxs -> Just iFxs

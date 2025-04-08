@@ -77,6 +77,7 @@ module Types.DMInvestigation
     , pickStates
     , envScanInputName
     , VEXScan(..)
+    , ScanName
     , PlottingNodes
     , ScanSwitch
     , ScanNode

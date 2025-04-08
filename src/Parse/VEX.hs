@@ -314,6 +314,9 @@ realCoordParse rw = rword rw >> colon >>
         ((,) <$> variable <*> (colon >> (toRealFloat <$> number)))
      comma)
 
+manualScanNameParse :: Parser (Maybe ScanName)
+manualScanNameParse = Just <$> (identifier "ScanName")
+
 nodeAlterationsParse :: Parser [NodeAlteration]
 nodeAlterationsParse = between (symbol "NodeAlterations{")
                                (symbol "NodeAlterations}")
@@ -437,6 +440,7 @@ scanParse = (between (symbol "Scan{") (symbol "Scan}") (
     runPermutation $
         VEXScan <$> toPermutation scanKindParse
                 <*> toPermutation startingModelStateParse
+                <*> toPermutationWithDefault Nothing manualScanNameParse
                 <*> toPermutationWithDefault [] nodeAlterationsParse
                 <*> toPermutationWithDefault [] (realCoordParse "InputFix")
                 <*> toPermutation maxTParse
@@ -501,9 +505,11 @@ xAxisParse = lexeme $ rword "X_Axis" >>
     )
 
 scanCheck :: VEXScan -> Parser VEXScan
-scanCheck (VEXScan scKnd inEnv nAlts iFix maxN relN stopPhs exStep plottingNs) =
+scanCheck (VEXScan scKnd inEnv mScanName nAlts iFix maxN relN stopPhs
+    exStep plottingNs) =
     VEXScan <$> scanKindCheck nAlts scKnd
             <*> pure inEnv
+            <*> pure mScanName
             <*> pure nAlts
             <*> pure iFix
             <*> pure maxN

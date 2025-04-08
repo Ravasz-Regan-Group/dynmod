@@ -90,6 +90,7 @@ data VEXInputPulse = VEXInPt
 data VEXScan = VEXScan
     ScanKind
     InitialEnvironment
+    (Maybe ScanName)
     [NodeAlteration]
     [(NodeName, RealNodeState)]-- Start runs at real-valued inputs. 
     Max_N
@@ -99,6 +100,9 @@ data VEXScan = VEXScan
     ExperimentStep
     PlottingNodes
     deriving (Eq, Show)
+
+-- Optional manual Scan name.
+type ScanName = T.Text
 
 -- Maximum length of a given run. 
 type Max_N = Int
