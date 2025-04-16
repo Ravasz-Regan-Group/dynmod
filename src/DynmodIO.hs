@@ -809,10 +809,10 @@ mkExpPath vexFPath dmExpMeta figsOrRess = do
             (MetaEnvKDOEScan _ _ _) -> parseRelDir "Env_KDOE_Scan"
             (MetaTwoDEnvScan _ _ _ _) -> parseRelDir "TwoDEnvScan"
             (MetaThreeDEnvScan _ _ _ _) -> parseRelDir "ThreeDEnvScan"
-    dirExpDetails <- case dmExpMeta of
+    dirExpDifferentiator<- case dmExpMeta of
         TCEM tcXMeta -> parseRelDir ((T.unpack . tcExpDetails) tcXMeta)
-        SCEM scXMeta -> parseRelDir ((T.unpack . scExpDetails) scXMeta)
-    let dirFull = dirStem </> dirExpWhat </> dirCat </> dirExpDetails
+        SCEM scXMeta -> parseRelDir ((T.unpack . scExpName) scXMeta)
+    let dirFull = dirStem </> dirExpWhat </> dirCat </> dirExpDifferentiator
     return dirFull
 
 tcRunDiaIO :: Path Abs File
