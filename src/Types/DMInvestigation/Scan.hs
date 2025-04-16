@@ -39,7 +39,7 @@ import qualified Data.HashMap.Strict as M
 import qualified Control.Parallel.Strategies as P
 import qualified Data.Bifunctor as BF
 import qualified Data.List as L
-import Data.Maybe (mapMaybe, fromJust)
+import Data.Maybe (mapMaybe, fromJust, fromMaybe)
 import Control.DeepSeq (force)
 import System.Random
 
@@ -152,9 +152,7 @@ mkDMScan mM mL
            <*> (traverse (mkRealInputCoordinate mL) mIFix)
         where
             expDetails = mkScDetails scKnd
-            expName = case mScanName of
-                Nothing -> mkScName scKnd
-                Just scName -> scName
+            expName = fromMaybe (mkScName scKnd) mScanName
             mIFix = case iFix of
                 [] -> Nothing
                 iFxs -> Just iFxs

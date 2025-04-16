@@ -744,7 +744,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         fullDir <- mkExpPath fPath (TCEM expMeta) "Results"
         let noDetailsDir = parent fullDir
         ensureDir noDetailsDir
-        let fileNameStr = expName <> show xMark
+        let fileNameStr = expName
         relFileName <- parseRelFile fileNameStr
         relFileNameWExt <- addExtension ".csv" relFileName
         let absFileNameWExt = noDetailsDir </> relFileNameWExt
@@ -767,7 +767,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         fullDir <- mkExpPath fPath (SCEM expMeta) "Results"
         let noDetailsDir = parent fullDir
         ensureDir noDetailsDir
-        let fileNameStr = expName <> show xMark
+        let fileNameStr = expName
         relFileName <- parseRelFile fileNameStr
         relFileNameWExt <- addExtension ".csv" relFileName
         let absFileNameWExt = noDetailsDir </> relFileNameWExt

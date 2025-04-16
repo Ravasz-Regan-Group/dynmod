@@ -581,9 +581,10 @@ renderExprL s (Binary Or expr1 expr2) =
 
 renderSingleExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOutput -> TL.Text
 renderSingleExpOP mM lniBMap expOutPut = "Experiment: \n" <> vexExpT <>
-    "\n" <> "Output: \n" <> outputT
+    "\n" <> "ExperimentMark: " <> expMarkT <> "\n" <> "Output: \n" <> outputT
     where
         vexExpT = (renderVEXExperiment . opVexExp) expOutPut
+        expMarkT = (showtl . expMark) expOutPut
         outputT = (renderExpOP mM lniBMap . expOP) expOutPut
 
 renderVEXExperiment :: VEXExperiment -> TL.Text
