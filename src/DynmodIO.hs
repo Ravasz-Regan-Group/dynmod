@@ -834,7 +834,7 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
         expDetails = tcExpDetails expMeta
         expName = tcExpName expMeta
         bcPatterns = mconcat $ barFNPattern <$> bc
-    dataDir <- mkExpPath fPath (TCEM expMeta) "Results"
+        xMarkTxt = showtl xMark <> "\n"
     figDir <- mkExpPath fPath (TCEM expMeta) ""
     when (nodeTimeCourse figKs) $ do
         let nodeTCFigs = nodeTCDia cMap mM mL bc params avgTmlnPSs
@@ -847,28 +847,22 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
         writeExpBCFig (figDir </> dirPHTC) expDetails (bc, phenotypeTCFigs)
     when ((not . null) (nodeAvgBars figKs)) $ do
         let bCHNodeNs = nodeAvgBars figKs
-            statRepRVecs :: [[[B.Vector (U.Vector RealNodeState)]]]
-            statRepRs :: [[[B.Vector (RealNodeState, StdDev)]]]
             (statRepRVecs, statRepRs) = (unzip . fmap nodeBarChartStats) repRs
             LayerSpecs lniBMap _ _ _ = layerPrep mL
             nmdVF = (fmap . BF.first) (lniBMap BM.!>) . zip [0..] . B.toList
-            namedPulseVecs :: [[[[(NodeName, U.Vector RealNodeState)]]]]
             namedPulseVecs = (fmap . fmap . fmap) nmdVF statRepRVecs
-            formattedData :: [TL.Text]
-            formattedData = renderNBCData <$> namedPulseVecs
-            nBChartFigs :: [[Diagram B]]
+            formattedData = ((xMarkTxt <>) . renderNBCData) <$> namedPulseVecs
             nBChartFigs = nBChartDia cMap expMeta bCHNodeNs <<$>> statRepRs
             mergedNBChartFigs = (vsep 5.0) <$> nBChartFigs
             numFigs = length mergedNBChartFigs
-            dataFileNStrs =
-                (((T.unpack expName <> show xMark <> "_") <>) . show) <$>
+            dataFileNStrs = (((T.unpack expName <> "_") <>) . show) <$>
                     [1..numFigs]
         dirNBCH <- parseRelDir "NodeBCh"
-        ensureDir (dataDir </> dirNBCH)
+        ensureDir (figDir </> dirNBCH)
         dataFileNames <- mapM parseRelFile dataFileNStrs
         relDataFileNamesWExt <- mapM (addExtension ".csv") dataFileNames
         let absDataFileNamesWExt =
-                            ((dataDir </> dirNBCH) </>) <$> relDataFileNamesWExt
+                            ((figDir </> dirNBCH) </>) <$> relDataFileNamesWExt
         mapM_ (uncurry RW.writeFileL) (zip absDataFileNamesWExt formattedData)
         let rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             rFStrings = (((rFString <> "_" )<>) . show) <$> [1..numFigs]
@@ -887,31 +881,25 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
             switchMap = HM.fromList nonEmptySwPhNs
             pulseSpcs = (fmap . fmap) snd avgTmlnPSs
             zipZip = (zipWith . zipWith) (,)
-            phStatRepRVecs :: [[[HM.HashMap PhenotypeName (U.Vector Double)]]]
-            phStatRepRs :: [[[HM.HashMap PhenotypeName (Double, StdDev)]]]
             (phStatRepRVecs, phStatRepRs) =
                                 (unzip . fmap (phBarChartStats allPhNs)) repRs
-            chartVecsss ::
-                [[[(SwitchName, [[(PhenotypeName, U.Vector Double)]])]]]
             chartVecsss = L.transpose $ phBCDataPrep nonEmptySwPhNs
                 <<$>> phStatRepRVecs
-            formattedData :: [TL.Text]
-            formattedData = renderPhBCData <$> chartVecsss
+            formattedData = ((xMarkTxt <>) . renderPhBCData) <$> chartVecsss
 -- Integrate the [[PulseSpacing]] with the Phenotype prevalence averages.
             pulseStatRepRs = zipZip pulseSpcs phStatRepRs
             phBCF = phBChartDia cMap mL switchMap expMeta phCHNodeNs
             phBChartFgs :: [Diagram B]
             phBChartFgs = ((vsep 5.0) . fmap (uncurry phBCF)) <$> pulseStatRepRs
             numFigs = length phBChartFgs
-            dataFileNStrs =
-                (((T.unpack expName <> show xMark <> "_") <>) . show)
+            dataFileNStrs = (((T.unpack expName <> "_") <>) . show)
                     <$> [1..numFigs]
         dirPHBCH <- parseRelDir "PhBCh" 
-        ensureDir (dataDir </> dirPHBCH)
+        ensureDir (figDir </> dirPHBCH)
         dataFileNames <- mapM parseRelFile dataFileNStrs
         relDataFileNamesWExt <- mapM (addExtension ".csv") dataFileNames
         let absDataFileNamesWExt =
-                        ((dataDir </> dirPHBCH) </>) <$> relDataFileNamesWExt
+                        ((figDir </> dirPHBCH) </>) <$> relDataFileNamesWExt
         mapM_ (uncurry RW.writeFileL) (zip absDataFileNamesWExt formattedData)
         let rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             rFStrings = (((rFString <> "_") <>) . show) <$> [1..numFigs]

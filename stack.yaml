@@ -20,7 +20,8 @@
 # resolver: lts-15.10 -  return to this if 16.31 fails on Windows
 # resolver: lts-19.31
 # resolver: lts-21.25
-resolver: lts-22.43
+# resolver: lts-22.43
+resolver: lts-22.44
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
