@@ -88,6 +88,7 @@ library:
   - random-shuffle
   - text-show
   - text-show-instances
+  - hxt
 
 executables:
   dynmod:

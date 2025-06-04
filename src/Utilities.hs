@@ -94,11 +94,11 @@ errorRollup = foldr ePop []
 
 -- In a list of n HashSets, this finds any element in any set that occurs in
 -- more than one set. 
-nIntersection :: (Eq a, Hash.Hashable a) => [Set.HashSet a] -> Set.HashSet a
+nIntersection :: Hash.Hashable a => [Set.HashSet a] -> Set.HashSet a
 nIntersection = snd . go 
     where go = foldl' rollingI (Set.empty, Set.empty)
 
-rollingI :: (Eq a, Hash.Hashable a) => 
+rollingI :: Hash.Hashable a => 
             (Set.HashSet a, Set.HashSet a)
          ->  Set.HashSet a
          -> (Set.HashSet a, Set.HashSet a)
@@ -151,8 +151,7 @@ uncurry3 f ~(a,b,c) = f a b c
 concatPair :: Monoid a => (a, a) -> a
 concatPair (x, y) = x <> y
 
-differenceWithKey :: (Eq k, Hash.Hashable k) =>
-                                        (k -> v -> w -> Maybe v)
+differenceWithKey :: Hash.Hashable k => (k -> v -> w -> Maybe v)
                                         -> M.HashMap k v
                                         -> M.HashMap k w
                                         -> M.HashMap k v
@@ -166,7 +165,7 @@ differenceWithKey f a b = M.foldlWithKey' go M.empty a
 sortWithOrder :: (Ord a, Hash.Hashable a) => [a] -> [a] -> [a]
 sortWithOrder = sortWithOrderOn id
 
-sortWithOrderOn :: (Ord a, Ord b, Hash.Hashable b)
+sortWithOrderOn :: (Ord b, Hash.Hashable b)
                 => (a -> b) -> [b] -> [a] -> [a]
 sortWithOrderOn f order = L.sortOn (getOrder . f)
     where getOrder k = M.lookupDefault (-1) k $ mkOrderHashMap order
