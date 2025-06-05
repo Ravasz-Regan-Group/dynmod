@@ -1,4 +1,6 @@
-module SBML where
+module SBML
+    (dmModelToSBML)
+    where
 
 import Types.DMModel
 import Types.Simulation
@@ -12,9 +14,9 @@ import Data.Maybe (fromJust)
 -- Export a DMModel to SBML. For now, only export the Fine ModelLayer. 
 dmModelToSBML :: ArrowXml a => DMModel -> a XmlTree XmlTree
 dmModelToSBML dmModel = mkelem "sbml"
-    [ sqattr xmlnsQN "http://www.sbml.org/sbml/level3/version2/core"
+    [ sqattr xmlnsQN "http://www.sbml.org/sbml/level3/version1/core"
     , sattr "level" "3"
-    , sattr "version" "2", txt "\n     "
+    , sattr "version" "1", txt "\n     "
     , sqattr notesQN $ namespaceUri notesQN, txt "\n     "
     , sqattr qualQN $ namespaceUri qualQN
     , sattr "qual:required" "true"
@@ -23,21 +25,25 @@ dmModelToSBML dmModel = mkelem "sbml"
         [ sattr "id" mNamestr
         , sattr "sboTerm" "SBO:0000548" -- multi-valued logical framework
         ]
-        [selem "listOfCompartments"
+        [ selem "notes"
+            [selem "xhtml:body"
+                [selem "xhtml:p"
+                    [(txt . T.unpack . desc . modelInfo) bLModelMeta]
+                ]
+            ]
+        , selem "listOfCompartments"
             [aelem "compartment"
                 [ sattr "id" "FineLayer"
                 , sattr "constant" "true"
                 , sattr "sboTerm" "SBO:0000410" -- implicit compartment
                 ]
             ]
-        , selem "qual:ListOfQualitativeSpecies" nodeSpecies
-        , selem "qual:ListOfTransitions" nodeTransitions
-        , selem "notes"
-            [selem "xhtml:body"
-                [selem "xhtml:p"
-                    [(txt . T.unpack . desc . modelInfo) bLModelMeta]
-                ]
-            ]
+        , mkelem "qual:listOfQualitativeSpecies"
+            [sqattr qualQN $ namespaceUri qualQN]
+            nodeSpecies
+        , mkelem "qual:listOfTransitions"
+            [sqattr qualQN $ namespaceUri qualQN]
+            nodeTransitions
         ]
     ]
     where
@@ -61,11 +67,12 @@ dmNodeToSBML :: ArrowXml a
 dmNodeToSBML lRanges lniBMap (dmNode, inLinks) = (nodeSpecies, nodeTransition)
     where
         nodeTransition =
-            dmNodeTransition lRanges lniBMap nTopStr (dmNode, inLinks)
-        nodeSpecies = mkelem "qual:QualitativeSpecies"
-            [ sattr "qual:id" ((show . (lniBMap BM.!)) nName)
+            dmNodeTransition lRanges lniBMap (dmNode, inLinks)
+        nodeSpecies = mkelem "qual:qualitativeSpecies"
+            [ sattr "qual:id" ("node_" ++ (show . (lniBMap BM.!)) nName)
+            , sattr "qual:name" (T.unpack nName)
             , compartmentSpec, qualSpecVar
-            , sattr "qual:MaxLevel" nTopStr
+            , sattr "qual:maxLevel" nTopStr
             ]
             [selem "notes"
                 [selem "xhtml:body"
@@ -77,29 +84,29 @@ dmNodeToSBML lRanges lniBMap (dmNode, inLinks) = (nodeSpecies, nodeTransition)
         nTopStr = (show . maximum . fmap fst . gateAssigns . nodeGate) dmNode
         nName = nodeName nMeta
         nMeta = nodeMeta dmNode
-        qualSpecVar = sattr "qual:constant" "False"
+        qualSpecVar = sattr "qual:constant" "false"
         compartmentSpec = sattr "qual:compartment" "FineLayer"
 
 dmNodeTransition :: ArrowXml a
                  => LayerRange
                  -> LayerNameIndexBimap
-                 -> String
                  -> InAdj
                  -> a XmlTree XmlTree
-dmNodeTransition lRanges lniBMap nTopStr (dmNode, inLinks) =
-    mkelem "qual:Transition"
-    [ sattr "qual:id" (nTopStr ++ "_transition")
-    , sattr "qual:Name" (T.unpack nName ++ "_transition")
+dmNodeTransition lRanges lniBMap (dmNode, inLinks) =
+    mkelem "qual:transition"
+    [ sattr "qual:id" ("node_" ++ nIndexStr ++ "_transition")
+    , sattr "qual:name" (T.unpack nName ++ "_transition")
     ]
-    [ selem "qual:ListOfInputs" inlinkTrees
-    , selem "qual:ListOfOutputs"
-        [aelem "qual:Output"
-            [ sattr "qual:id" (nTopStr ++ "_output")
-            , sattr "qual:Name" (T.unpack nName ++ "_output")
+    [ selem "qual:listOfInputs" inlinkTrees
+    , selem "qual:listOfOutputs"
+        [aelem "qual:output"
+            [ sattr "qual:id" ("node_" ++ nIndexStr ++ "_output")
+            , sattr "qual:name" (T.unpack nName ++ "_output")
+            , sattr "qual:qualitativeSpecies" ("node_" ++ nIndexStr)
             , sattr "qual:transitionEffect" "assignmentLevel"
             ]
         ]
-    , selem "qual:ListOfFunctionTerms" funtionTerms
+    , selem "qual:listOfFunctionTerms" funtionTerms
     ]
     where
         funtionTerms
@@ -112,6 +119,7 @@ dmNodeTransition lRanges lniBMap nTopStr (dmNode, inLinks) =
         trueF (gState, _) = gState == 1
         gAssigns = (gateAssigns . nodeGate) dmNode
         inlinkTrees = inLinkToSBML lniBMap nName <$> inLinks
+        nIndexStr = show $ lniBMap BM.! nName
         nName = (nodeName . nodeMeta) dmNode
 
 inLinkToSBML :: ArrowXml a
@@ -119,10 +127,10 @@ inLinkToSBML :: ArrowXml a
              -> NodeName
              -> (DMLink, NodeName)
              -> a XmlTree XmlTree
-inLinkToSBML lniBMap nName (dmLink, linkName) = mkelem "qual:Input"
-    [ sattr "qual:id" (nIndexStr ++ "_input_" ++ lINdexStr)
+inLinkToSBML lniBMap nName (dmLink, linkName) = mkelem "qual:input"
+    [ sattr "qual:id" ("node_" ++ nIndexStr ++ "_input_" ++ lINdexStr)
     , sattr "qual:name" (T.unpack nName ++ "_input_" ++ T.unpack linkName)
-    , sattr "qual:QualitativeSpecies" nIndexStr
+    , sattr "qual:qualitativeSpecies" ("node_" ++ nIndexStr)
     , sattr "qual:transitionEffect" "none"
     , sattr "qual:sign" ((linkEffectStr . linkEffect) dmLink)
     ]
@@ -148,7 +156,7 @@ gateAssignToSBML :: ArrowXml a
                  => LayerRange
                  -> NodeStateAssign
                  -> a XmlTree XmlTree
-gateAssignToSBML lRanges (nState, nExpr) = mkelem "qual:FunctionTerm"
+gateAssignToSBML lRanges (nState, nExpr) = mkelem "qual:functionTerm"
     [sattr "qual:resultLevel" (show nState)]
     [mkelem "math"
         [sqattr xmlnsQN "http://www.w3.org/1998/Math/MathML"]
@@ -173,7 +181,7 @@ nodeExprToMathML lRanges nExpr = case nExpr of
             mlOp = case binOp of
                 And -> eelem "and"
                 Or -> eelem "or"
-    Pars pExpr ->  selem "mrow" [nodeExprToMathML lRanges pExpr]
+    Pars pExpr -> nodeExprToMathML lRanges pExpr
 
 
 -- modelLayerToSBML :: ArrowXml a => ModelLayer -> a XmlTree XmlTree

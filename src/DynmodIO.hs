@@ -22,6 +22,7 @@ import Properties.Attractors
 import Text.LaTeX.Base.Render (render)
 import Publish
 import qualified ReadWrite as RW
+import SBML
 import qualified Data.List.Split as Split
 import Path
 import Path.IO
@@ -38,6 +39,7 @@ import qualified Text.Megaparsec as M
 import qualified Data.Bimap as BM
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
+import qualified Text.XML.HXT.Core as HX
 import Data.Validation (Validation(..))
 import System.Random (initStdGen, StdGen, uniform)
 import Data.Void
@@ -158,7 +160,7 @@ writeAttractorBundle f lniBMap mapping (rN, nN, nP) mMult atts = do
             Just m -> attFileNameStem ++ "_gr" ++ samplePs ++ "_" ++ show m
         samplePs = L.intercalate "_" $ [show rN, show nN, show nP]
     attFileNameRel <- parseRelFile attFileName
-    attFileNameRelWExt <- (addExtension ".csv") attFileNameRel
+    attFileNameRelWExt <- addExtension ".csv" attFileNameRel
     RW.writeFile attFileNameRelWExt attFile
 
 -- It is already a parser error if a switch has a switch name but no member
@@ -398,9 +400,32 @@ procedureDMMS f options (Right parsed) = do
                        mNs = (modelName . modelMeta) <$> modelLayers dmModel
                    in zip mNs mMs)
         )
+    when (sbmlWrite options)
+        (writeSBML f dmModel)
     when (coordColors options)
         (graphDetailWrite f dmModel)
 
+
+-- Write an SBML file to disk, created from the Fine layer of the DMModel in
+-- question.
+writeSBML :: Path Abs File -> DMModel -> IO ()
+writeSBML _ dmModel = do
+    let sbmlTree = dmModelToSBML dmModel
+--         dir = parent f
+--     sbmlString <- HX.runX $ sbmlTree HX.>>>
+--         (HX.writeDocumentToString [HX.withIndent HX.yes])
+        mName = (modelName . modelMeta . last . modelLayers) dmModel
+        mNameFileN = (T.unpack mName) ++ ".xml"
+        wrappedSBML = (HX.root [] [sbmlTree])
+                            :: HX.IOSLA (HX.XIOState ()) HX.XmlTree HX.XmlTree
+    _ <- HX.runX $ wrappedSBML HX.>>>
+                (HX.writeDocument [HX.withIndent HX.yes] mNameFileN)
+    return ()
+--     sbmlFileName <- (parseRelFile . T.unpack) mName
+--     sbmlFileNameWExt <- addExtension ".xml" sbmlFileName
+--     let sbmlFilePathWExt = dir </> sbmlFileNameWExt
+--     writeFile (toFilePath sbmlFilePathWExt) (head sbmlString)
+    
 
 -- Write TT & BooleanNet files to disk, as extracted from a dmms file, in a
 -- directory with the dmms' name. Also write out the SwitchMappings to the same

@@ -39,6 +39,7 @@ data Procedures = Procedures {
     , suppPDF :: Bool
     , gmlWrite :: Bool
     , ttWrite :: Bool
+    , sbmlWrite :: Bool
     , coordColors :: Bool
     , parseTest :: Bool
     } deriving (Eq, Show)
@@ -147,6 +148,11 @@ procedureParser = Procedure <$> (Procedures
         ( O.long "ttwrite"
        <> O.short 't'
        <> O.help "Whether to write out tt files. "
+        )
+    <*> O.switch
+        ( O.long "sbml"
+       <> O.help "Whether to write out an sbml file that represents the Fine \
+            \ModelLayer of the DMModel of the dmms file. "
         )
     <*> O.switch
         ( O.long "coord_colors"
