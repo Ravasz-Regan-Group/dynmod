@@ -7,6 +7,7 @@ module Types.DMModel
     , ModelMapping
     , Switch
     , Phenotype(..)
+    , PhenotypeError(..)
     , SwitchName
     , PhenotypeName
     , SubSpace
@@ -137,6 +138,7 @@ import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
 import Data.Maybe (fromJust)
 import qualified Data.Bifunctor as BF
+import Data.Containers.ListUtils (nubInt)
 
 -- We need a Hashable version of Colour to put them into HashMaps, but this will
 -- really only work for a Double-esque a in Colour a. I'd rather not use a
@@ -205,17 +207,32 @@ type SwitchName = NodeName
 -- network to that particular subspace of possible states. If a Phenotype is a
 -- loop, then at most one of its SubSpaces may be marked, i.e. it is
 -- mutually satisfiable with at most one point Phenotype in that Switch. 
--- Loop Phenotypes may not share a point Phenotype each other. 
-
+-- Loop Phenotypes may not share a point Phenotype each other. PhenotypeErrors
+-- are arranged in lists of lists, where each list starts with some loop that is
+-- different from the head of the others, and whose subsequent members are
+-- progressively smaller strict subloops, since we do not enforce the rule that
+-- each SubSpace in each PhenotypeError must be mutually unsatisfiable with
+-- every other SubSpace in every other PhenotypeError of a given Phenotype. Thus
+-- , we need to be careful when detecting PhenotypeErrors in a thread, that we
+-- search for the the longest possible loop first, and then move to
+-- progressively smaller incorrect Phenotypes. 
 data Phenotype = Phenotype { phenotypeName :: PhenotypeName
                            , switchNodeState :: NodeState
                            , fingerprint :: [SubSpace]
                            , markedSubSpace :: Maybe SubSpace
+                           , phenotypeErrors :: [[PhenotypeError]]
                            } deriving (Show, Eq, Ord)
 
 type PhenotypeName = T.Text
 type SubSpace = [(NodeName, NodeState)]
 type IntSubSpace = [(NodeIndex, NodeState)]
+
+-- PhenotypeErrors may not be the same as their parent Phenotypes, but they may
+-- longer. They represent possible cellular disfunction. 
+data PhenotypeError = PhError { phErrorName :: PhenotypeName
+                              , phIndex :: Int
+                              , phErrorFingerprint :: [SubSpace]
+                              } deriving (Show, Eq, Ord)
 
 -- These are some intermediary types we need to go from parsing ModelMapping{}
 -- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
@@ -749,14 +766,21 @@ data ModelInvalid =
   | ProfileSwitchNotInModelGraph NodeName
   | MissingPhenotypes (NodeName, [NodeState])
   | ExcessPhenotypes (NodeName, [NodeState])
-  | RepeatedSubSpaceNode (NodeName, NodeName, NodeState, [NodeName])
+  | RepeatedSubSpaceNode (NodeName, PhenotypeName, NodeState, [NodeName])
+  | RepeatedPhErrSubSpaceNode (NodeName, PhenotypeName, Int, [NodeName])
   | SubSpaceIsASubSet (SubSpace, [SubSpace])
   | DuplicatedPhenotypeNames [NodeName]
+  | PhenotypeandPhErrorCyclicPermute (PhenotypeName, [PhenotypeName])
+  | CyclicPermutePhErrorSubSpaces [[PhenotypeName]]
   | PhenotypeReferenceAreCoarse [(PhenotypeName, [T.Text])]
   | PhNegStates (NodeName, [NodeState])
+  | PhErrNegStates (PhenotypeName, [NodeState])
   | PhOutOfOrder (NodeName, [NodeState])
+  | PhErrorOutOfOrder (PhenotypeName, [NodeState])
   | PhMissingOrTooHigh (NodeName, [NodeState])
+  | PhErrMissingOrTooHigh (PhenotypeName, [NodeState])
   | PhDuplicateAssigns (NodeName, [NodeState])
+  | PhErrDuplicateAssigns (NodeName, [Int])
   | SubSpaceNodesNotInSwitch (NodeName, [NodeName])
   | UnknownSubSpaceNode NodeName
   | InvalidSubSpaceNodeValue (NodeName, NodeState)
@@ -1002,35 +1026,71 @@ mappingsMatcher sPrfs (nN, nNs) switches = case L.find ((== nN) . fst) sPrfs of
         
 
 -- Check that the Phenotype state assignments are listed in increasing monotonic
--- order. Also check for negative
+-- order and non-negative. Repeat this for any PhenotypeErrors. 
 phIsMonotonic :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
-phIsMonotonic sProfile
-    | (not . L.null . filter (< 0)) st =
-        Failure [PhNegStates (pName, st)]
-    | L.sort st /= st = Failure [PhOutOfOrder (fst sProfile, st)]
-    | otherwise = Success sProfile
+phIsMonotonic sProfile@(pName, phs)
+    | (not . null . filter (< 0)) sts = Failure [PhNegStates (pName, sts)]
+    | L.sort sts /= sts = Failure [PhOutOfOrder (fst sProfile, sts)]
+    | otherwise = (traverse phErrsAreMonotonic taggedErrs) *> Success sProfile
     where
-        pName = fst sProfile
-        st = (fmap switchNodeState . snd) sProfile
+        taggedErrs = zip (repeat pName) phErrorss
+        phErrorss = phenotypeErrors <$> phs
+        sts = switchNodeState <$> phs
+
+-- Check that the PhenotypeError indices are listed in increasing monotonic
+-- order and non-negative. 
+phErrsAreMonotonic :: (PhenotypeName, [[PhenotypeError]])
+                   -> Validation [ModelInvalid] [[PhenotypeError]]
+phErrsAreMonotonic (phName, phErrss)
+    | (not . null . filter (< 0)) sts = Failure [PhErrNegStates (phName, sts)]
+    | L.sort sts /= sts = Failure [PhErrorOutOfOrder (phName, sts)]
+    | otherwise = Success phErrss
+    where
+        sts = (mconcat . (fmap . fmap) phIndex) phErrss
 
 -- Check that there are no missing (or, equivalently, too high) Phenotype state 
--- assignments. 
+-- assignments. Repeat this for any PhenotypeErrors. 
 phNoMissingOrTooHigh :: SwitchProfile
                      -> Validation [ModelInvalid] SwitchProfile
-phNoMissingOrTooHigh sProfile
-    | (maximum st + 1) == (length cleaned) = Success sProfile
-    | otherwise = Failure [PhMissingOrTooHigh (fst sProfile, st)]
+phNoMissingOrTooHigh sProfile@(pName, phs)
+    | (maximum sts + 1) == (length . nubInt) sts =
+        (traverse phErrNoMissingOrTooHigh taggedErrs) *> Success sProfile
+    | otherwise = Failure [PhMissingOrTooHigh (pName, sts)]
     where
-         cleaned = (L.sort . L.nubOrd) st
-         st = (fmap switchNodeState . snd) sProfile
+        taggedErrs = zip (repeat pName) phErrorss
+        phErrorss = phenotypeErrors <$> phs
+        sts = switchNodeState <$> phs
 
--- Check that there are no duplicate Phenotype state assignments. 
-phNoDupes :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
-phNoDupes sProfile
-    | (length st) == (length $ (L.sort . L.nubOrd) st) = Success sProfile
-    | otherwise = Failure [PhDuplicateAssigns (fst sProfile, st)]
+-- Check that there are no missing (or, equivalently, too high) PhenotypeError 
+-- indices. 
+phErrNoMissingOrTooHigh :: (PhenotypeName, [[PhenotypeError]])
+                        -> Validation [ModelInvalid] [[PhenotypeError]]
+phErrNoMissingOrTooHigh (phName, phErrss)
+    | (maximum sts + 1) == (length . nubInt) sts = Success phErrss
+    | otherwise = Failure [PhErrMissingOrTooHigh (phName, sts)]
     where
-        st = (fmap switchNodeState . snd) sProfile
+        sts = (mconcat . (fmap . fmap) phIndex) phErrss
+
+-- Check that there are no duplicate Phenotype state assignments. Repeat this
+-- for any PhenotypeErrors. 
+phNoDupes :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
+phNoDupes sProfile@(pName, phs)
+    | (length sts) == (length . nubInt) sts =
+        (traverse phErrNoDupes taggedErrs) *> Success sProfile
+    | otherwise = Failure [PhDuplicateAssigns (pName, sts)]
+    where
+        taggedErrs = zip (repeat pName) phErrorss
+        phErrorss = phenotypeErrors <$> phs
+        sts = switchNodeState <$> phs
+
+-- Check that there are no duplicate PhenotypeError assignments. 
+phErrNoDupes :: (PhenotypeName, [[PhenotypeError]])
+             -> Validation [ModelInvalid] [[PhenotypeError]]
+phErrNoDupes (phName, phErrss)
+    | (length sts) == (length . nubInt) sts = Success phErrss
+    | otherwise = Failure [PhErrDuplicateAssigns (phName, sts)]
+    where
+        sts = (mconcat . (fmap . fmap) phIndex) phErrss
 
 -- Check that there are no two SwitchPhenotypes with the same SwitchName. 
 noDupeSwitches :: [SwitchProfile] -> Validation [ModelInvalid] [SwitchProfile]
@@ -1073,33 +1133,51 @@ sStatesCovered mLayer sProfile@(sName, phs) = case L.find isSName nsPairs of
         nsPair n = ( (gNodeName . nodeGate) n
                    , (states . gateAssigns . nodeGate) n)
 
--- Internally to a SubSpace, no node should be repeated
+-- Internally to a SubSpace, no node should be repeated. 
 noSubSpaceRepeatedNodes :: [SwitchProfile]
                         -> Validation [ModelInvalid] [SwitchProfile]
-noSubSpaceRepeatedNodes sProfiles = sequenceA $ go <$> sProfiles
-    where
-        go :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
-        go (sName, phenotypes) = case sequenceA $ go' sName <$> phenotypes of
-            Failure modInvss1 -> Failure modInvss1
-            Success phTss -> Success $ (,) sName (concat phTss)
-            where
-                go' :: NodeName -> Phenotype
-                    -> Validation [ModelInvalid] [Phenotype]
-                go' sN (Phenotype phN snNS sbSps mkd) =
-                    (:[]) <$> ((Phenotype phN snNS) <$> g2Results <*> pure mkd)
-                    where
-                        g2Results :: Validation [ModelInvalid] [SubSpace]
-                        g2Results = sequenceA $ go'' sN phN snNS <$> sbSps
-                        go'' :: NodeName -> NodeName -> NodeState -> SubSpace
-                             -> Validation [ModelInvalid] SubSpace
-                        go'' sN1 phN1 snNS1 sbSps1
-                            | repeatedNNames == [] = Success sbSps1
-                            | otherwise = Failure [RepeatedSubSpaceNode err]
-                            where
-                                repeatedNNames = repeated (fst <$> sbSps1)
-                                err = (sN1, phN1, snNS1, repeatedNNames)
+noSubSpaceRepeatedNodes sProfiles = traverse go sProfiles
+  where
+    go :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
+    go (sName, phenotypes) = case traverse (go' sName) phenotypes of
+      Failure modInvss1 -> Failure modInvss1
+      Success phTss -> Success $ (,) sName (concat phTss)
+      where
+        go' :: NodeName -> Phenotype -> Validation [ModelInvalid] [Phenotype]
+        go' sN ph@(Phenotype phN snNS sbSps _ phErrs) =
+          (traverse (go'' sN phN snNS) sbSps) *>
+          ((traverse . traverse) (noPhErrSSRepdNodes sN) phErrs) *>
+          Success [ph]
+          where
+            go'' :: NodeName -> PhenotypeName -> NodeState -> SubSpace
+                 -> Validation [ModelInvalid] SubSpace
+            go'' sN1 phN1 snNS1 sbSps1
+              | null repeatedNNames = Success sbSps1
+              | otherwise = Failure [RepeatedSubSpaceNode err]
+              where
+                repeatedNNames :: [NodeName]
+                repeatedNNames = repeated (fst <$> sbSps1)
+                err = (sN1, phN1, snNS1, repeatedNNames)
 
--- In the whole of a ModelMapping, no SubSpace should be a subset of any other.
+-- Internally to a SubSpace, no node should be repeated, PhenotypeError check. 
+noPhErrSSRepdNodes :: NodeName -> PhenotypeError
+                   -> Validation [ModelInvalid] PhenotypeError
+noPhErrSSRepdNodes swName phError = 
+    traverse (go phErrI) phErrSbSpcs *> Success phError
+    where
+        phErrI = phIndex phError
+        phErrSbSpcs = phErrorFingerprint phError
+        go :: Int -> SubSpace -> Validation [ModelInvalid] SubSpace
+        go phEI sbSpc
+            | null repeatedNNames = Success sbSpc
+            | otherwise = Failure [RepeatedPhErrSubSpaceNode err]
+            where
+                repeatedNNames :: [NodeName]
+                repeatedNNames = repeated $ fst <$> sbSpc
+                err = (swName, phErrorName phError, phEI, repeatedNNames)
+
+-- In the whole of a ModelMapping, no SubSpace of a Phenotype (as opposed to a 
+-- PhenotypeError) should be a subset of any other.
 noSubSpaceSubSets :: [SwitchProfile]
                   -> Validation [ModelInvalid] [SwitchProfile]
 noSubSpaceSubSets sProfiles =
@@ -1124,7 +1202,7 @@ noSubSpaceSubSets sProfiles =
 -- corresponding DMMSModelMapping? Note that we already know that each Phenotype
 -- and DMMSModelMapping SwitchName had a corresponding DMNode from
 -- allSwitchStatesCovered and coarseNodesMatch, respectively, so we just need to
--- pair them up and check.  
+-- pair them up and check. This includes the SubSpaces of the PhenotypeErrors.
 subSpaceNodesInSwitch :: DMMSModelMapping -> [SwitchProfile]
                       -> Validation [ModelInvalid] [SwitchProfile]
 subSpaceNodesInSwitch dmmsMMap sProfiles =
@@ -1141,17 +1219,23 @@ subSpaceNodesInSwitch' (nName, (dmmsMMFineNNames, phs))
         excessSSNNs = subSpaceNodeNames L.\\ dmmsMMFineNNames
         subSpaceNodeNames = (L.sort . L.nubOrd . fmap fst) subSpacePairs
         subSpacePairs :: [(NodeName, NodeState)]
-        subSpacePairs = mconcat $ concatMap fingerprint phs
+        subSpacePairs = mconcat $ concatMap fingerprint phs <>
+            (concatMap phErrorFingerprint phErrs)
+        phErrs = (mconcat . mconcat . fmap phenotypeErrors) phs
 
 -- Check that each node in each SubSpace has a corresponding DMNode, and that
--- its referenced state exists. 
+-- its referenced state exists. This includes the SubSpaces of the
+-- PhenotypeErrors.
 subSpaceNodeStatesCovered :: ModelLayer -> [SwitchProfile]
                           -> Validation [ModelInvalid] [(NodeName, NodeState)]
 subSpaceNodeStatesCovered fineMLayer sProfiles =
     traverse (subSpaceNodeStatesCovered' fineRanges) subSpacePairs
     where
         fineRanges = layerRanges fineMLayer
-        subSpacePairs = mconcat $ concatMap fingerprint phs
+        subSpacePairs = mconcat $ concatMap fingerprint phs <>
+            (concatMap phErrorFingerprint phErrs)
+        phErrs :: [PhenotypeError]
+        phErrs = (mconcat . mconcat . fmap phenotypeErrors) phs
         phs = concatMap snd sProfiles
 
 subSpaceNodeStatesCovered' :: LayerRange -> (NodeName, NodeState)
@@ -1182,7 +1266,7 @@ wellFormedPh (nName, phs) =
     where
         (pointPhs, loopPhs) = L.partition ((== 1) . L.length . fingerprint) phs
 
--- pointhenotypesAreMutuallyUnSatisfiable
+-- pointPhenotypesAreMutuallyUnSatisfiable
 pointPhsAreMU :: Phenotype -> Phenotype
               -> Validation [ModelInvalid] (Phenotype, Phenotype)
 pointPhsAreMU phX phY
@@ -1349,7 +1433,7 @@ tableToLogical nodes inputRows outputs = collapsedOrs
         inputAssigns = zip inputExprs outputs
 --      Pull the range of possible output states
         possibleOutputStates :: [NodeState]
-        possibleOutputStates = (L.sort . L.nubOrd) outputs
+        possibleOutputStates = (L.sort . nubInt) outputs
 --      Match assignments for a given (s) state
         stateMatch :: NodeState -> (b, NodeState) -> Bool
         stateMatch s = (== s) . snd
@@ -1381,7 +1465,7 @@ tableToLogical nodes inputRows outputs = collapsedOrs
 -- Check that there are no duplicate state assignments. 
 noDupes :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]
 noDupes ns = let st = states ns in 
-             case (length st) == (length $ (L.sort . L.nubOrd) st) of
+             case (length st) == (length . nubInt) st of
                True  -> Success ns
                False -> Failure DuplicateAssigns
 
@@ -1399,7 +1483,7 @@ noMissingOrTooHigh :: [NodeStateAssign]
 noMissingOrTooHigh ns = let st = states ns
 --                          Remove any dupes and any assignments below 1. 
 --                          That kind of error will be dealt with separately. 
-                            clean = (L.sort . L.nubOrd) . (filter (> 0))
+                            clean = (L.sort . nubInt) . (filter (> 0))
                             cleaned = clean st
                         in 
               case maximum st == (length cleaned) of

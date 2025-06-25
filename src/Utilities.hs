@@ -74,7 +74,7 @@ isSubset (x:xs) ys = elem x ys && isSubset xs (L.delete x ys)
 -- Are 2 Lists cyclical permutations of each other?
 areCyclicPermutes :: (Eq a) => [a] -> [a] -> Bool
 areCyclicPermutes xs ys = (length xs == length ys) && (cPerm xs ys)
-    where cPerm bs cs = L.isInfixOf bs  $ cs <> cs
+    where cPerm bs cs = L.isInfixOf bs $ cs <> cs
 
 -- Are 2 Lists the same up to permutations?
 arePermutes :: (Eq a) => [a] ->[a] -> Bool

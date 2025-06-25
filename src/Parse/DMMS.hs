@@ -281,13 +281,100 @@ switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
             <*> toPermutation (some (try phenotypeParse))
 
 phenotypeParse :: Parser Phenotype
-phenotypeParse = do
+phenotypeParse =   barePhParse
+--               <|> (wrappedPhParse >>= errorPhcheck)
+
+barePhParse :: Parser Phenotype
+barePhParse = do
     phName <- variable
     void colon
     switchState <- integer
     void stateAssign
     phFingerprint <- fingerPrintParse
-    return $ Phenotype phName switchState phFingerprint Nothing
+    return $ Phenotype phName switchState phFingerprint Nothing []
+
+wrappedPhParse :: Parser Phenotype
+wrappedPhParse = between (symbol "Phenotype{") (symbol "Phenotype}") $ do
+    mainPh <- barePhParse
+    errorPhs <- some errorPhParse
+    void $ errorPhcheck (mainPh {phenotypeErrors = [errorPhs]})
+    return $ mainPh {phenotypeErrors = sortPhErrors errorPhs}
+
+errorPhParse :: Parser PhenotypeError
+errorPhParse = do
+    phEName <- variable
+    void colon
+    void (symbol "E")
+    phErrorIndex <- integer
+    void stateAssign
+    phErrFingerprint <- fingerPrintParse
+    return $ PhError phEName phErrorIndex phErrFingerprint
+
+-- Rearrange a [PhenotypeError] into a [[PhenotypeError]], where each element is
+-- a list of PhenotypeErrors that are strict subloops of the preceding
+-- PhenotypeError in that list. This is so that, if a Phenotype does not match
+-- on a Thread, and we go to match on its PhenotypeErrors, we search fro the
+-- longest possible error first. We already know that none of the PhenotypeError
+-- subspaces are cyclial permutations of each other, from errorPhcheck. Not that
+-- the rational of slowGroupBySS applies here as well. 
+sortPhErrors :: [PhenotypeError] -> [[PhenotypeError]]
+sortPhErrors phErrs = threadSubloops groupedPhErrs
+    where
+        groupedPhErrs = (reverse . L.groupBy lGrF . L.sortOn phErrFpL) phErrs
+        lGrF x y = phErrFpL x ==  phErrFpL y
+        phErrFpL = length . phErrorFingerprint
+
+-- We know that none of the [PhenotypeError] are empty, because we have already
+-- grouped them by size.
+threadSubloops :: [[PhenotypeError]] -> [[PhenotypeError]]
+threadSubloops = undefined
+-- threadSubloops [] = []
+-- threadSubloops [phErrs] = [phErrs]
+-- threadSubloops (phErrs:smallerPhErrs:phErrss) =
+--     threadSubloops $ (go phErrs smallerPhErrs) : phErrss
+--     where
+--         go [] phErrsSmall = phErrsSmall
+--         go [phErrBig] phErrsSmall = (phErrBig:subloops) <> notSubloops
+--         (subloops, notSubloops) = L.partition 
+
+-- Check that no PhenotypeErrors are isomorphic up to permutation to their
+-- parent Phenotype, or each other. 
+errorPhcheck :: Phenotype -> Parser Phenotype
+errorPhcheck phs
+    | (not . null) dupofPhPhErrs = fail $ show $
+        PhenotypeandPhErrorCyclicPermute (phName, fst <$> dupofPhPhErrs)
+    | (not . null) (head <$> dupePhErrGroups) = fail $ show $ 
+        CyclicPermutePhErrorSubSpaces $ phErrorName <<$>> dupePhErrGroups
+    | otherwise  = return phs
+    where
+        dupePhErrGroups = (filter ((>1) . length) . slowGroupBySS . mconcat)
+            phErrs
+        areSSIsomorphic phErr1 phErr2 = areCyclicPermutes fPrint1 fPrint2
+            where
+                fPrint1 = phErrorFingerprint phErr1
+                fPrint2 = phErrorFingerprint phErr2
+--        Put areCyclicPermutes in dupofPhPhErrs as well
+        dupofPhPhErrs = filter ((areCyclicPermutes phfPrint) . snd)
+            ((concatMap . fmap) phErrPairF phErrs)
+        phErrPairF phErr = (phErrorName phErr, phErrorFingerprint phErr)
+        phErrs = phenotypeErrors phs
+        phName = phenotypeName phs
+        phfPrint = fingerprint phs
+
+-- We use this because I do not want to re-order the SubSpaces by "smallest"
+-- element, and because the numberof PhenotypeErrors in any given phenotype is
+-- unlikely to ever exceed 10, much less 100. Thus an O(n^2) check of cyclic
+-- permutivity for each PhonotypeError against every other is not a deal-breaker
+-- . -- Pete Regan, June 25, 2025
+slowGroupBySS :: [PhenotypeError] -> [[PhenotypeError]] 
+slowGroupBySS [] = []
+slowGroupBySS (phErr:phErrs) = (phErr : cp) : slowGroupBySS notCp
+    where
+        (cp, notCp) = L.partition (checkSSCP phErr) phErrs
+        checkSSCP phErrX phErrY = areCyclicPermutes fPrintX fPrintY
+            where
+                fPrintX = phErrorFingerprint phErrX
+                fPrintY = phErrorFingerprint phErrY
 
 -- Note that you may not write to an element of a SubSpace without a state, even
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 

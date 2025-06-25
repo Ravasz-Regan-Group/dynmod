@@ -52,6 +52,7 @@
 		<string>WildTypeVsMutant</string>
 		<string>ValuesOnHeatMap</string>
 		<string>ScanNodes</string>
+		<string>ScanName</string>
 	</array>
 	<key>BBLMLanguageCode</key>
 	<string>VEX</string>
