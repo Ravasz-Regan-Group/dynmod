@@ -17,6 +17,7 @@ import Diagrams.Backend.Cairo
 import Graphics.Rendering.Chart hiding (scale)
 import Graphics.Rendering.Chart.Backend.Diagrams
 import qualified Graphics.SVGFonts as F
+import qualified Data.Bimap as BM
 import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
@@ -28,11 +29,12 @@ import GHC.IO (unsafePerformIO)
 -- Make a bar chart with average of the selected DMNodes during each pulse, plus
 -- an error bar with the standard deviation.
 nBChartDia :: ColorMap
+           -> LayerNameIndexBimap
            -> TCExpMeta
            -> AvgBChartNodes
            -> [B.Vector (RealNodeState, StdDev)]
            -> Diagram B
-nBChartDia cMap exMeta bCHNodeNs pulseStats = fig
+nBChartDia cMap lniBMap exMeta bCHNodeNs pulseStats = fig
     where
         fig = (fst . runBackendR dEnv . toRenderable) layout
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
@@ -69,8 +71,11 @@ nBChartDia cMap exMeta bCHNodeNs pulseStats = fig
         plotValues = addIndexes transposedAvgs
         xAxisNs = T.unpack <$> bCHNodeNs
         transposedAvgs = L.transpose avgs
-        (avgs, _ {-stdDevs-}) =
-            (isoBimap (fmap B.toList) . L.unzip . fmap B.unzip) pulseStats
+        (avgs, _ {-stdDevs-}) = (isoBimap (fmap B.toList) . L.unzip .
+            fmap B.unzip) selectedPulseStats
+--         Select just the DMNodes we want charts for. 
+        selectedPulseStats = flip B.backpermute bcNodeIndicesVec <$> pulseStats
+        bcNodeIndicesVec = B.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = L.reverse $ (opaque . (cMap M.!)) <$> bCHNodeNs
 
 phBChartDia :: ColorMap

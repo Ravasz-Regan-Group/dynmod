@@ -1034,7 +1034,7 @@ phIsMonotonic sProfile@(pName, phs)
     | otherwise = (traverse phErrsAreMonotonic taggedErrs) *> Success sProfile
     where
         taggedErrs = zip (repeat pName) phErrorss
-        phErrorss = phenotypeErrors <$> phs
+        phErrorss = filter (not . null) $ phenotypeErrors <$> phs
         sts = switchNodeState <$> phs
 
 -- Check that the PhenotypeError indices are listed in increasing monotonic
@@ -1058,7 +1058,7 @@ phNoMissingOrTooHigh sProfile@(pName, phs)
     | otherwise = Failure [PhMissingOrTooHigh (pName, sts)]
     where
         taggedErrs = zip (repeat pName) phErrorss
-        phErrorss = phenotypeErrors <$> phs
+        phErrorss = filter (not . null) $ phenotypeErrors <$> phs
         sts = switchNodeState <$> phs
 
 -- Check that there are no missing (or, equivalently, too high) PhenotypeError 
@@ -1080,7 +1080,7 @@ phNoDupes sProfile@(pName, phs)
     | otherwise = Failure [PhDuplicateAssigns (pName, sts)]
     where
         taggedErrs = zip (repeat pName) phErrorss
-        phErrorss = phenotypeErrors <$> phs
+        phErrorss = filter (not . null) $ phenotypeErrors <$> phs
         sts = switchNodeState <$> phs
 
 -- Check that there are no duplicate PhenotypeError assignments. 

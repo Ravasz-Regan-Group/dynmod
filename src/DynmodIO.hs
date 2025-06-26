@@ -877,7 +877,8 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
             nmdVF = (fmap . BF.first) (lniBMap BM.!>) . zip [0..] . B.toList
             namedPulseVecs = (fmap . fmap . fmap) nmdVF statRepRVecs
             formattedData = ((xMarkTxt <>) . renderNBCData) <$> namedPulseVecs
-            nBChartFigs = nBChartDia cMap expMeta bCHNodeNs <<$>> statRepRs
+            nBChartFigs =
+                nBChartDia cMap lniBMap expMeta bCHNodeNs <<$>> statRepRs
             mergedNBChartFigs = (vsep 5.0) <$> nBChartFigs
             numFigs = length mergedNBChartFigs
             dataFileNStrs = (((T.unpack expName <> "_") <>) . show) <$>
