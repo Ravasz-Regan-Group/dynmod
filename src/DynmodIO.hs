@@ -881,8 +881,8 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
                 nBChartDia cMap lniBMap expMeta bCHNodeNs <<$>> statRepRs
             mergedNBChartFigs = (vsep 5.0) <$> nBChartFigs
             numFigs = length mergedNBChartFigs
-            dataFileNStrs = (((T.unpack expName <> "_") <>) . show) <$>
-                    [1..numFigs]
+            fileTag = T.unpack $ "bc" <> bcPatterns <> "_" <> expName <> "_"
+            dataFileNStrs = ((fileTag <>) . show) <$> [1..numFigs]
         dirNBCH <- parseRelDir "NodeBCh"
         ensureDir (figDir </> dirNBCH)
         dataFileNames <- mapM parseRelFile dataFileNStrs
@@ -918,8 +918,8 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
             phBChartFgs :: [Diagram B]
             phBChartFgs = ((vsep 5.0) . fmap (uncurry phBCF)) <$> pulseStatRepRs
             numFigs = length phBChartFgs
-            dataFileNStrs = (((T.unpack expName <> "_") <>) . show)
-                    <$> [1..numFigs]
+            fileTag = T.unpack $ "bc" <> bcPatterns <> "_" <> expName <> "_"
+            dataFileNStrs = ((fileTag <>) . show) <$> [1..numFigs]
         dirPHBCH <- parseRelDir "PhBCh" 
         ensureDir (figDir </> dirPHBCH)
         dataFileNames <- mapM parseRelFile dataFileNStrs
