@@ -262,10 +262,10 @@ instance TextShow BarcodeFilter where
         showbList flts
     showb (OnlyBarCodesWithAll flts) = showbLitString "OnlyBarCodesWithAll" <>
         showbList flts
-    showb (ExcludeBarCodesWithAny flts) = showbLitString "ExcludeBarCodesWithAny" <>
-        showbList flts
-    showb (ExcludeBarCodesWithAll flts) = showbLitString "ExcludeBarCodesWithAll" <>
-        showbList flts
+    showb (ExcludeBarCodesWithAny flts) =
+        showbLitString "ExcludeBarCodesWithAny" <> showbList flts
+    showb (ExcludeBarCodesWithAll flts) =
+        showbLitString "ExcludeBarCodesWithAll" <> showbList flts
 
 -- Does an attractor exist at a particular point in the space of environmental
 -- inputs?

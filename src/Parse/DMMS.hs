@@ -297,8 +297,10 @@ wrappedPhParse :: Parser Phenotype
 wrappedPhParse = between (symbol "Phenotype{") (symbol "Phenotype}") $ do
     mainPh <- barePhParse
     errorPhs <- some errorPhParse
-    void $ errorPhcheck (mainPh {phenotypeErrors = [errorPhs]})
-    return $ mainPh {phenotypeErrors = sortPhErrors errorPhs}
+    void $ errorPhcheck (mainPh {phenotypeErrors = errorPhs})
+    let phErrFpL = length . phErrorFingerprint
+        sortedPhErrors = (reverse . L.sortOn phErrFpL) errorPhs
+    return $ mainPh {phenotypeErrors = sortedPhErrors}
 
 errorPhParse :: Parser PhenotypeError
 errorPhParse = do
@@ -310,60 +312,34 @@ errorPhParse = do
     phErrFingerprint <- fingerPrintParse
     return $ PhError phEName phErrorIndex phErrFingerprint
 
--- Rearrange a [PhenotypeError] into a [[PhenotypeError]], where each element is
--- a list of PhenotypeErrors that are strict subloops of the preceding
--- PhenotypeError in that list. This is so that, if a Phenotype does not match
--- on a Thread, and we go to match on its PhenotypeErrors, we search fro the
--- longest possible error first. We already know that none of the PhenotypeError
--- subspaces are cyclial permutations of each other, from errorPhcheck. Not that
--- the rational of slowGroupBySS applies here as well. 
-sortPhErrors :: [PhenotypeError] -> [[PhenotypeError]]
-sortPhErrors [] = []
-sortPhErrors [phErrs] = [[phErrs]]
-sortPhErrors phErrss = L.foldl' threadSubloops acc (tail groupedPhErrs)
-    where
-        acc = (fmap pure . head) groupedPhErrs
-        groupedPhErrs = (reverse . L.groupBy lGrF . L.sortOn phErrFpL) phErrss
-        lGrF x y = phErrFpL x ==  phErrFpL y
-        phErrFpL = length . phErrorFingerprint
-
--- We know that none of the [PhenotypeError] are empty, because we have already
--- grouped them by size.
-threadSubloops :: [[PhenotypeError]] -> [PhenotypeError] -> [[PhenotypeError]]
-threadSubloops = undefined
--- threadSubloops subLoopLists smallerPhErrs =
---     fst $ foldl' threadSubloop ([], smallerPhErrs) subLoopLists
--- 
--- threadSubloop :: ([[PhenotypeError]], [PhenotypeError])
---               -> [PhenotypeError]
---               -> ([[PhenotypeError]], [PhenotypeError])
--- threadSubloop (acc, smallerPhErrs) subLoopList =
---     where
---         = L.partition (isSuperloop (last subLoopList) )
-
 -- Check that no PhenotypeErrors are isomorphic up to permutation to their
 -- parent Phenotype, or each other. 
 errorPhcheck :: Phenotype -> Parser Phenotype
 errorPhcheck phs
+    | (not . null) differentStartingSSs = fail $ show $
+        PhErrorsStartDifferentlyFromPh (phName, fst <$> phErrSSStarts)
     | (not . null) dupofPhPhErrs = fail $ show $
         PhenotypeandPhErrorCyclicPermute (phName, fst <$> dupofPhPhErrs)
     | (not . null) (head <$> dupePhErrGroups) = fail $ show $ 
         CyclicPermutePhErrorSubSpaces $ phErrorName <<$>> dupePhErrGroups
     | otherwise  = return phs
     where
-        dupePhErrGroups = (filter ((>1) . length) . slowGroupBySS . mconcat)
-            phErrs
+        dupePhErrGroups = (filter ((>1) . length) . slowGroupBySS) phErrs
         areSSIsomorphic phErr1 phErr2 = areCyclicPermutes fPrint1 fPrint2
             where
                 fPrint1 = phErrorFingerprint phErr1
                 fPrint2 = phErrorFingerprint phErr2
---        Put areCyclicPermutes in dupofPhPhErrs as well
-        dupofPhPhErrs = filter ((areCyclicPermutes phfPrint) . snd)
-            ((concatMap . fmap) phErrPairF phErrs)
+        dupofPhPhErrs = filter ((areCyclicPermutes phFPrint) . snd) phErrPairs
+        differentStartingSSs = filter ((phSSStart ==) . snd) phErrSSStarts
+        phErrSSStarts :: [(PhenotypeName, SubSpace)]
+        phErrSSStarts = head <<$>> phErrPairs
+        phSSStart = head phFPrint
+        phErrPairs :: [(PhenotypeName, [SubSpace])]
+        phErrPairs = phErrPairF <$> phErrs
         phErrPairF phErr = (phErrorName phErr, phErrorFingerprint phErr)
         phErrs = phenotypeErrors phs
         phName = phenotypeName phs
-        phfPrint = fingerprint phs
+        phFPrint = fingerprint phs
 
 -- We use this because I do not want to re-order the SubSpaces by "smallest"
 -- element, and because the numberof PhenotypeErrors in any given phenotype is
