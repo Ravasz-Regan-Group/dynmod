@@ -127,7 +127,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Instances()
 import qualified Data.Text as T
 import TextShow
-import TextShow.Data.Char (showbString, showbChar)
+import TextShow.Data.Char (showbLitString, showbChar)
 import TextShow.Data.UnorderedContainers()
 import TextShow.Data.Vector()
 import qualified Data.Graph.Inductive as Gr
@@ -397,37 +397,37 @@ instance Texy NodeType where
                             = (footnotesize . fromLaTeX . TeXRaw) "SLig"
 
 instance TextShow NodeType where
-    showb Undefined_NT = showbString "Undefined_NT"
-    showb Cell = showbString "Cell"
-    showb DM_Switch = showbString "DM_Switch"
-    showb Connector = showbString "Connector"
-    showb Environment = showbString "Undefined_NT"
-    showb Process = showbString "Process"
-    showb Macro_Structure = showbString "Macro_Structure"
-    showb Metabolite = showbString "Metabolite"
-    showb MRNA = showbString "MRNA"
-    showb MicroRNA = showbString "MicroRNA"
-    showb Protein_Complex = showbString "Protein_Complex"
-    showb Receptor = showbString "Receptor"
-    showb Adaptor_Protein = showbString "Adaptor_Protein"
-    showb Secreted_Protein = showbString "Secreted_Protein"
-    showb TF_Protein = showbString "TF_Protein"
-    showb Kinase = showbString "Kinase"
-    showb Phosphatase = showbString "Phosphatase"
-    showb Ubiquitin_Ligase = showbString "Ubiquitin_Ligase"
-    showb Protease = showbString "Protease"
-    showb DNase = showbString "DNase"
-    showb CAM = showbString "CAM"
-    showb CDK = showbString "CDK"
-    showb CDKI = showbString "CDKI"
-    showb GEF = showbString "GEF"
-    showb GAP = showbString "GAP"
-    showb GTPase = showbString "GTPase"
-    showb Enzyme = showbString "Enzyme"
-    showb Protein = showbString "Protein"
-    showb Membrane_Potential = showbString "Membrane_Potential"
-    showb LncRNA = showbString "LncRNA"
-    showb Cell_Surgace_Ligand = showbString "Cell_Surgace_Ligand"
+    showb Undefined_NT = showbLitString "Undefined_NT"
+    showb Cell = showbLitString "Cell"
+    showb DM_Switch = showbLitString "DM_Switch"
+    showb Connector = showbLitString "Connector"
+    showb Environment = showbLitString "Undefined_NT"
+    showb Process = showbLitString "Process"
+    showb Macro_Structure = showbLitString "Macro_Structure"
+    showb Metabolite = showbLitString "Metabolite"
+    showb MRNA = showbLitString "MRNA"
+    showb MicroRNA = showbLitString "MicroRNA"
+    showb Protein_Complex = showbLitString "Protein_Complex"
+    showb Receptor = showbLitString "Receptor"
+    showb Adaptor_Protein = showbLitString "Adaptor_Protein"
+    showb Secreted_Protein = showbLitString "Secreted_Protein"
+    showb TF_Protein = showbLitString "TF_Protein"
+    showb Kinase = showbLitString "Kinase"
+    showb Phosphatase = showbLitString "Phosphatase"
+    showb Ubiquitin_Ligase = showbLitString "Ubiquitin_Ligase"
+    showb Protease = showbLitString "Protease"
+    showb DNase = showbLitString "DNase"
+    showb CAM = showbLitString "CAM"
+    showb CDK = showbLitString "CDK"
+    showb CDKI = showbLitString "CDKI"
+    showb GEF = showbLitString "GEF"
+    showb GAP = showbLitString "GAP"
+    showb GTPase = showbLitString "GTPase"
+    showb Enzyme = showbLitString "Enzyme"
+    showb Protein = showbLitString "Protein"
+    showb Membrane_Potential = showbLitString "Membrane_Potential"
+    showb LncRNA = showbLitString "LncRNA"
+    showb Cell_Surgace_Ligand = showbLitString "Cell_Surgace_Ligand"
 
 data LinkEffect = Undefined_LE
                 | Activation
@@ -446,11 +446,11 @@ instance Texy LinkEffect where
     texy Inapt = math $ commS "perp"
 
 instance TextShow LinkEffect where
-    showb Undefined_LE = showbString "Undefined_LE"
-    showb Activation = showbString "Activation"
-    showb Repression = showbString "Repression"
-    showb Context_Dependent = showbString "Context_Dependent"
-    showb Inapt = showbString "Inapt"
+    showb Undefined_LE = showbLitString "Undefined_LE"
+    showb Activation = showbLitString "Activation"
+    showb Repression = showbLitString "Repression"
+    showb Context_Dependent = showbLitString "Context_Dependent"
+    showb Inapt = showbLitString "Inapt"
 
 data LinkType =   Undefined_LT
                 | Enforced_Env
@@ -520,37 +520,37 @@ instance Texy LinkType where
     texy Hydroxylation        = (footnotesize . fromLaTeX . TeXRaw) "-OH"
 
 instance TextShow LinkType where
-    showb Undefined_LT = showbString "Undefined_LT"
-    showb Enforced_Env = showbString "Enforced_Env"
-    showb Indirect = showbString "Indirect"
-    showb Complex_Process = showbString "Complex_Process"
-    showb Persistence = showbString "Persistence"
-    showb Transcription = showbString "Transcription"
-    showb Translation = showbString "Translation"
-    showb Ligand_Binding = showbString "Ligand_Binding"
-    showb Complex_Formation = showbString "Complex_Formation"
-    showb Inhibitory_Binding = showbString "Inhibitory_Binding"
-    showb Localization = showbString "Localization"
-    showb Binding_Localization = showbString "Binding_Localization"
-    showb Protective_Binding = showbString "Protective_Binding"
-    showb Unbinding = showbString "Unbinding"
-    showb Phosphorylation = showbString "Phosphorylation"
-    showb Dephosphorylation = showbString "Dephosphorylation"
+    showb Undefined_LT = showbLitString "Undefined_LT"
+    showb Enforced_Env = showbLitString "Enforced_Env"
+    showb Indirect = showbLitString "Indirect"
+    showb Complex_Process = showbLitString "Complex_Process"
+    showb Persistence = showbLitString "Persistence"
+    showb Transcription = showbLitString "Transcription"
+    showb Translation = showbLitString "Translation"
+    showb Ligand_Binding = showbLitString "Ligand_Binding"
+    showb Complex_Formation = showbLitString "Complex_Formation"
+    showb Inhibitory_Binding = showbLitString "Inhibitory_Binding"
+    showb Localization = showbLitString "Localization"
+    showb Binding_Localization = showbLitString "Binding_Localization"
+    showb Protective_Binding = showbLitString "Protective_Binding"
+    showb Unbinding = showbLitString "Unbinding"
+    showb Phosphorylation = showbLitString "Phosphorylation"
+    showb Dephosphorylation = showbLitString "Dephosphorylation"
     showb Phosphorylation_Localization =
-        showbString "Phosphorylation_Localization"
-    showb Ubiquitination = showbString "Ubiquitination"
-    showb Degradation = showbString "Degradation"
-    showb GEF_Activity = showbString "GEF_Activity"
-    showb GAP_Activity = showbString "GAP_Activity"
-    showb Proteolysis = showbString "Proteolysis"
-    showb Catalysis = showbString "Catalysis"
-    showb Epigenetic = showbString "Epigenetic"
-    showb Transcription_Conflict = showbString "Transcription_Conflict"
-    showb Secretion = showbString "Secretion"
-    showb RNAi = showbString "RNAi"
-    showb Acetylation = showbString "Acetylation"
-    showb Deacetylation = showbString "Deacetylation"
-    showb Hydroxylation = showbString "Hydroxylation"
+        showbLitString "Phosphorylation_Localization"
+    showb Ubiquitination = showbLitString "Ubiquitination"
+    showb Degradation = showbLitString "Degradation"
+    showb GEF_Activity = showbLitString "GEF_Activity"
+    showb GAP_Activity = showbLitString "GAP_Activity"
+    showb Proteolysis = showbLitString "Proteolysis"
+    showb Catalysis = showbLitString "Catalysis"
+    showb Epigenetic = showbLitString "Epigenetic"
+    showb Transcription_Conflict = showbLitString "Transcription_Conflict"
+    showb Secretion = showbLitString "Secretion"
+    showb RNAi = showbLitString "RNAi"
+    showb Acetylation = showbLitString "Acetylation"
+    showb Deacetylation = showbLitString "Deacetylation"
+    showb Hydroxylation = showbLitString "Hydroxylation"
 
 type EntrezGeneID = Int
 type NodeName = T.Text
@@ -647,11 +647,11 @@ instance Show NodeExpr where
 instance TextShow NodeExpr where
     showb (GateLit b) = showb b
     showb (GateConst n s) = showb n <> showbChar ':' <> showb s
-    showb (Not expr) = showbString "not " <> showb expr
+    showb (Not expr) = showbLitString "not " <> showb expr
     showb (Binary And expr1 expr2) =
-        showb expr1 <> showbString " and " <> showb expr2
+        showb expr1 <> showbLitString " and " <> showb expr2
     showb (Binary Or expr1 expr2) =
-        showb expr1 <> showbString " or " <> showb expr2
+        showb expr1 <> showbLitString " or " <> showb expr2
     showb (Pars expr) = showbChar '(' <> showb expr <> showbChar ')'
 
 data BinOp
@@ -815,24 +815,24 @@ data GateInvalid = InconsistentNames
     deriving (Show, Eq)
 
 instance TextShow GateInvalid where
-    showb InconsistentNames = showbString "InconsistentNames"
-    showb DuplicateAssigns = showbString "DuplicateAssigns"
-    showb ZeroAssigned = showbString "ZeroAssigned"
+    showb InconsistentNames = showbLitString "InconsistentNames"
+    showb DuplicateAssigns = showbLitString "DuplicateAssigns"
+    showb ZeroAssigned = showbLitString "ZeroAssigned"
     showb (MissingOrTooHigh nSts) =
-        showbString "MissingOrTooHigh" <> showbSpace <> showbList nSts
-    showb OutOfOrder = showbString "OutOfOrder"
-    showb EmptyGate = showbString "EmptyGate"
+        showbLitString "MissingOrTooHigh" <> showbSpace <> showbList nSts
+    showb OutOfOrder = showbLitString "OutOfOrder"
+    showb EmptyGate = showbLitString "EmptyGate"
     showb (ContradictoryExprSet ceSet) =
-        showbString "ContradictoryExprSet" <> showbSpace <> showb ceSet
+        showbLitString "ContradictoryExprSet" <> showbSpace <> showb ceSet
     showb (TableExprInNodeMismatch nNames) =
-        showbString "TableExprInNodeMismatch" <> showbSpace <> showbList nNames
+        showbLitString "TableExprInNodeMismatch" <> showbSpace <> showbList nNames
     showb (TableExprStateMismatch mMatchT) =
-        showbString "TableExprStateMismatch" <> showbSpace <> showb mMatchT
+        showbLitString "TableExprStateMismatch" <> showbSpace <> showb mMatchT
     showb (TableExprOutputMismatch mMatch) =
-        showbString "TableExprOutputMismatch" <> showbSpace <> showb mMatch
-    showb (TableDisNameMismatch mMatch) = showbString "TableDisNameMismatch" <>
+        showbLitString "TableExprOutputMismatch" <> showbSpace <> showb mMatch
+    showb (TableDisNameMismatch mMatch) = showbLitString "TableDisNameMismatch" <>
         showbSpace <> showb mMatch
-    showb (TruthTableIncomplete ttInc) = showbString "TruthTableIncomplete" <>
+    showb (TruthTableIncomplete ttInc) = showbLitString "TruthTableIncomplete" <>
         showbSpace <> showb ttInc
 
 -- If there are internal contradictions in a gate, this provides the relevant

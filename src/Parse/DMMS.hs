@@ -282,7 +282,7 @@ switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
 
 phenotypeParse :: Parser Phenotype
 phenotypeParse =   barePhParse
---               <|> (wrappedPhParse >>= errorPhcheck)
+              <|> (wrappedPhParse >>= errorPhcheck)
 
 barePhParse :: Parser Phenotype
 barePhParse = do
@@ -318,24 +318,28 @@ errorPhParse = do
 -- subspaces are cyclial permutations of each other, from errorPhcheck. Not that
 -- the rational of slowGroupBySS applies here as well. 
 sortPhErrors :: [PhenotypeError] -> [[PhenotypeError]]
-sortPhErrors phErrs = threadSubloops groupedPhErrs
+sortPhErrors [] = []
+sortPhErrors [phErrs] = [[phErrs]]
+sortPhErrors phErrss = L.foldl' threadSubloops acc (tail groupedPhErrs)
     where
-        groupedPhErrs = (reverse . L.groupBy lGrF . L.sortOn phErrFpL) phErrs
+        acc = (fmap pure . head) groupedPhErrs
+        groupedPhErrs = (reverse . L.groupBy lGrF . L.sortOn phErrFpL) phErrss
         lGrF x y = phErrFpL x ==  phErrFpL y
         phErrFpL = length . phErrorFingerprint
 
 -- We know that none of the [PhenotypeError] are empty, because we have already
 -- grouped them by size.
-threadSubloops :: [[PhenotypeError]] -> [[PhenotypeError]]
+threadSubloops :: [[PhenotypeError]] -> [PhenotypeError] -> [[PhenotypeError]]
 threadSubloops = undefined
--- threadSubloops [] = []
--- threadSubloops [phErrs] = [phErrs]
--- threadSubloops (phErrs:smallerPhErrs:phErrss) =
---     threadSubloops $ (go phErrs smallerPhErrs) : phErrss
+-- threadSubloops subLoopLists smallerPhErrs =
+--     fst $ foldl' threadSubloop ([], smallerPhErrs) subLoopLists
+-- 
+-- threadSubloop :: ([[PhenotypeError]], [PhenotypeError])
+--               -> [PhenotypeError]
+--               -> ([[PhenotypeError]], [PhenotypeError])
+-- threadSubloop (acc, smallerPhErrs) subLoopList =
 --     where
---         go [] phErrsSmall = phErrsSmall
---         go [phErrBig] phErrsSmall = (phErrBig:subloops) <> notSubloops
---         (subloops, notSubloops) = L.partition 
+--         = L.partition (isSuperloop (last subLoopList) )
 
 -- Check that no PhenotypeErrors are isomorphic up to permutation to their
 -- parent Phenotype, or each other. 

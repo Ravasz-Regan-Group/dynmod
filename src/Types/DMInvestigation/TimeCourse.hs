@@ -11,7 +11,7 @@ import Data.Validation
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import TextShow
-import TextShow.Data.Char (showbString)
+import TextShow.Data.Char (showbLitString)
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import qualified Data.HashMap.Strict as M
@@ -55,10 +55,10 @@ data TCExpKind = P1
                deriving (Eq, Show)
 
 instance TextShow TCExpKind where
-    showb P1 = showbString "P1"
-    showb KDOE = showbString "KDOE"
-    showb KDOEAtTr = showbString "KDOEAtTr"
-    showb GenExp = showbString "GenExp"
+    showb P1 = showbLitString "P1"
+    showb KDOE = showbLitString "KDOE"
+    showb KDOEAtTr = showbLitString "KDOEAtTr"
+    showb GenExp = showbLitString "GenExp"
 
 data InputPulse = InputPulse { realInputCoord :: RealInputCoord
                              , intNodeAlterations :: [IntNodeAlteration]
@@ -105,9 +105,9 @@ data ExpStepperKind = SynchronousDeterministic
                     deriving (Eq, Show, Ord)
 
 instance TextShow ExpStepperKind where
-    showb SynchronousDeterministic = showbString "SynchronousDeterministic"
-    showb SynchronousNoisy = showbString "SynchronousNoisy"
-    showb AsynchronousDeterministic = showbString "AsynchronousDeterministic"
+    showb SynchronousDeterministic = showbLitString "SynchronousDeterministic"
+    showb SynchronousNoisy = showbLitString "SynchronousNoisy"
+    showb AsynchronousDeterministic = showbLitString "AsynchronousDeterministic"
 
 -- The inner run of stepping through the network should be fast-ish, so looking
 -- up the NodeIndex each time for node alterations is a bad idea. 

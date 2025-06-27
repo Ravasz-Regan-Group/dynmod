@@ -48,7 +48,7 @@ import Types.Simulation
 import Utilities
 import qualified Data.Text as T
 import TextShow
-import TextShow.Data.Char (showbString, showbChar)
+import TextShow.Data.Char (showbLitString, showbChar)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as HS
 import qualified Data.Bimap as BM
@@ -102,8 +102,8 @@ data NudgeDirection = NudgeUp
                     deriving (Eq, Show, Ord, Enum)
 
 instance TextShow NudgeDirection where
-    showb NudgeUp = showbString "NudgeUp"
-    showb NudgeDown = showbString "NudgeDown"
+    showb NudgeUp = showbLitString "NudgeUp"
+    showb NudgeDown = showbLitString "NudgeDown"
 
 type LockProbability = Probability
 -- NudgeDirection is its own sum type, but we need nudging to be fast-ish
@@ -121,8 +121,8 @@ instance Functor GeneralDuration where
     fmap f (UserD x) = UserD $ f x
 
 instance (TextShow a) => TextShow (GeneralDuration a) where
-    showb (DefaultD x) = showbString "DefaultD" <> showbSpace <> showb x
-    showb (UserD x) = showbString "UserD" <> showbSpace <> showb x
+    showb (DefaultD x) = showbLitString "DefaultD" <> showbSpace <> showb x
+    showb (UserD x) = showbLitString "UserD" <> showbSpace <> showb x
 
 -- DefaultD is a default duration, and may be altered by the length of the
 -- Attractor that the pulse starts in. UserD is specified by the user, and may
@@ -217,10 +217,10 @@ data Slice = Match AttractorSize AttractorMatchIndices PhenotypeName
            deriving (Eq, Show, Generic)
 instance Hashable Slice
 instance TextShow Slice where
-    showb (Match attSize attMatchIndices phName) = showbString "Match " <>
+    showb (Match attSize attMatchIndices phName) = showbLitString "Match " <>
         showb attSize <> showbChar ' ' <> showb attMatchIndices <>
         showbChar ' ' <> showb phName
-    showb (Miss attSize) = showbString "Miss " <> showb attSize
+    showb (Miss attSize) = showbLitString "Miss " <> showb attSize
 
 type AttractorSize = Int
 type AttractorMatchIndices = [[Int]]
@@ -258,13 +258,13 @@ data BarcodeFilter =
       deriving (Eq, Show, Ord)
 
 instance TextShow BarcodeFilter where
-    showb (OnlyBarCodesWithAny flts) = showbString "OnlyBarCodesWithAny" <>
+    showb (OnlyBarCodesWithAny flts) = showbLitString "OnlyBarCodesWithAny" <>
         showbList flts
-    showb (OnlyBarCodesWithAll flts) = showbString "OnlyBarCodesWithAll" <>
+    showb (OnlyBarCodesWithAll flts) = showbLitString "OnlyBarCodesWithAll" <>
         showbList flts
-    showb (ExcludeBarCodesWithAny flts) = showbString "ExcludeBarCodesWithAny" <>
+    showb (ExcludeBarCodesWithAny flts) = showbLitString "ExcludeBarCodesWithAny" <>
         showbList flts
-    showb (ExcludeBarCodesWithAll flts) = showbString "ExcludeBarCodesWithAll" <>
+    showb (ExcludeBarCodesWithAll flts) = showbLitString "ExcludeBarCodesWithAll" <>
         showbList flts
 
 -- Does an attractor exist at a particular point in the space of environmental

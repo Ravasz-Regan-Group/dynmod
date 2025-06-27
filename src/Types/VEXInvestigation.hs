@@ -7,7 +7,7 @@ import Types.DMModel
 import Types.Simulation
 import qualified Data.Text as T
 import TextShow
-import TextShow.Data.Char (showbString)
+import TextShow.Data.Char (showbLitString)
 import Types.Figures
 
 -- Parsed types from VEX files, before validation with a parsed DMMS file.
@@ -154,8 +154,8 @@ data XAxis = EnvX
             deriving (Eq, Show)
 
 instance TextShow XAxis where
-    showb EnvX = showbString "EnvX"
-    showb KDOEX = showbString "KDOEX"
+    showb EnvX = showbLitString "EnvX"
+    showb KDOEX = showbLitString "KDOEX"
 
 
 data EnvScan =
@@ -428,9 +428,9 @@ data ExperimentStep = SynchronousExpStepper
                     deriving (Eq, Show, Ord)
 
 instance TextShow ExperimentStep where
-    showb SynchronousExpStepper = showbString "SynchronousExpStepper"
-    showb (NoisyExpStepper prob) = showbString "NoisyExpStepper " <> showb prob
-    showb AsynchronousExpStepper = showbString "AsynchronousExpStepper"
+    showb SynchronousExpStepper = showbLitString "SynchronousExpStepper"
+    showb (NoisyExpStepper prob) = showbLitString "NoisyExpStepper " <> showb prob
+    showb AsynchronousExpStepper = showbLitString "AsynchronousExpStepper"
 
 type ExperimentReps = Int
 
