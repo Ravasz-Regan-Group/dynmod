@@ -229,10 +229,12 @@ type IntSubSpace = [(NodeIndex, NodeState)]
 
 -- PhenotypeErrors may not be the same as their parent Phenotypes, but they may
 -- longer. They represent possible cellular disfunction. 
-data PhenotypeError = PhError { phErrorName :: PhenotypeName
+data PhenotypeError = PhError { phErrorName :: PhenotypeErrorName
                               , phIndex :: Int
                               , phErrorFingerprint :: [SubSpace]
                               } deriving (Show, Eq, Ord)
+
+type PhenotypeErrorName = PhenotypeName
 
 -- These are some intermediary types we need to go from parsing ModelMapping{}
 -- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
@@ -770,10 +772,10 @@ data ModelInvalid =
   | RepeatedPhErrSubSpaceNode (NodeName, PhenotypeName, Int, [NodeName])
   | SubSpaceIsASubSet (SubSpace, [SubSpace])
   | DuplicatedPhenotypeNames [NodeName]
-  | PhErrorsStartDifferentlyFromPh (PhenotypeName, [PhenotypeName])
-  | PhenotypeandPhErrorCyclicPermute (PhenotypeName, [PhenotypeName])
-  | CyclicPermutePhErrorSubSpaces [[PhenotypeName]]
-  | PhenotypeReferenceAreCoarse [(PhenotypeName, [T.Text])]
+  | PhErrorsOutOfSizeOrder PhenotypeName
+  | PhErrorsTooLong (PhenotypeName, [PhenotypeName])
+  | NonSubLoopPhErrors (PhenotypeName, [PhenotypeName])
+  | PointPhErrorsInALoopPh [PhenotypeName]
   | PhNegStates (NodeName, [NodeState])
   | PhErrNegStates (PhenotypeName, [NodeState])
   | PhOutOfOrder (NodeName, [NodeState])
@@ -1032,7 +1034,7 @@ mappingsMatcher sPrfs (nN, nNs) switches = case L.find ((== nN) . fst) sPrfs of
 phIsMonotonic :: SwitchProfile -> Validation [ModelInvalid] SwitchProfile
 phIsMonotonic sProfile@(pName, phs)
     | (not . null . filter (< 0)) sts = Failure [PhNegStates (pName, sts)]
-    | L.sort sts /= sts = Failure [PhOutOfOrder (fst sProfile, sts)]
+    | (not . isIncreasing) sts = Failure [PhOutOfOrder (fst sProfile, sts)]
     | otherwise = (traverse phErrsAreMonotonic taggedErrs) *> Success sProfile
     where
         taggedErrs = zip (repeat pName) phErrorss
@@ -1045,10 +1047,9 @@ phErrsAreMonotonic :: (PhenotypeName, [PhenotypeError])
                    -> Validation [ModelInvalid] [PhenotypeError]
 phErrsAreMonotonic (phName, phErrs)
     | (not . null . filter (< 0)) sts = Failure [PhErrNegStates (phName, sts)]
-    | L.sort sts /= sts = Failure [PhErrorOutOfOrder (phName, sts)]
+    | (not . isIncreasing) sts = Failure [PhErrorOutOfOrder (phName, sts)]
     | otherwise = Success phErrs
-    where
-        sts = phIndex <$> phErrs
+    where sts = phIndex <$> phErrs
 
 -- Check that there are no missing (or, equivalently, too high) Phenotype state 
 -- assignments. Repeat this for any PhenotypeErrors. 
@@ -1179,7 +1180,9 @@ noPhErrSSRepdNodes swName phError =
                 err = (swName, phErrorName phError, phEI, repeatedNNames)
 
 -- In the whole of a ModelMapping, no SubSpace of a Phenotype (as opposed to a 
--- PhenotypeError) should be a subset of any other.
+-- PhenotypeError) should be a subset of any other. Point Phenotypes may contain
+-- ErrorPhenotypes are not simply shorter versions of themselves. These
+-- PhenotypeErrors must not be a subset of any other. 
 noSubSpaceSubSets :: [SwitchProfile]
                   -> Validation [ModelInvalid] [SwitchProfile]
 noSubSpaceSubSets sProfiles =
@@ -1197,8 +1200,12 @@ noSubSpaceSubSets sProfiles =
                     where
                         supersets = Set.toList <$>
                                 (filter (Set.isSubsetOf sSSet) remainingHS)
-        subSpaceSets = Set.fromList <$> subSpaces
-        subSpaces = concatMap fingerprint (concatMap snd sProfiles)
+        subSpaceSets = Set.fromList <$> (subSpaces <> pointPhErrFPs)
+        pointPhErrFPs = concatMap phErrorFingerprint pointPhErrors
+        pointPhErrors = concatMap phenotypeErrors pointPhs
+        pointPhs = filter ((== 1) . length . fingerprint) phs
+        subSpaces = concatMap fingerprint phs
+        phs = concatMap snd sProfiles
 
 -- Do the NodeNames in the SubSpaces of a SwitchProfile occur in the
 -- corresponding DMMSModelMapping? Note that we already know that each Phenotype
@@ -1387,7 +1394,7 @@ stateAssignsOK assigns
         n = length ns'
         allGood ns = [1..n] == ns
         zeroth = (0, Not $ foldr1 (Binary Or) (snd <$> assigns))
-        testResults = [ isMonotonic assigns
+        testResults = [ areAssignsMonotonic assigns
                       , noMissingOrTooHigh assigns
                       , noZeros assigns
                       , noDupes assigns
@@ -1492,11 +1499,11 @@ noMissingOrTooHigh ns = let st = states ns
                 False -> Failure $ MissingOrTooHigh cleaned
                 
 -- Check that the state assignments are listed in increasing monotonic order. 
-isMonotonic :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]    
-isMonotonic ns = let st = states ns in 
-              case L.sort st == st of
-                True  -> Success ns
-                False -> Failure OutOfOrder
+areAssignsMonotonic :: [NodeStateAssign]
+                    -> Validation GateInvalid [NodeStateAssign]    
+areAssignsMonotonic ns
+    | (isIncreasing . states) ns = Success ns
+    | otherwise = Failure OutOfOrder
 
 -- Check that no two state assignments are ever both True under the same inputs.
 isConsistent :: [NodeStateAssign] -> Validation GateInvalid [NodeStateAssign]

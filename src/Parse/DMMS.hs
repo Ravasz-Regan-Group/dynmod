@@ -312,49 +312,43 @@ errorPhParse = do
     phErrFingerprint <- fingerPrintParse
     return $ PhError phEName phErrorIndex phErrFingerprint
 
--- Check that no PhenotypeErrors are isomorphic up to permutation to their
--- parent Phenotype, or each other. 
+-- Check that each PhenotypeError starts with the same SubSpace as the parent
+-- Phenotype, and is the same except that the loop is shorter. Each subsequent
+-- PhenotypeError must be shorter than the previous.
 errorPhcheck :: Phenotype -> Parser Phenotype
-errorPhcheck phs
-    | (not . null) differentStartingSSs = fail $ show $
-        PhErrorsStartDifferentlyFromPh (phName, fst <$> phErrSSStarts)
-    | (not . null) dupofPhPhErrs = fail $ show $
-        PhenotypeandPhErrorCyclicPermute (phName, fst <$> dupofPhPhErrs)
-    | (not . null) (head <$> dupePhErrGroups) = fail $ show $ 
-        CyclicPermutePhErrorSubSpaces $ phErrorName <<$>> dupePhErrGroups
-    | otherwise  = return phs
-    where
-        dupePhErrGroups = (filter ((>1) . length) . slowGroupBySS) phErrs
-        areSSIsomorphic phErr1 phErr2 = areCyclicPermutes fPrint1 fPrint2
-            where
-                fPrint1 = phErrorFingerprint phErr1
-                fPrint2 = phErrorFingerprint phErr2
-        dupofPhPhErrs = filter ((areCyclicPermutes phFPrint) . snd) phErrPairs
-        differentStartingSSs = filter ((phSSStart ==) . snd) phErrSSStarts
-        phErrSSStarts :: [(PhenotypeName, SubSpace)]
-        phErrSSStarts = head <<$>> phErrPairs
-        phSSStart = head phFPrint
-        phErrPairs :: [(PhenotypeName, [SubSpace])]
-        phErrPairs = phErrPairF <$> phErrs
-        phErrPairF phErr = (phErrorName phErr, phErrorFingerprint phErr)
-        phErrs = phenotypeErrors phs
-        phName = phenotypeName phs
-        phFPrint = fingerprint phs
+errorPhcheck phs = case (length . fingerprint) phs of
+-- We need to check point PhenotypeErrors against the Subspaces of all other
+-- Phenotypes, so we will check that later. 
+    1 -> return phs
+    _
+        | (not . isIncreasing) phErrLengths -> fail $ show $
+            PhErrorsOutOfSizeOrder phName
+        | (not . null) tooLongPhErrors -> fail $ show $
+            PhErrorsTooLong (phName, phErrorName <$> tooLongPhErrors)
+        | (not . null) nonSubLoops -> fail $ show $
+            NonSubLoopPhErrors (phName, nonSubLoops)
+        | (not . null) pointErrorPhs -> fail $ show $
+            PointPhErrorsInALoopPh pointErrorPhs
+        | otherwise -> return phs
+        where
+            pointErrorPhs = (fmap phErrorName . filter pointFilterF) phErrs
+            pointFilterF phErr = (length . phErrorFingerprint) phErr == 1
+            nonSubLoops = mapMaybe (phErrSubloopCheck phFPrint) phErrs
+            tooLongPhErrors = filter (bigErrFF (length phFPrint)) phErrs
+            bigErrFF :: Int -> PhenotypeError -> Bool
+            bigErrFF i phErr = i <= (length . phErrorFingerprint) phErr
+            phErrLengths = (length . phErrorFingerprint) <$> phErrs
+            phErrs = phenotypeErrors phs
+            phName = phenotypeName phs
+            phFPrint = fingerprint phs
 
--- We use this because I do not want to re-order the SubSpaces by "smallest"
--- element, and because the numberof PhenotypeErrors in any given phenotype is
--- unlikely to ever exceed 10, much less 100. Thus an O(n^2) check of cyclic
--- permutivity for each PhonotypeError against every other is not a deal-breaker
--- . -- Pete Regan, June 25, 2025
-slowGroupBySS :: [PhenotypeError] -> [[PhenotypeError]] 
-slowGroupBySS [] = []
-slowGroupBySS (phErr:phErrs) = (phErr : cp) : slowGroupBySS notCp
+phErrSubloopCheck :: [SubSpace] -> PhenotypeError -> Maybe PhenotypeName
+phErrSubloopCheck fPrint phErr
+    | all pairEq fPrintPairs = Nothing
+    | otherwise = Just $ phErrorName phErr
     where
-        (cp, notCp) = L.partition (checkSSCP phErr) phErrs
-        checkSSCP phErrX phErrY = areCyclicPermutes fPrintX fPrintY
-            where
-                fPrintX = phErrorFingerprint phErrX
-                fPrintY = phErrorFingerprint phErrY
+        pairEq (x,y) = x == y
+        fPrintPairs = zip fPrint $ phErrorFingerprint phErr
 
 -- Note that you may not write to an element of a SubSpace without a state, even
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 

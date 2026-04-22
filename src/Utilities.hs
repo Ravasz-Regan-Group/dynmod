@@ -58,6 +58,12 @@ areStrictlyIncreasing (x:y:ys) = case (x, y) of
     (t, u) -> isStrictlyIncreasing t && isStrictlyIncreasing u &&
               maximum t < minimum u && areStrictlyIncreasing (u:ys)
 
+-- Are the elements in a list increasing?
+isIncreasing :: (Ord a) => [a] -> Bool
+isIncreasing [] = True
+isIncreasing [_] = True
+isIncreasing (x:y:ys) = x <= y && isIncreasing (y:ys)
+
 -- Are the elements in the List increasing one-by-one, according to their Ord
 -- instance?
 -- isStepIncreasing :: (Ord a, Enum a) => [a] -> Bool

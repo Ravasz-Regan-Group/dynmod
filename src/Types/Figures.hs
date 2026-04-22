@@ -59,7 +59,7 @@ import qualified Data.List.Extra as L
 import qualified Data.Colour as C
 import GHC.Generics (Generic)
 import Data.Maybe (fromJust, mapMaybe, fromMaybe)
-import Data.Ix (range)
+import Data.Ix (range, inRange)
 import qualified Data.Bifunctor as BF
 
 -- Basic types to support all types of figures.
@@ -139,7 +139,6 @@ type PulseSpacing = (Int, RealInputCoord, [NodeAlteration])
 -- slices of a timeline, of the form (a, b) | b >= a >= 0
 type ThreadSlice = (Int, Int)
 
-
 mkColorMap :: DMModel -> ColorMap
 mkColorMap dmm = M.fromList nameColorPairs
     where
@@ -205,14 +204,15 @@ instance Hashable Bar
 -- whose SubSpaces match out of order, or none of whose SubSpaces match at all,
 -- is a Miss. 
 data BarKind = FullMiss BarHeight
-             | MatchBar [Slice]
-                        LocalColor
+             | MatchBar [Slice] LocalColor
              deriving (Eq, Show, Generic)
 instance Hashable BarKind
 
 type BarHeight = Int
 
-data Slice = Match AttractorSize AttractorMatchIndices PhenotypeName
+data Slice = Match AttractorSize
+                   AttractorMatchIndices
+                   PhenotypeName
            | Miss AttractorSize
            deriving (Eq, Show, Generic)
 instance Hashable Slice
@@ -223,7 +223,9 @@ instance TextShow Slice where
     showb (Miss attSize) = showbLitString "Miss " <> showb attSize
 
 type AttractorSize = Int
-type AttractorMatchIndices = [[Int]]
+type AttractorMatchIndices = [(PhenotypeName, [Int], Maybe ErrorLength)]
+-- If the match is a PhenotypeError, this is its length. 
+type ErrorLength = Int
 
 -- The 1-5 Environments that will form the axes of environmental diagrams,
 -- possibly in an order specified in an ISFSpec, any remaining inputs fixed to
@@ -301,11 +303,15 @@ mkBar lniBMap att sColor (sName, phs)
     | L.all L.null matchTHSlicess = BR (FullMiss swSize) attSize sName phNames
     | otherwise = BR (MatchBar slices sColor) attSize sName phNames
     where
-        slices = (uncurry (mkSlice attSize)) <$> (zip phNames matchTHSlicess)
-        matchTHSlicess = phMatch 0 lniBMap att <$> orderedPHs 
+        slices = (uncurry (mkSlice attSize phErrMap)) <$> 
+            (zip phNames matchTHSlicess)
+        matchTHSlicess = wholePhMatch lniBMap att <$> orderedPHs 
 --      We order the Phenotypes by switchNodeState descending so that the Bar
 --      will have the 0 state at the bottom, rather than the top. 
         phNames = phenotypeName <$> orderedPHs
+        phErrMap :: M.HashMap PhenotypeName ErrorLength
+        phErrMap = M.fromList $ (builderF . phenotypeErrors) <$> phs
+        builderF phE = (phErrorName phE, (length . phErrorFingerprint) phE)
         orderedPHs = (L.reverse . L.sortOn switchNodeState) phs
         attSize = L.length att
         swSize = L.length orderedPHs
@@ -361,11 +367,19 @@ barPhenotype br = case barKind br of
                     | attSize ==  (sum . fmap length) attMatchess -> Just phName
                     | otherwise -> bestS
 
-mkSlice :: AttractorSize -> PhenotypeName -> [ThreadSlice] -> Slice
-mkSlice attSize _ [] = Miss attSize
-mkSlice attSize phName thSlices = Match attSize (range <$> thSlices) phName
+mkSlice :: AttractorSize
+        -> M.HashMap PhenotypeName ErrorLength
+        -> PhenotypeName
+        -> [(PhenotypeName, [ThreadSlice])]
+        -> Slice
+mkSlice attSize _ _ [] = Miss attSize
+mkSlice attSize phErrMap phName phSlices = Match attSize attMIndicies phName
+    where
+        attMIndicies = 
+            Match attSize (range <$> thSlices) phName (phErrMap M.!? phName)
 
--- Mark where on a Thread the Phenotypes of its ModelMapping match.
+-- Mark where on a Thread the Phenotypes (and their PhenotypeErrors) of its
+-- ModelMapping match.
 phenotypeMatch :: LayerNameIndexBimap
                -> [Phenotype]
                -> Thread
@@ -388,75 +402,92 @@ phenotypeMatch lniBMap phs thread = B.generate (B.length thread) lookuper
                             -> Int
                             -> M.HashMap Int [PhenotypeName]
                         itg aM j = M.insertWith (<>) j [phName] aM
-        phSlices = zip phNames $ phMatch 0 lniBMap thread <$> phs
-        phNames = phenotypeName <$> phs
+        phSlices = concatMap (wholePhMatch lniBMap thread) phs
 
--- Find the places a Phenotype is present in a Thread.
-phMatch :: Int -> LayerNameIndexBimap -> Thread -> Phenotype -> [ThreadSlice]
-phMatch offSet lniBMap thread ph
-  | fPrintSize > thSize = []
-  | otherwise = case phMatchReorder intPh thread of
-    Nothing -> []
-    Just ordIntPh
-      | not $ areStrictlyIncreasing preppedMatches -> []
-      | any (== []) preppedMatches -> []
-      | otherwise -> case mIntNoRepeatSS of
-        Just intNoRepeatSS
-          | nRSSIndex == 0 -> (mkRange preppedTFMs):extraSlices
-          | nRSSIndex == ((L.length matches) - 1) ->
-            (mkRange preppedTLMs):extraLSlices
-          | otherwise -> case (length . fst . (matches L.!!)) nRSSIndex of
-            1 -> (mkRange preppedMatches):extraSlices
-            _ -> []
-          where
-            nRSSIndex = fromJust (L.findIndex ((==intNoRepeatSS) . snd) matches)
-        Nothing -> (mkRange preppedMatches):extraSlices
-        where
-          preppedTFMs = fst <$> trimmedFMatches
-          trimmedFMatches = trimmedFHead:(tail matches)
-          trimmedFHead :: ([Int], IntSubSpace)
-          trimmedFHead = (BF.first ((:[]) . last) . head) matches
-          extraLSlices
-            | B.null dpLThread = []
-            | otherwise = phMatch newOffset lniBMap dpLThread ph
+-- Find the places a Phenotype, or its associated PhenotypeErrors, is present in
+-- a Thread. Note that a Phenotype or PhenotypeError MUST start at its first
+-- state to match, we may not treat it as a generic loop, even for Phenotypes,
+-- like circadian rhythms, that do cycle endlessly. 
+wholePhMatch :: LayerNameIndexBimap
+             -> Thread
+             -> Phenotype
+             -> [(PhenotypeName, [ThreadSlice])]
+wholePhMatch lniBMap thread ph = snd $ mapAccumL [] phMapAccF phData
+    where 
+        phMapAccF :: [ThreadSlice]
+                  -> (PhenotypeName, (Maybe SubSpace, [SubSpace]))
+                  -> ([ThreadSlice], [(PhenotypeName, [ThreadSlice])])
+        phMapAccF excludedSlices (phName, phDt) = (newExcluded, newPhData)
             where
-                newOffset = trimmedLMatchesSize + offSet
-                dpLThread = B.drop trimmedLMatchesSize thread
-          preppedTLMs = fst <$> trimmedLMatches
-          trimmedLMatchesSize = lmIndexF trimmedLMatches
-          trimmedLMatches = (init matches) `L.snoc` trimmedLLast
-          trimmedLLast :: ([Int], IntSubSpace)
-          trimmedLLast = (BF.first ((:[]) . head) . last) matches
-          extraSlices
+                newPhData = (phName, newThSlcs)
+                newExcluded = newThSlcs <> excludedSlices
+                newThSlcs = uncurry phMatchF phDt
+                phMatchF = phMatch 0 excludedSlices lniBMap thread
+        phData = realPhData:phErrData
+        phErrData = phErrDataF <$> phErrs
+        phErrDataF phE = (phErrorName phE, (Nothing, phErrorFingerprint phE))
+        realPhData = (phenotypeName ph, (markedSubSpace ph, fingerprint))
+        phErrs = phenotypeErrors ph
+
+-- Find the places a particular fingerprint is present in a Thread. Note that a
+-- fingerprint MUST start at its first state to match, we may not treat it as a
+-- generic loop, even for Phenotypes, like circadian rhythms, that do cycle 
+-- endlessly. 
+phMatch :: Int
+        -> [ThreadSlice]
+        -> LayerNameIndexBimap
+        -> Thread
+        -> Maybe SubSpace
+        -> [SubSpace]
+        -> [ThreadSlice]
+phMatch offSet excludedSlices lniBMap thread mMarkedSS fPrint
+    | fPrintSize > thSize = []
+    | (not . areStrictlyIncreasing) preppedMatches = []
+    | any (== []) preppedMatches = []
+    | otherwise = case mIntNoRepeatSS of
+        Just intNoRepeatSS
+            | nRSSIndex == 0 -> (mkRange preppedTFMs):extraSlices
+            | nRSSIndex == ((L.length matches) - 1) ->
+                (mkRange preppedTLMs):extraLSlices
+            | otherwise -> case (length . fst . (matches L.!!)) nRSSIndex of
+                1 -> (mkRange preppedMatches):extraSlices
+                _ -> []
+            where
+                extraLSlices
+                    | B.null dpLThread = []
+                    | otherwise = phMatch newOffset lniBMap dpLThread ph
+                    where
+                        newOffset = trimmedLMatchesSize + offSet
+                        dpLThread = B.drop trimmedLMatchesSize thread
+                preppedTLMs = fst <$> trimmedLMatches
+                trimmedLMatchesSize = lmIndexF trimmedLMatches
+                trimmedLMatches = (init matches) `L.snoc` trimmedLLast
+                trimmedLLast :: ([Int], IntSubSpace)
+                trimmedLLast = (BF.first ((:[]) . head) . last) matches
+                nRSSIndex =
+                    fromJust (L.findIndex ((==intNoRepeatSS) . snd) matches)
+        Nothing -> (mkRange preppedMatches):extraSlices
+    where
+        preppedTFMs = fst <$> trimmedFMatches
+        trimmedFMatches = trimmedFHead:(tail matches)
+        trimmedFHead :: ([Int], IntSubSpace)
+        trimmedFHead = (BF.first ((:[]) . last) . head) matches
+        extraSlices
             | B.null dpThread = []
             | otherwise = phMatch newOffSet lniBMap dpThread ph
             where
                 newOffSet = lmIndexF matches + offSet
                 dpThread = B.drop (lmIndexF matches) thread
-          lmIndexF :: [([Int], IntSubSpace)] -> Int
-          lmIndexF = ((+1) . last . fst . last) 
-          preppedMatches = fst <$> matches
-          matches = (matchLocation thread) <$> ordIntPh
-          mkRange zs = ( offSet + (minimum . head) zs
+        lmIndexF :: [([Int], IntSubSpace)] -> Int
+        lmIndexF = ((+1) . last . fst . last) 
+        mIntNoRepeatSS = toIntSubSpace <$> mMarkedSS
+        preppedMatches = fst <$> matches
+        matches = (matchLocation thread excludedSlices) <$> intPh
+        mkRange zs = ( offSet + (minimum . head) zs
                        , offSet + (maximum . last) zs)
-  where
-    mIntNoRepeatSS :: Maybe IntSubSpace
-    mIntNoRepeatSS = (fmap toIntSubSpace . markedSubSpace) ph
-    intPh = toIntSubSpace <$> fPrint
-    toIntSubSpace = fmap (BF.first (lniBMap BM.!))
-    (thSize, fPrintSize) = (B.length thread, L.length fPrint)
-    fPrint = fingerprint ph
-
--- Do any of the Int-converted SubSpaces in the Phenotype match to any
--- state in the timeline? If so, reorder the Phenotype at the first Phenotype
--- SubSpace that matches any Attractor state and return it. 
-phMatchReorder :: [IntSubSpace] -> Thread -> Maybe [IntSubSpace]
-phMatchReorder intPh thread = breakF <$> (B.findIndex (isAttMatch intPh) thread)
-    where
-        breakF i = mergeTuple $ L.break (isSSMatch (thread B.! i)) intPh
-        isAttMatch :: [IntSubSpace] -> LayerVec -> Bool
-        isAttMatch iph lVec = any (isSSMatch lVec) iph
-        mergeTuple (x, y) = y <> x
+        intPh = toIntSubSpace <$> fPrint
+        toIntSubSpace = fmap (BF.first (lniBMap BM.!))
+        (thSize, fPrintSize) = (B.length thread, L.length fPrint)
 
 -- Do the states in the Int-converted Subspace match the equivalent states in
 -- the LayerVec?
@@ -468,16 +499,25 @@ isSSMatch lV sS = all (isStateMatch lV) sS
 -- Find the location of the first places in the Thread, if any, that the Int-
 -- converted SubSpace matches. Repeats are permitted at this step, so we return
 -- a (possibly empty) list of succesive Ints. 
-matchLocation :: Thread -> IntSubSpace -> ([Int], IntSubSpace)
-matchLocation thread sS = case B.findIndex (flip isSSMatch sS) thread of
+matchLocation :: Thread -> [ThreadSlice] -> IntSubSpace -> ([Int], IntSubSpace)
+matchLocation thread excludedSlices sS =
+    case B.findIndex (flip isSSMatch sS) thread of
     Nothing -> ([], sS)
-    Just firstMatchI -> (unfolderF firstMatchI, sS)
-    where
-        unfolderF i = i : L.unfoldr unF (i + 1)
-        unF j
-            | j >= B.length thread = Nothing 
-            | isSSMatch (thread B.! j) sS = Just (j, j + 1)
-            | otherwise = Nothing
+    Just firstMatchI -> (filter filterF thMatches, sS)
+        where
+            filterF = not . isSliceExcluded excludedSlices
+            thMatches = unfolderF firstMatchI
+            unfolderF i = i : L.unfoldr unF (i + 1)
+            unF j
+                | j >= B.length thread = Nothing 
+                | isSSMatch (thread B.! j) sS = Just (j, j + 1)
+                | otherwise = Nothing
+
+-- Is the position an element of the excluded Threadslices?
+isSliceExcluded :: Int -> [ThreadSlice] -> Bool
+isSliceExcluded excludedSlices phStartIndex =
+    any (flip inRange phStartIndex) excludedSlices
+
 
 -- We need this in Figures.TimeCourse and Figures.BarCharts. 
 -- Strip out unchanging inputs from a PulseSpacing series, and prep those inputs
