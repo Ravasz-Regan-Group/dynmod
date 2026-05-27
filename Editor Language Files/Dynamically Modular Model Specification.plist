@@ -1,6 +1,6 @@
-<?xml version=“1.0” encoding=“UTF-8”?>
-<!DOCTYPE plist PUBLIC “-//Apple//DTD PLIST 1.0//EN” “https://www.apple.com/DTDs/PropertyList-1.0.dtd”>
-<plist version=“1.0”>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <dict>
 	<key>BBEditDocumentType</key>
 	<string>CodelessLanguageModule</string>
@@ -74,6 +74,10 @@
 		<string>CitationDictionary</string>
 		<string>BibTeXRecord</string>
 	</array>
+	<key>BBLMScansFunctions</key>
+	<string>YES</string>
+	<key>BBLMPreferredFilenameExtension</key>
+	<string>dmms</string>
 	<key>Language Features</key>
 	<dict>
 		<key>Identifier and Keyword Character Class</key>
@@ -103,7 +107,6 @@
 		<string>\</string>
 		<key>End-of-line Ends Strings 2</key> <true/>
 	</dict>
-	
 </dict>
 </plist>
 
