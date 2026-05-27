@@ -28,7 +28,7 @@ under the Language/User Defined Language tab.
 1. Set up **Terminal** open Terminal and check that it is running z-shell
 (top of the window includes -zsh); if not change your shell with the command:
     ```
-    chsh -s /bin/zsh
+    chsh -s /bin/zsh
     ```
 2. Install **Xcode** developer tools with: 
     ```
@@ -58,12 +58,12 @@ dynmod).
         reserved for the system." Click: Use "." 
     - Install the pdf-making packages dynmod needs by running:
         ```
-        brew install cairo pkg-config pango
+        brew install cairo pkg-config pango
         ```
 4. Install **stack** (which will manage downloading the Haskell compiler and
 other associated programs) by running:
     ```
-    curl -sSL https://get.haskellstack.org/ | sh
+    curl -sSL https://get.haskellstack.org/ | sh
     ```
 5. Open your .zshrc file with BBedit (use Options -> Show hidden items) and add:
     ```zsh
@@ -140,7 +140,7 @@ command is found, the output will contain useful command hints):
     GitHub:
         ```
         cd YOUR_FILE_PATH
-        stack exec –- git clone https://github.com/Ravasz-Regan-Group/dynmod
+        stack exec -- git clone https://github.com/Ravasz-Regan-Group/dynmod
         ```
 7. Install dynmod:
     - Close and restart the command prompt. 
