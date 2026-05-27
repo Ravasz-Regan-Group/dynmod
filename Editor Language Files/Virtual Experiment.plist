@@ -4,6 +4,17 @@
 <dict>
 	<key>BBEditDocumentType</key>
 	<string>CodelessLanguageModule</string>
+	<key>BBLMLanguageDisplayName</key>
+	<string>Virtual Experiment File</string>
+	<key>BBLMLanguageCode</key>
+	<string>VEX</string>
+	<key>BBLMSuffixMap</key>
+	<array>
+		<dict>
+			<key>BBLMLanguageSuffix</key>
+			<string>.vex</string>
+		</dict>
+	</array>
 	<key>BBLMColorsSyntax</key>
 	<true/>
 	<key>BBLMCommentLineDefault</key>
@@ -13,6 +24,8 @@
 	<key>BBLMCommentSuffixDefault</key>
 	<string>*/</string>
 	<key>BBLMIsCaseSensitive</key>
+	<true/>
+	<key>BBLMSupportsTextCompletion</key>
 	<true/>
 	<key>BBLMKeywordList</key>
 	<array>
@@ -54,10 +67,6 @@
 		<string>ScanNodes</string>
 		<string>ScanName</string>
 	</array>
-	<key>BBLMLanguageCode</key>
-	<string>VEX</string>
-	<key>BBLMLanguageDisplayName</key>
-	<string>Virtual Experiment</string>
 	<key>BBLMPredefinedNameList</key>
 	<array>
 		<string>LayerParameters</string>
@@ -76,19 +85,6 @@
 		<string>TwoDEnvScan</string>
 		<string>ThreeDEnvScan</string>
 	</array>
-	<key>BBLMPreferredFilenameExtension</key>
-	<string>vex</string>
-	<key>BBLMScansFunctions</key>
-	<string>YES</string>
-	<key>BBLMSuffixMap</key>
-	<array>
-		<dict>
-			<key>BBLMLanguageSuffix</key>
-			<string>.vex</string>
-		</dict>
-	</array>
-	<key>BBLMSupportsTextCompletion</key>
-	<true/>
 	<key>Language Features</key>
 	<dict>
 		<key>Close Statement Blocks</key>
