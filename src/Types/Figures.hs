@@ -56,13 +56,14 @@ import qualified Data.Vector as B
 import qualified Data.Vector.Unboxed as U
 import Data.Hashable
 import qualified Data.List.Extra as L
+import qualified Data.List.NonEmpty as NL
 import qualified Data.Colour as C
 import GHC.Generics (Generic)
 import Data.Maybe (fromJust, mapMaybe, fromMaybe)
 import Data.Ix (range, inRange)
 import qualified Data.Bifunctor as BF
 
--- Basic types to support all types of figures.
+-- Basic types to support all manner of figures.
 
 type SVGText = T.Text
 type ColorMap = M.HashMap NodeName LocalColor
@@ -223,8 +224,9 @@ instance TextShow Slice where
     showb (Miss attSize) = showbLitString "Miss " <> showb attSize
 
 type AttractorSize = Int
-type AttractorMatchIndices = [(PhenotypeName, [Int], Maybe ErrorLength)]
--- If the match is a PhenotypeError, this is its length. 
+type AttractorMatchIndices = NL.NonEmpty
+    [(PhenotypeName, [Int], Maybe (PHEIndex, ErrorLength))]
+-- If the match is a PhenotypeError, include its error index and length
 type ErrorLength = Int
 
 -- The 1-5 Environments that will form the axes of environmental diagrams,
@@ -310,8 +312,10 @@ mkBar lniBMap att sColor (sName, phs)
 --      will have the 0 state at the bottom, rather than the top. 
         phNames = phenotypeName <$> orderedPHs
         phErrMap :: M.HashMap PhenotypeName ErrorLength
-        phErrMap = M.fromList $ (builderF . phenotypeErrors) <$> phs
-        builderF phE = (phErrorName phE, (length . phErrorFingerprint) phE)
+        phErrMap = M.fromList $ builderF <$> phErrors
+        phErrors = concatMap phenotypeErrors phs
+        builderF phE = (phErrorName phE, phEData)
+            where phEData = (phIndex phE, length . phErrorFingerprint phE)
         orderedPHs = (L.reverse . L.sortOn switchNodeState) phs
         attSize = L.length att
         swSize = L.length orderedPHs
@@ -367,16 +371,18 @@ barPhenotype br = case barKind br of
                     | attSize ==  (sum . fmap length) attMatchess -> Just phName
                     | otherwise -> bestS
 
+
 mkSlice :: AttractorSize
         -> M.HashMap PhenotypeName ErrorLength
         -> PhenotypeName
         -> [(PhenotypeName, [ThreadSlice])]
         -> Slice
 mkSlice attSize _ _ [] = Miss attSize
-mkSlice attSize phErrMap phName phSlices = Match attSize attMIndicies phName
+mkSlice attSize phErrMap phName phSlicess = Match attSize attMIndicies phName
     where
-        attMIndicies = 
-            Match attSize (range <$> thSlices) phName (phErrMap M.!? phName)
+        attMIndicies = (NL.fromList . fmap attMIndexF) phSlicess
+        attMIndexF (phN, phSlices) =
+            (phN, range <$> phSlices, phErrMap M.!? phName)
 
 -- Mark where on a Thread the Phenotypes (and their PhenotypeErrors) of its
 -- ModelMapping match.
@@ -412,21 +418,21 @@ wholePhMatch :: LayerNameIndexBimap
              -> Thread
              -> Phenotype
              -> [(PhenotypeName, [ThreadSlice])]
-wholePhMatch lniBMap thread ph = snd $ mapAccumL [] phMapAccF phData
+wholePhMatch lniBMap thread ph = snd $ L.mapAccumL phMapAccF [] phData
     where 
         phMapAccF :: [ThreadSlice]
                   -> (PhenotypeName, (Maybe SubSpace, [SubSpace]))
-                  -> ([ThreadSlice], [(PhenotypeName, [ThreadSlice])])
-        phMapAccF excludedSlices (phName, phDt) = (newExcluded, newPhData)
+                  -> ([ThreadSlice], (PhenotypeName, [ThreadSlice]))
+        phMapAccF excludedSlices (phName, phDt) = (newExcluded, phMatches)
             where
-                newPhData = (phName, newThSlcs)
-                newExcluded = newThSlcs <> excludedSlices
-                newThSlcs = uncurry phMatchF phDt
+                phMatches = (phName, matchedSlices)
+                newExcluded = matchedSlices <> excludedSlices
+                matchedSlices = uncurry phMatchF phDt
                 phMatchF = phMatch 0 excludedSlices lniBMap thread
         phData = realPhData:phErrData
         phErrData = phErrDataF <$> phErrs
         phErrDataF phE = (phErrorName phE, (Nothing, phErrorFingerprint phE))
-        realPhData = (phenotypeName ph, (markedSubSpace ph, fingerprint))
+        realPhData = (phenotypeName ph, (markedSubSpace ph, fingerprint ph))
         phErrs = phenotypeErrors ph
 
 -- Find the places a particular fingerprint is present in a Thread. Note that a
@@ -443,7 +449,7 @@ phMatch :: Int
 phMatch offSet excludedSlices lniBMap thread mMarkedSS fPrint
     | fPrintSize > thSize = []
     | (not . areStrictlyIncreasing) preppedMatches = []
-    | any (== []) preppedMatches = []
+    | any L.null preppedMatches = []
     | otherwise = case mIntNoRepeatSS of
         Just intNoRepeatSS
             | nRSSIndex == 0 -> (mkRange preppedTFMs):extraSlices
@@ -455,7 +461,8 @@ phMatch offSet excludedSlices lniBMap thread mMarkedSS fPrint
             where
                 extraLSlices
                     | B.null dpLThread = []
-                    | otherwise = phMatch newOffset lniBMap dpLThread ph
+                    | otherwise = phMatch newOffset excludedSlices lniBMap
+                        dpLThread mMarkedSS fPrint
                     where
                         newOffset = trimmedLMatchesSize + offSet
                         dpLThread = B.drop trimmedLMatchesSize thread
@@ -474,13 +481,15 @@ phMatch offSet excludedSlices lniBMap thread mMarkedSS fPrint
         trimmedFHead = (BF.first ((:[]) . last) . head) matches
         extraSlices
             | B.null dpThread = []
-            | otherwise = phMatch newOffSet lniBMap dpThread ph
+            | otherwise = phMatch newOffSet excludedSlices lniBMap dpThread
+                mMarkedSS fPrint
             where
                 newOffSet = lmIndexF matches + offSet
                 dpThread = B.drop (lmIndexF matches) thread
         lmIndexF :: [([Int], IntSubSpace)] -> Int
         lmIndexF = ((+1) . last . fst . last) 
         mIntNoRepeatSS = toIntSubSpace <$> mMarkedSS
+        preppedMatches :: [[Int]]
         preppedMatches = fst <$> matches
         matches = (matchLocation thread excludedSlices) <$> intPh
         mkRange zs = ( offSet + (minimum . head) zs
@@ -514,7 +523,7 @@ matchLocation thread excludedSlices sS =
                 | otherwise = Nothing
 
 -- Is the position an element of the excluded Threadslices?
-isSliceExcluded :: Int -> [ThreadSlice] -> Bool
+isSliceExcluded :: [ThreadSlice] -> Int -> Bool
 isSliceExcluded excludedSlices phStartIndex =
     any (flip inRange phStartIndex) excludedSlices
 

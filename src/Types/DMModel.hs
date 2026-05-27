@@ -230,11 +230,12 @@ type IntSubSpace = [(NodeIndex, NodeState)]
 -- PhenotypeErrors may not be the same as their parent Phenotypes, but they may
 -- longer. They represent possible cellular disfunction. 
 data PhenotypeError = PhError { phErrorName :: PhenotypeErrorName
-                              , phIndex :: Int
+                              , phIndex :: PHEIndex
                               , phErrorFingerprint :: [SubSpace]
                               } deriving (Show, Eq, Ord)
 
 type PhenotypeErrorName = PhenotypeName
+type PHEIndex = Int
 
 -- These are some intermediary types we need to go from parsing ModelMapping{}
 -- and SwitchProfiles{} in the DMMS file to a DMModel ModelMapping. They are
