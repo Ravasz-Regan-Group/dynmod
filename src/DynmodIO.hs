@@ -233,15 +233,20 @@ simpleSCWrite f (fName, dia) = do
     ensureDir f
     renderCairo fPath (mkWidth 1600) dia
 
-writeExpBCFig :: Path Abs Dir -> T.Text -> (Barcode, [Diagram B]) -> IO ()
-writeExpBCFig dirFull expDetails (bc, expDias) = do
+writeExpBCFig :: Path Abs Dir
+              -> T.Text
+              -> (Barcode, [Diagram B])
+              -> Int
+              -> IO ()
+writeExpBCFig dirFull expDetails (bc, expDias) attID = do
     ensureDir dirFull
     case expDias of
         [] -> do 
             putStrLn "No Timecourse figures for Barcode: "
             PS.pPrint bc
         [expDia] -> do
-            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+            let bcPatterns =
+                    (mconcat . fmap barFNPattern) bc <> "_attID_" <> showt attID
                 rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
             relFileName <- parseRelFile rFString
             relFileNameWExt <- addExtension ".pdf" relFileName
@@ -249,7 +254,8 @@ writeExpBCFig dirFull expDetails (bc, expDias) = do
                 fPath = toFilePath absFileNameWExt
             renderCairo fPath (mkWidth 1600) expDia
         expDs -> do
-            let bcPatterns = (mconcat $ barFNPattern <$> bc) :: T.Text
+            let bcPatterns =
+                    (mconcat . fmap barFNPattern) bc <> "_attID_" <> showt attID
                 rFString = "bc" ++ (T.unpack $ bcPatterns <> "_" <> expDetails)
                 intBStrs = (("_" <>) . show) <$> [1..L.length expDs]
                 rFStrings = (rFString <>) <$> intBStrs
@@ -775,8 +781,8 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         let absFileNameWExt = noDetailsDir </> relFileNameWExt
         RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
         putStrLn $ "Generating figures for " <> expName
-        mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark)
-                                                (resCombine attResults)
+        let combinedAttResults = zip [1..] $ resCombine attResults
+        mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark) combinedAttResults
         return (newGen, (xMark, absFileNameWExt))
     ScDMex scanExp -> do
         let filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
@@ -798,7 +804,8 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         let absFileNameWExt = noDetailsDir </> relFileNameWExt
         RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
         putStrLn $ "Generating figures for " <> expName
-        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) preppedRess
+        let attIDedPreppedRess = zip [1..] $ preppedRess
+        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attIDedPreppedRess
         return (newGen, (xMark, absFileNameWExt))
     where
         attList = HS.toList attSet
@@ -846,9 +853,9 @@ tcRunDiaIO :: Path Abs File
            -> ModelLayer
            -> TCExpMeta
            -> ExperimentMark
-           -> (Barcode, [RepResults])
+           -> (Int, (Barcode, [RepResults]))
            -> IO ()
-tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
+tcRunDiaIO fPath cMap mM mL expMeta xMark (attID, (bc, repRs)) = do
     let figKs = tcExpFigures expMeta
         stripHt = 2.0 :: Double
         params = (stripHt, 24.0) :: (Double, Double)
@@ -858,18 +865,18 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (bc, repRs) = do
         avgTmlnPSs = (uncurry zip) <$> avgRepRs
         expDetails = tcExpDetails expMeta
         expName = tcExpName expMeta
-        bcPatterns = mconcat $ barFNPattern <$> bc
+        bcPatterns =(mconcat . fmap barFNPattern) bc <> "_attID_" <> showt attID
         xMarkTxt = showtl xMark <> "\n"
     figDir <- mkExpPath fPath (TCEM expMeta) ""
     when (nodeTimeCourse figKs) $ do
         let nodeTCFigs = nodeTCDia cMap mM mL bc params avgTmlnPSs
         dirNTC <- parseRelDir "NodeTC"
-        writeExpBCFig (figDir </> dirNTC) expDetails (bc, nodeTCFigs)
+        writeExpBCFig (figDir </> dirNTC) expDetails (bc, nodeTCFigs) attID
     when (phenotypeTimeCourse figKs) $ do
         let phenotypeTCFigs =
                         phenotypeTCDia cMap mM mL bc expMeta stripHt avgTmlnPSs
         dirPHTC <- parseRelDir "PHTC"
-        writeExpBCFig (figDir </> dirPHTC) expDetails (bc, phenotypeTCFigs)
+        writeExpBCFig (figDir </> dirPHTC) expDetails (bc, phenotypeTCFigs) attID
     when ((not . null) (nodeAvgBars figKs)) $ do
         let bCHNodeNs = nodeAvgBars figKs
             (statRepRVecs, statRepRs) = (unzip . fmap nodeBarChartStats) repRs
@@ -942,11 +949,12 @@ scRunDiaIO :: Path Abs File
            -> ModelMapping
            -> ModelLayer
            -> SCExpMeta
-           -> (Barcode, ScanPrep)
+           -> (Int, (Barcode, ScanPrep))
            -> IO ()
-scRunDiaIO fPath cMap mM mL exMeta (bc, scPrep) = do
+scRunDiaIO fPath cMap mM mL exMeta (attID, (bc, scPrep)) = do
   let
-    bcPatternStr = "bc" ++  (T.unpack . mconcat . fmap barFNPattern) bc
+    bcPatternStr = "bc" ++  (T.unpack . mconcat . fmap barFNPattern) bc ++
+        "_attID_" <> show attID
     overLayVs = needOverlays exMeta
     phCMap = mkPhColorMap mM cMap
     switchMap = HM.fromList nonEmptySwPhNs
