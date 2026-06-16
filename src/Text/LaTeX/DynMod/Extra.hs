@@ -75,6 +75,10 @@ captionp = "caption"
 fontspecp :: PackageName
 fontspecp = "fontspec"
 
+-- | usepackage alphalph
+alphalphp :: PackageName
+alphalphp = "alphalph"
+
 -- Denote an expression that calculates a dimension of some sort
 dimexpr :: LaTeXC l => l
 dimexpr = commS "dimexpr"

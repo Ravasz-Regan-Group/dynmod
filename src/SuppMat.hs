@@ -130,6 +130,7 @@ preamble =
                 ]
                 captionp <> "\n"
   <> usepackage [] subfloatp <> "\n"
+  <> usepackage [] alphalphp <> "\n"
   <> usepackage [] booktabs <> "\n"
   <> usepackage [] makecellp <> "\n"
   <> usepackage [] microtypep <> "\n"
@@ -143,8 +144,10 @@ preamble =
   <> renewCommand' "thesection" 0 TeXEmpty (TeXRaw "S" <>
     comm1 "arabic" "section")
   <> "\n"
-  <> renewCommand' "thetable" 0 TeXEmpty (TeXRaw "S" <>
-    comm1 "arabic" "table")
+  <> renewCommand' "thesubfloattable" 0 TeXEmpty (TeXRaw "S" <>
+    comm0 "themaintable" <> comm1 "alphalph" (comm1 "value" "subfloattable"))
+--   <> renewCommand' "thetable" 0 TeXEmpty (TeXRaw "S" <>
+--     comm1 "arabic" "table")
   <> "\n"
   <> renewCommand' "thefigure" 0 TeXEmpty (TeXRaw "S" <>
     comm1 "arabic" "figure")
