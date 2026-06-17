@@ -22,7 +22,6 @@ import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
-import qualified Debug.Trace as TR
 
 
 type ESpacePointDia = Diagram B
@@ -57,9 +56,7 @@ attractorESpaceFigure cMap mMap lniBMap atts iBundle
             | otherwise = someSpaces5DFigure dimList
                                              eSpacePointDias
                                              $ eSpaceNames freeINodes
-        eSpacePointDias = TR.trace
-            ((show . all null) filteredBCClusters <> " filteredBCClusters")
-                (eSpacePointDia <$> filteredBCClusters)
+        eSpacePointDias = eSpacePointDia <$> filteredBCClusters
         filteredBCClusters = filter (bcFilterF (ibBCFilter iBundle)) <$>
                                                         barcodeClusters
         barcodeClusters = mkBCCluster <$> attClusters
