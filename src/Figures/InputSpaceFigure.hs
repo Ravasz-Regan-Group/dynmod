@@ -22,6 +22,7 @@ import qualified Data.HashSet as HS
 import qualified Data.HashMap.Strict as M
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
+import qualified Debug.Trace as TR
 
 
 type ESpacePointDia = Diagram B
@@ -40,8 +41,9 @@ attractorESpaceFigure :: ColorMap
                       -> HS.HashSet Attractor
                       -> InputBundle
                       -> Diagram B
-attractorESpaceFigure cMap mMap lniBMap atts iBundle =
-    frame 3.0 $ figureDia === (scale (0.75 * sFactor) legendDia)
+attractorESpaceFigure cMap mMap lniBMap atts iBundle
+    | all null filteredBCClusters = mempty
+    | otherwise = frame 3.0 $ figureDia === (scale (0.75 * sFactor) legendDia)
     where
         sFactor = width figureDia / width legendDia
         figureDia
@@ -55,7 +57,9 @@ attractorESpaceFigure cMap mMap lniBMap atts iBundle =
             | otherwise = someSpaces5DFigure dimList
                                              eSpacePointDias
                                              $ eSpaceNames freeINodes
-        eSpacePointDias = eSpacePointDia <$> filteredBCClusters
+        eSpacePointDias = TR.trace
+            ((show . all null) filteredBCClusters <> " filteredBCClusters")
+                (eSpacePointDia <$> filteredBCClusters)
         filteredBCClusters = filter (bcFilterF (ibBCFilter iBundle)) <$>
                                                         barcodeClusters
         barcodeClusters = mkBCCluster <$> attClusters
@@ -173,7 +177,7 @@ eSpacePointDia bCodes = eSpacePointDia' $ barcodeDia <$> bCodes
                 rowSize = ceiling (squareSideL / bWidth)
                 bRows = hsep 1.0 <$> Split.chunksOf rowSize bCodeDias
                 bSquare = vsep 1.0 bRows # center
-                bRect = (rect (width bSquare) (height bSquare) # lw 0.1)
+                bRect = rect (width bSquare) (height bSquare) # lw 0.1
 
 barcodeDia :: Barcode -> BarcodeDia
 barcodeDia bCode = (hcat $ L.intersperse separator wrappedBars) # center
