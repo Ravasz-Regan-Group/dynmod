@@ -385,7 +385,7 @@ validateSCNodes mL scanNodes
 mkStopPhenotypes :: ModelMapping ->  [(ScanSwitch, PhenotypeName)]
         -> Validation [VEXInvestigationInvalid] [(PhenotypeName, SubSpace)]
 mkStopPhenotypes mM stopPhs
-  | (not . null) stpSRepeats = Failure $ [StopSwitchRepeats stpSRepeats]
+--   | (not . null) stpSRepeats = Failure $ [StopSwitchRepeats stpSRepeats]
   | (not . null) stpPhRepeats = Failure $ [StopPhenotypeRepeats stpPhRepeats]
   | (not . null) npSwitches =
     Failure $ [UnknownSwitchesInStopPhenotype npSwitches]
@@ -421,7 +421,7 @@ mkStopPhenotypes mM stopPhs
     swPhs = concatMap snd mMPhSwitches
     npSwitches = filter (`notElem` switchNames) (fst <$> stopPhs)
     switchNames = fst <$> mMPhSwitches
-    stpSRepeats = (repeated . fmap fst) stopPhs
+--     stpSRepeats = (repeated . fmap fst) stopPhs
     mMSwsWithPhNames = (fmap . fmap . fmap) phenotypeName mMPhSwitches
     mMPhSwitches = ((filter (not . null . snd)) . ((fmap . fmap) snd)) mM
 

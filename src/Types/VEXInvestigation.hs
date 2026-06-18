@@ -251,7 +251,7 @@ data VEXInvestigationInvalid =
     | NonPhenotypedSwitchesInScan [NodeName]
     | ScanNodeRepeats [NodeName]
     | UnknownScanNodes [NodeName]
-    | StopSwitchRepeats [NodeName]
+--     | StopSwitchRepeats [NodeName]
     | StopPhenotypeRepeats [NodeName]
     | UnknownSwitchesInStopPhenotype [NodeName]
     | UnknownPhenotypesInStopPhenotype [(NodeName, PhenotypeName)]
@@ -397,8 +397,8 @@ vexErrorPrep (ScanNodeRepeats nNms) =
     "ScanNodeRepeats: " <> T.intercalate ", " nNms
 vexErrorPrep (UnknownScanNodes nNms) =
     "UnknownScanNodes: " <> T.intercalate ", " nNms
-vexErrorPrep (StopSwitchRepeats nNms) = "StopSwitchRepeats: " <>
-    T.intercalate ", " nNms
+-- vexErrorPrep (StopSwitchRepeats nNms) = "StopSwitchRepeats: " <>
+--     T.intercalate ", " nNms
 vexErrorPrep (StopPhenotypeRepeats nNms) = "StopPhenotypeRepeats: " <>
     T.intercalate ", " nNms
 vexErrorPrep (UnknownSwitchesInStopPhenotype nNms) =
