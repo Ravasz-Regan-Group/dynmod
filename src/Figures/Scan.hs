@@ -82,8 +82,7 @@ baseScDia :: ColorMap
           -> SCExpMeta
           -> ScanStats
           -> BaseScanFigs
-baseScDia cMap phCMap switchMap exMeta
-    (allStopDs, allPhDists, allNStats) =
+baseScDia cMap phCMap switchMap exMeta (allStopDs, allPhDists, allNStats) =
         BSFgs stopDistFig timeInSwFigs nodeAvgsFig
     where
         nodeAvgsFig = nodeAvgFig cMap exMeta allNStats <$> scanNNs

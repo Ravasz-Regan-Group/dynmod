@@ -416,7 +416,7 @@ mkStopPhenotypes mM stopPhs
               where
                 invFF pN mP = M.insert pN swName mP
     npPhs = filter ((`notElem` swPhNames) . snd) stopPhs
-    stpPhRepeats = repeated swPhNames
+    stpPhRepeats = (repeated . fmap snd) stopPhs
     swPhNames = phenotypeName <$> swPhs
     swPhs = concatMap snd mMPhSwitches
     npSwitches = filter (`notElem` switchNames) (fst <$> stopPhs)
@@ -631,7 +631,7 @@ runVariationPrep (lniBMap, mM) scanEx att gen (SCVar rIC actNAlts) =
   where
     nodeStatMap = pure $ force $ scanNodeStats lniBMap trScanRun
     phDistMap = pure $ force $ phDistribution allPhNames trScanRun
-    stopDMap = pure $ force $ stopDistribution stopPhNames trScanRun
+    stopDMap = pure $ force $ stopDistribution stopPhNames scanRun
     trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
     stopPhNames = (fmap fst . stopPhenotypes . scExpMeta) scanEx
     allPhNames :: [PhenotypeName]
@@ -756,6 +756,7 @@ stopDistribution stopPhNames scanRun = (stPhMap, fracMaxStop)
 -- Which, if any, stop Phenotypes are present at the end of a Timeline? 
 getStopPhs :: [PhenotypeName] -> Timeline -> [PhenotypeName]
 getStopPhs stopPHNs = filter (flip elem stopPHNs) . snd . B.last
+
 
 -- If a Timeline was stopped at a stop Phenotype, we don't want its last step. 
 trimPhStoppedTmln :: [PhenotypeName] -> Timeline -> Timeline
