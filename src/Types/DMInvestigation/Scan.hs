@@ -385,44 +385,52 @@ validateSCNodes mL scanNodes
 mkStopPhenotypes :: ModelMapping ->  [(ScanSwitch, PhenotypeName)]
         -> Validation [VEXInvestigationInvalid] [(PhenotypeName, SubSpace)]
 mkStopPhenotypes mM stopPhs
---   | (not . null) stpSRepeats = Failure $ [StopSwitchRepeats stpSRepeats]
   | (not . null) stpPhRepeats = Failure $ [StopPhenotypeRepeats stpPhRepeats]
-  | (not . null) npSwitches =
-    Failure $ [UnknownSwitchesInStopPhenotype npSwitches]
+  | (not . null) npSwitches = Failure $
+    [UnknownSwitchesInStopPhenotype npSwitches]
   | (not . null) npPhs = Failure $ [UnknownPhenotypesInStopPhenotype npPhs]
-  | (not . null) misMatchedSwPhs =
-    Failure $ [MismatchedStopPhenotypes misMatchedSwPhs]
+  | (not . null) misMatchedSwPhs = Failure $
+    [MismatchedStopPhenotypes misMatchedSwPhs]
   | (not . null) loopPhNames = Failure $ [LoopStopPhenotypes loopPhNames]
   | otherwise = Success stopPHSubSps
   where    
-    stopPHSubSps = findPh mM <$> stopPhs
+    stopPHSubSps = findPh <$> stopPhs
       where
-        findPh mMap (swN, phN) = (phN, (head . fingerprint) matchPH)
-          where
-            matchPH = (fromJust . L.find ((== phN) . phenotypeName)) matchPhs
-            matchPhs = (snd . snd . fromJust . L.find ((== swN) . fst)) mMap
+        findPh (_, stopPhN) = case phMap M.!? stopPhN of
+          Just matchPh -> (stopPhN, (head . fingerprint) matchPh)
+          Nothing -> (stopPhN, (head . phErrorFingerprint) matchErrorPh)
+            where matchErrorPh = phErrorMap M.! stopPhN
+    phMap = M.fromList $ ((\x -> (phenotypeName x, x))) <$> swPhs
+    phErrorMap = M.fromList $
+        (fmap (\x -> (phErrorName x, x)) . concatMap phenotypeErrors) swPhs
     loopPhNames = filter (`notElem` pointPhNames) (snd <$> stopPhs)
-    pointPhNames = phenotypeName <$> pointPhs
+--  Make sure to find any point PhenotypeErrors, which might be attached to a
+--  loop Phenotype.
+    pointPhNames = (phenotypeName <$> pointPhs) <> (phErrorName <$> pointPhErrs)
+    pointPhErrs = L.filter ((== 1) . L.length . phErrorFingerprint) $
+        concatMap phenotypeErrors swPhs
     pointPhs = L.filter ((== 1) . L.length . fingerprint) swPhs
+    swPhs = concatMap snd mMPhSwitches
     misMatchedSwPhs = mapMaybe phChecker stopPhs
       where
         phChecker (swN, phN)
           | correctSwitch == swN = Nothing
           | otherwise = Just (phN, swN, "Correct Switch: " <> correctSwitch)
-          where
-            correctSwitch = swMap M.! phN
-            swMap = foldr inverterF M.empty (mMSwsWithPhNames)
-            inverterF (swName, phNms) phM = foldr invFF phM phNms
-              where
-                invFF pN mP = M.insert pN swName mP
+          where correctSwitch = swMap M.! phN
     npPhs = filter ((`notElem` swPhNames) . snd) stopPhs
     stpPhRepeats = (repeated . fmap snd) stopPhs
-    swPhNames = phenotypeName <$> swPhs
-    swPhs = concatMap snd mMPhSwitches
+    swPhNames :: [PhenotypeName]
+    swPhNames = concatMap snd mMSwsWithPhNames
     npSwitches = filter (`notElem` switchNames) (fst <$> stopPhs)
     switchNames = fst <$> mMPhSwitches
---     stpSRepeats = (repeated . fmap fst) stopPhs
-    mMSwsWithPhNames = (fmap . fmap . fmap) phenotypeName mMPhSwitches
+    swMap = foldr inverterF M.empty mMSwsWithPhNames
+        where inverterF (swName, phNms) phM = foldr invFF phM phNms
+                where invFF pN mP = M.insert pN swName mP
+    mMSwsWithPhNames :: [(SwitchName, [PhenotypeName])]
+    mMSwsWithPhNames = (fmap . fmap . concatMap) phNameF mMPhSwitches
+    phNameF :: Phenotype -> [PhenotypeName]
+    phNameF ph = (phenotypeName ph):((fmap phErrorName . phenotypeErrors) ph)
+    mMPhSwitches :: [(SwitchName, [Phenotype])]
     mMPhSwitches = ((filter (not . null . snd)) . ((fmap . fmap) snd)) mM
 
 mkScName :: ScanKind -> T.Text
@@ -634,8 +642,9 @@ runVariationPrep (lniBMap, mM) scanEx att gen (SCVar rIC actNAlts) =
     stopDMap = pure $ force $ stopDistribution stopPhNames scanRun
     trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
     stopPhNames = (fmap fst . stopPhenotypes . scExpMeta) scanEx
-    allPhNames :: [PhenotypeName]
-    allPhNames = concatMap (fmap phenotypeName . snd . snd) nonEPhs
+--  Make sure to include PhenotypeErrorNames. 
+    allPhNames = (concatMap phNameF . concatMap snd . fmap snd) nonEPhs
+    phNameF ph = (phenotypeName ph):((fmap phErrorName . phenotypeErrors) ph)
     nonEPhs = nonEmptyPhenotypes mM
     scanRun = L.unfoldr scanResUnfoldF unFSeed
     unFSeed = (0, gen)
@@ -701,8 +710,8 @@ isAtStopPH :: LayerNameIndexBimap
            -> LayerVec
            -> (PhenotypeName, SubSpace)
            -> Bool
-isAtStopPH lniBMap lVec (_, subSp) = isSSMatch lVec intSubSp
-    where intSubSp = (BF.first (lniBMap BM.!)) <$> subSp
+isAtStopPH lniBMap lVec (_, subSp) = fst $ isSSMatch lVec intSubSp
+    where intSubSp = toIntSubSpace lniBMap subSp
 
 -- Randomly pick one of the states of an Attractor and fix its inputs with the
 -- optional RealInputCoord for the start of Scan runs. 

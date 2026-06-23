@@ -10,6 +10,8 @@ module Types.DMModel
     , PhenotypeError(..)
     , SwitchName
     , PhenotypeName
+    , PhenotypeErrorName
+    , PHEIndex
     , SubSpace
     , IntSubSpace
     , DMMSModelMapping
@@ -136,7 +138,7 @@ import qualified Data.HashSet as Set
 import Data.Validation
 import qualified Data.Versions as Ver
 import qualified Data.List.Extra as L
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.Bifunctor as BF
 import Data.Containers.ListUtils (nubInt)
 
@@ -158,7 +160,7 @@ instance (Hashable a, Ord a, Floating a)=> Hashable (C.Colour a) where
 -- the functions of that network. 
 
 type LocalColor = C.Colour Double
-defaultColor :: LocalColor -- Erzsó red
+defaultColor :: LocalColor -- Erzs� red
 defaultColor = SC.sRGB24 148 17 0
 
 type FileFormatVersion = Ver.SemVer
@@ -203,32 +205,37 @@ type SwitchName = NodeName
 
 -- A Phenotype maps a state of a switch node to a (possibly degenerate)
 -- loop of SubSpaces of its constituent nodes, where SubSpaces are subsets
--- of the switch at particular states, thus constraining the whole ModelLayer
--- network to that particular subspace of possible states. If a Phenotype is a
--- loop, then at most one of its SubSpaces may be marked, i.e. it is
--- mutually satisfiable with at most one point Phenotype in that Switch. 
--- Loop Phenotypes may not share a point Phenotype each other. PhenotypeErrors
--- are arranged in a list of decreasing length. The starting Subspace of each
--- PhenotypeError must be the same as that of the parent Phenotype, and they
--- must be strict subloops of the parent Phenotype. This is because we do not
--- enforce the rule that each SubSpace in each PhenotypeError must be mutually
--- unsatisfiable with every other SubSpace in every other PhenotypeError of a
--- given Phenotype. Thus, we need to be careful when detecting PhenotypeErrors
--- in a thread, that we search for the the longest possible loop first, and then
--- move to progressively smaller incorrect Phenotypes. 
+-- of the switch at particular states, SubSpaces can either constrain the whole
+-- ModelLayer network to a particular subset, or block them from entering a
+-- subset in between constraints. For now, there may be a lone block between
+-- two constraints, and no other configuration
+
+-- If a Phenotype is a loop, then at most one of its SubSpaces may be marked,
+-- i.e. it is mutually satisfiable with at most one point Phenotype in that
+-- Switch. Loop Phenotypes may not share a point Phenotype each other.
+-- PhenotypeErrors are arranged in a list of decreasing length. The starting
+-- Subspace of each PhenotypeError must be the same as that of the parent
+-- Phenotype, and they must be strict subloops of the parent Phenotype. This is
+-- because we do not enforce the rule that each SubSpace in each PhenotypeError
+-- must be mutually unsatisfiable with every other SubSpace in every other
+-- PhenotypeError of a given Phenotype. Thus, we need to be careful when
+-- detecting PhenotypeErrors in a thread that we search for the longest
+-- possible loop first, wherever that occurs in a Thread, and then move to
+-- progressively smaller PhenotypeErrors. 
 data Phenotype = Phenotype { phenotypeName :: PhenotypeName
                            , switchNodeState :: NodeState
                            , fingerprint :: [SubSpace]
-                           , markedSubSpace :: Maybe SubSpace
+                           , markedSubSpace :: Maybe [(NodeName, NodeState)]
                            , phenotypeErrors :: [PhenotypeError]
                            } deriving (Show, Eq, Ord)
 
 type PhenotypeName = T.Text
-type SubSpace = [(NodeName, NodeState)]
-type IntSubSpace = [(NodeIndex, NodeState)]
+-- The maybe piece is the block that may exist after this constraint and before
+-- the next one. 
+type SubSpace = ([(NodeName, NodeState)], Maybe [(NodeName, NodeState)])
+                
+type IntSubSpace = ([(NodeIndex, NodeState)], Maybe [(NodeIndex, NodeState)])
 
--- PhenotypeErrors may not be the same as their parent Phenotypes, but they may
--- longer. They represent possible cellular disfunction. 
 data PhenotypeError = PhError { phErrorName :: PhenotypeErrorName
                               , phIndex :: PHEIndex
                               , phErrorFingerprint :: [SubSpace]
@@ -769,9 +776,10 @@ data ModelInvalid =
   | ProfileSwitchNotInModelGraph NodeName
   | MissingPhenotypes (NodeName, [NodeState])
   | ExcessPhenotypes (NodeName, [NodeState])
+  | PhenotypeEndsWithABlock T.Text
   | RepeatedSubSpaceNode (NodeName, PhenotypeName, NodeState, [NodeName])
   | RepeatedPhErrSubSpaceNode (NodeName, PhenotypeName, Int, [NodeName])
-  | SubSpaceIsASubSet (SubSpace, [SubSpace])
+  | SubSpaceIsASubSet ([(NodeName, NodeState)], [[(NodeName, NodeState)]])
   | DuplicatedPhenotypeNames [NodeName]
   | PhErrorsOutOfSizeOrder PhenotypeName
   | PhErrorsTooLong (PhenotypeName, [PhenotypeName])
@@ -795,6 +803,8 @@ data ModelInvalid =
   | ExcessLoopPointSubSpaceMatches PhenotypeName [(PhenotypeName, SubSpace)]
   | ExcessPointSubSpaceMatches (((PhenotypeName, SubSpace))
                               , ((PhenotypeName, [SubSpace])))
+  | PointSubSpaceMatchNotAtLoopPhHead (((PhenotypeName, SubSpace))
+                                    , ((PhenotypeName, [SubSpace])))
   | DuplicatedModelNames [NodeName]
   | DuplicatedBiasOrderNodeNames [NodeName]
   | DuplicatedBiasOrderNodeStates [(NodeName, NodeState)]
@@ -1155,13 +1165,26 @@ noSubSpaceRepeatedNodes sProfiles = traverse go sProfiles
           where
             go'' :: NodeName -> PhenotypeName -> NodeState -> SubSpace
                  -> Validation [ModelInvalid] SubSpace
-            go'' sN1 phN1 snNS1 sbSps1
-              | null repeatedNNames = Success sbSps1
-              | otherwise = Failure [RepeatedSubSpaceNode err]
-              where
-                repeatedNNames :: [NodeName]
-                repeatedNNames = repeated (fst <$> sbSps1)
-                err = (sN1, phN1, snNS1, repeatedNNames)
+            go'' sN1 phN1 snNS1 sbSps1@(conSS, mBlockSS) = case mBlockSS of
+              Nothing
+                | null repeatedCNNames -> Success sbSps1
+                | otherwise -> Failure [RepeatedSubSpaceNode errC]
+                where
+                  repeatedCNNames = repeated (fst <$> conSS)
+                  errC = (sN1, phN1, snNS1, repeatedCNNames)
+              Just blockSS
+                | null repeatedCNNames && null repeatedBNNames -> Success sbSps1
+                | (not . null) repeatedCNNames && null repeatedBNNames ->
+                  Failure [RepeatedSubSpaceNode errC]
+                | null repeatedCNNames && (not . null) repeatedBNNames ->
+                  Failure [RepeatedSubSpaceNode errB]
+                | otherwise -> Failure [RepeatedSubSpaceNode errC,
+                                        RepeatedSubSpaceNode errB]
+                where
+                  repeatedBNNames = repeated (fst <$> blockSS)
+                  repeatedCNNames = repeated (fst <$> conSS)
+                  errC = (sN1, phN1, snNS1, repeatedCNNames)
+                  errB = (sN1, phN1, snNS1, repeatedBNNames)
 
 -- Internally to a SubSpace, no node should be repeated, PhenotypeError check. 
 noPhErrSSRepdNodes :: NodeName -> PhenotypeError
@@ -1172,22 +1195,37 @@ noPhErrSSRepdNodes swName phError =
         phErrI = phIndex phError
         phErrSbSpcs = phErrorFingerprint phError
         go :: Int -> SubSpace -> Validation [ModelInvalid] SubSpace
-        go phEI sbSpc
-            | null repeatedNNames = Success sbSpc
-            | otherwise = Failure [RepeatedPhErrSubSpaceNode err]
-            where
-                repeatedNNames :: [NodeName]
-                repeatedNNames = repeated $ fst <$> sbSpc
-                err = (swName, phErrorName phError, phEI, repeatedNNames)
+        go phEI sbSpc@(conSS, mBlockSS) = case mBlockSS of
+            Nothing
+                | null repeatedCNNames -> Success sbSpc
+                | otherwise -> Failure [RepeatedPhErrSubSpaceNode errC]
+                where
+                    repeatedCNNames = repeated (fst <$> conSS)
+                    errC = (swName, phErrorName phError, phEI, repeatedCNNames)
+            Just blockSS
+                | null repeatedCNNames && null repeatedBNNames -> Success sbSpc
+                | (not . null) repeatedCNNames && null repeatedBNNames ->
+                    Failure [RepeatedPhErrSubSpaceNode errC]
+                | null repeatedCNNames && (not . null) repeatedBNNames ->
+                    Failure [RepeatedPhErrSubSpaceNode errB]
+                | otherwise -> Failure [RepeatedPhErrSubSpaceNode errC,
+                                        RepeatedPhErrSubSpaceNode errB]
+                where
+                    repeatedCNNames = repeated (fst <$> conSS)
+                    repeatedBNNames = repeated (fst <$> blockSS)
+                    errC = (swName, phErrorName phError, phEI, repeatedCNNames)
+                    errB = (swName, phErrorName phError, phEI, repeatedBNNames)
+                    
 
 -- In the whole of a ModelMapping, no SubSpace of a Phenotype (as opposed to a 
 -- PhenotypeError) should be a subset of any other. Point Phenotypes may contain
--- ErrorPhenotypes are not simply shorter versions of themselves. These
--- PhenotypeErrors must not be a subset of any other. 
+-- ErrorPhenotypes which are not simply shorter versions of themselves. These
+-- PhenotypeErrors must not be a subset of any other. Note that we do not care
+-- about blocking SubSpaces, only the constraining Subspaces. 
 noSubSpaceSubSets :: [SwitchProfile]
                   -> Validation [ModelInvalid] [SwitchProfile]
 noSubSpaceSubSets sProfiles =
-    case fst $ L.foldl' f ([], subSpaceSets) subSpaceSets of
+    case fst $ L.foldl' f ([], consSubSpaceSets) consSubSpaceSets of
     []   -> Success sProfiles
     errs -> sequenceA errs
     where
@@ -1201,11 +1239,11 @@ noSubSpaceSubSets sProfiles =
                     where
                         supersets = Set.toList <$>
                                 (filter (Set.isSubsetOf sSSet) remainingHS)
-        subSpaceSets = Set.fromList <$> (subSpaces <> pointPhErrFPs)
-        pointPhErrFPs = concatMap phErrorFingerprint pointPhErrors
+        consSubSpaceSets = Set.fromList <$> (consSubSpaces <> pointPhErrFPs)
+        pointPhErrFPs = (fmap fst . concatMap phErrorFingerprint) pointPhErrors
         pointPhErrors = concatMap phenotypeErrors pointPhs
         pointPhs = filter ((== 1) . length . fingerprint) phs
-        subSpaces = concatMap fingerprint phs
+        consSubSpaces = (fmap fst . concatMap fingerprint) phs
         phs = concatMap snd sProfiles
 
 -- Do the NodeNames in the SubSpaces of a SwitchProfile occur in the
@@ -1228,10 +1266,13 @@ subSpaceNodesInSwitch' (nName, (dmmsMMFineNNames, phs))
     where
         excessSSNNs = subSpaceNodeNames L.\\ dmmsMMFineNNames
         subSpaceNodeNames = (L.sort . L.nubOrd . fmap fst) subSpacePairs
-        subSpacePairs :: [(NodeName, NodeState)]
-        subSpacePairs = mconcat $ concatMap fingerprint phs <>
-            (concatMap phErrorFingerprint phErrs)
+        subSpacePairs = pullSubSpacePairs (phFingerprints <> phErrFingerprints)
+        phFingerprints = concatMap fingerprint phs
+        phErrFingerprints = concatMap phErrorFingerprint phErrs
         phErrs = concatMap phenotypeErrors phs
+
+pullSubSpacePairs :: [SubSpace] -> [(NodeName, NodeState)]
+pullSubSpacePairs = concatMap (\(cSS, mBSS) -> cSS <> fromMaybe [] mBSS)
 
 -- Check that each node in each SubSpace has a corresponding DMNode, and that
 -- its referenced state exists. This includes the SubSpaces of the
@@ -1242,8 +1283,9 @@ subSpaceNodeStatesCovered fineMLayer sProfiles =
     traverse (subSpaceNodeStatesCovered' fineRanges) subSpacePairs
     where
         fineRanges = layerRanges fineMLayer
-        subSpacePairs = mconcat $ concatMap fingerprint phs <>
-            (concatMap phErrorFingerprint phErrs)
+        subSpacePairs = pullSubSpacePairs (phFingerprints <> phErrFingerprints)
+        phFingerprints = concatMap fingerprint phs
+        phErrFingerprints = concatMap phErrorFingerprint phErrs
         phErrs = concatMap phenotypeErrors phs
         phs = concatMap snd sProfiles
 
@@ -1316,32 +1358,40 @@ loopPhsAreMU phX phY
 -- Consume a loop Phenotype and a list of point Phenotypes, and produce a
 -- Just x marked Phenotype if a match exists. NOTE! This assumes that the point
 -- Phenotypes have been checked to be non-mutually satisfiable! Do not use
--- outside of wellFormedPh!
+-- outside of wellFormedPh! For now, the matching point may only occur at the
+-- begining of the loop Phenotype, but that may not always be true. 
 findMarkedSubSpace :: Phenotype -> [Phenotype]
                    -> Validation [ModelInvalid] Phenotype
 findMarkedSubSpace loopPh pointPhs = case mtchs of
     [] -> Success loopPh {markedSubSpace = Nothing}
-    [ph] -> case filter (areMutuallySatisfiable (fFp ph)) (fP loopPh) of
+    [ph] -> case filter (areMutuallySatisfiable matchSS) loopPhFP of
         [] -> Success loopPh {markedSubSpace = Nothing}
-        [_] -> Success $ loopPh {markedSubSpace = Just (fFp ph)}
-        sSs -> Failure $ [ExcessPointSubSpaceMatches err]
-            where
-                err = ((errF ph), (phenotypeName loopPh, sSs))
+        [loopPhMatchSS] -> case loopPhMatchSS == loopPhFPHeadSS of
+            True -> Success $ loopPh {markedSubSpace = Just (fst matchSS)}
+            False -> Failure $ [PointSubSpaceMatchNotAtLoopPhHead err1]
+                where
+                    err1 = ((errF ph), (phenotypeName loopPh, [loopPhMatchSS]))
+        sSs -> Failure $ [ExcessPointSubSpaceMatches err2]
+            where err2 = ((errF ph), (phenotypeName loopPh, sSs))
+        where
+            matchSS = (head . fingerprint) ph
+            loopPhFP = fingerprint loopPh
+            loopPhFPHeadSS = (head . fingerprint) loopPh
     phs -> Failure $ [ExcessLoopPointSubSpaceMatches lpPHN (errF <$> phs)]
     where
-        errF x = (phenotypeName x, fFp x)
+        errF x = (phenotypeName x, (head . fingerprint) x)
         lpPHN = phenotypeName loopPh
         mtchs = filter (findPointPhs loopPh) pointPhs
         findPointPhs lPh pPh = any (areMutuallySatisfiable pPhSS) loopPhSSs
             where
-                pPhSS = fFp pPh
+                pPhSS = (head . fingerprint) pPh
                 loopPhSSs = fingerprint lPh
-        fFp = (head . fingerprint)
-        fP = fingerprint
 
--- Can two SubSpaces both be matched at the same time?
+-- Can two SubSpaces both be matched at the same time? We do not care about any
+-- blocks attached to the constraint subspaces, as they cannot cause loop
+-- loop Phenotypes to cross. 
 areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool
-areMutuallySatisfiable ssX ssY
+areMutuallySatisfiable (ssX, _) (ssY, _)
     | L.null mutualNodes = True
     | otherwise = all id matchedSSs
     where

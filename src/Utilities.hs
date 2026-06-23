@@ -53,8 +53,8 @@ areStrictlyIncreasing [] = True
 areStrictlyIncreasing [x] = isStrictlyIncreasing x
 areStrictlyIncreasing (x:y:ys) = case (x, y) of
     ([], []) -> areStrictlyIncreasing ys
-    (t, []) -> isStrictlyIncreasing t && areStrictlyIncreasing (t:ys)
-    ([], u) -> isStrictlyIncreasing u && areStrictlyIncreasing (u:ys)
+    (t, []) -> areStrictlyIncreasing (t:ys)
+    ([], u) -> areStrictlyIncreasing (u:ys)
     (t, u) -> isStrictlyIncreasing t && isStrictlyIncreasing u &&
               maximum t < minimum u && areStrictlyIncreasing (u:ys)
 
@@ -143,9 +143,6 @@ thdOf4 (_, _, n, _) = n
 fthOf4 :: (a, b, c, d) -> d
 fthOf4 (_, _, _, o) = o
 
-mapFst :: (a -> b) -> (a, c) -> (b, c)
-mapFst f (x, y) = (f x, y)
-
 -- Convert an uncurried function to a curried function.
 curry3 :: ((a, b, c) -> d) -> a -> b -> c -> d
 curry3 f a b c = f (a,b,c)
@@ -156,6 +153,9 @@ uncurry3 f ~(a,b,c) = f a b c
 
 concatPair :: Monoid a => (a, a) -> a
 concatPair (x, y) = x <> y
+
+pairIsEq :: Eq a => (a, a) -> Bool
+pairIsEq (x, y) = x == y
 
 differenceWithKey :: Hash.Hashable k => (k -> v -> w -> Maybe v)
                                         -> M.HashMap k v

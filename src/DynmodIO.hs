@@ -909,7 +909,12 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (attID, (bc, repRs)) = do
     when ((not . null) (phenotypeAvgBars figKs)) $ do
         let phCHNodeNs = phenotypeAvgBars figKs
             nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
-            nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
+            allPhNamesF :: [Phenotype] -> [PhenotypeName]
+            allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
+                where
+                    phErrNames = filter (not . null) $
+                        (fmap phErrorName . phenotypeErrors) <$> phs
+            nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
             allPhNs = concatMap snd nonEmptySwPhNs
             switchMap = HM.fromList nonEmptySwPhNs
             pulseSpcs = (fmap . fmap) snd avgTmlnPSs
@@ -957,9 +962,14 @@ scRunDiaIO fPath cMap mM mL exMeta (attID, (bc, scPrep)) = do
         "_attID_" <> show attID
     overLayVs = needOverlays exMeta
     phCMap = mkPhColorMap mM cMap
-    switchMap = HM.fromList nonEmptySwPhNs
-    nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
     nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
+    allPhNamesF :: [Phenotype] -> [PhenotypeName]
+    allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
+      where
+        phErrNames = filter (not . null) $
+            (fmap phErrorName . phenotypeErrors) <$> phs
+    nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
+    switchMap = HM.fromList nonEmptySwPhNs
   figDir <- mkExpPath fPath (SCEM exMeta) ""
   bcDir <- parseRelDir bcPatternStr
   let

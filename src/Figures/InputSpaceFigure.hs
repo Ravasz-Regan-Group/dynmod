@@ -213,19 +213,43 @@ sliceDia _ (Miss attSize) = (hcat slivers) # center
         sliverWidth = slicewidth / (fromIntegral attSize)
         slicewidth = (2.0 :: Double) * (fromIntegral attSize)**alpha
         sliceHeight = 1.0 :: Double
-sliceDia c (Match attSize matchLoops _) = (hcat slivers) # center
+sliceDia c (Match attSize attMatchess _) = (hcat slivers) # center
     where
-        slivers = B.toList $ missVec B.// matchPairs
-        missVec = B.replicate attSize missSliver
-        matchPairs = zip matchIndices $ L.repeat matchSliver
-        matchIndices = concat matchLoops
-        matchSliver = rect sliverWidth sliceHeight # fillColor c
-                                                   # lineWidth 0.1
+        slivers = B.toList sliverVec
+        sliverVec = L.foldr addSlivers blankSliverVec attMatchess
+        addSlivers :: (PhenotypeName, [[Int]], Maybe (PHEIndex, ErrorLength))
+                 -> B.Vector (Diagram B) -> B.Vector (Diagram B)
+        addSlivers (_, phMatchess, Nothing) slVec = newSlVec
+            where
+                newSlVec = B.accum (flip const) slVec replacementList
+                replacementList = (flip zip fPhMSliverList . concat) phMatchess
+                fPhMSliverList = repeat fullPhMatchSliver
+        addSlivers (_, phMatchess, Just (phEIndex, _)) slVec = newSlVec
+            where
+                newSlVec = B.accum (flip const) slVec replacementList
+                replacementList = (flip zip phEMSliverList . concat) phMatchess
+                phEMSliverList = repeat phErrMatchMSliver
+                phErrMatchMSliver = mkDotSliver phEIndex
+        fullPhMatchSliver = rect sliverWidth sliceHeight # fillColor c
+                                                         # lineWidth 0.1
+        mkDotSliver :: Int -> Diagram B
+        mkDotSliver n = matchDots `atop` missSliver
+            where
+                matchDots = (vsep dotSep . replicate n) matchDot
+                matchDot = circle ((dotSizeBuffer * dotWidth) / 2.0)
+                    # fillColor c # lineWidth none
+                dotSep = (sliceHeight - (dotWidth * nDouble)) / (nDouble + 1.0)
+                dotWidth = (min sliverWidth (sliceHeight / nDouble))
+                nDouble = (fromIntegral n) :: Double
+        blankSliverVec = B.replicate attSize missSliver
+        dotSizeBuffer = 0.92 :: Double
         missSliver = rect sliverWidth sliceHeight # fillColor white
                                                   # lineWidth 0.1
         sliverWidth = slicewidth / (fromIntegral attSize)
         slicewidth = (2.0 :: Double) * (fromIntegral attSize)**alpha
         sliceHeight = 1.0 :: Double
+
+
 
 mkGridEdges :: [Int] -> [([Int], [Int])]
 mkGridEdges dimList = concat $ mkEdges <$> vertices

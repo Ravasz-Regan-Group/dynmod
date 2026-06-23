@@ -114,9 +114,12 @@ renderPhenotype ph =
     (T.intercalate " -> " $ renderSubSpace <$> (fingerprint ph))
 
 renderSubSpace :: SubSpace -> T.Text
-renderSubSpace sSp = "(" <> entries <> ")"
+renderSubSpace (sSp, mNotanySS) = "(" <> wrapRSSElem sSp <> ")" <> notanyE
     where
-        entries = T.intercalate ", " $ renderSSElem <$> sSp
+        notanyE = case mNotanySS of
+            Nothing -> ""
+            Just notanySS -> " -> notany(" <> wrapRSSElem notanySS <> ")"
+        wrapRSSElem = T.intercalate ", " . fmap renderSSElem
         renderSSElem (nN, nS) = nN <> ":" <> showt nS
 
 renderMGraph :: ModelGraph -> T.Text
@@ -331,46 +334,69 @@ renderSPDiff (SD (LD lSProfiles) (RD rSProfiles) (FC switchDiffs)) =
             | null rSProfiles = ""
             | otherwise = "Right unique SwitchNames:\n" <>
                 T.intercalate "\n" (fst <$> rSProfiles) <> "\n"
-        switchDiffsRender
-            | null switchDiffs = ""
-            | T.null phenotypesRender = ""
-            | otherwise = "Shared SwitchNames but differing Phenotypes:\n" <>
-                phenotypesRender
-                where
-                    phenotypesRender = foldr renderSwitchDiff "" switchDiffs
+        switchDiffsRender = T.intercalate "\n"
+            (renderSwitchDiff <$> switchDiffs) <> "\n"
 
-renderSwitchDiff :: SwitchDiff -> T.Text -> T.Text
-renderSwitchDiff (nN, (SD (LD phsL) (RD phsR) (FC pDiffs))) acc =
-    phsLRender <> phsRRender <> pDiffsRender <> acc
+renderSwitchDiff :: SwitchDiff -> T.Text
+renderSwitchDiff (nN, (SD (LD phsL) (RD phsR) (FC phDiffs))) =
+    phsLRender <> phsRRender <> phDiffsRender
     where
         phsLRender
             | null phsL = ""
             | otherwise = "Left unique Phenotype names for Switch " <>
-                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsL)
+                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsL) <>
+                "\n"
         phsRRender
             | null phsR = ""
             | otherwise = "Right unique Phenotype names for Switch " <>
-                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsR)
-        pDiffsRender
-            | null pDiffs = ""
-            | T.null pDsRender = ""
-            | otherwise = "Shared SwitchName(" <> nN <>
-                "), and PhenotypeNames, but differing SwitchNodeStates or \
-                \Fingerprint:\n" <> pDsRender
-                where
-                    pDsRender = foldr renderPDiff "" pDiffs
+                nN <> ":\n" <> T.intercalate "\n" (phenotypeName <$> phsR) <>
+                "\n"
+        phDiffsRender = T.intercalate "\n" (renderPhDiff <$> phDiffs) <> "\n"
 
-renderPDiff :: PDiff -> T.Text -> T.Text
-renderPDiff (PDiff _ Nothing Nothing) acc = acc
-renderPDiff (PDiff pDN (Just lSwitchSDiff) Nothing) acc =
-    "Shared PhenotypeName(" <> pDN <> "), but differing SwitchNodeStates:" <>
-        showt lSwitchSDiff <> "\n" <> acc
-renderPDiff (PDiff pDN Nothing (Just _)) acc =
-    "Shared PhenotypeName(" <> pDN <> "), but differing FingerPrints\n" <> acc
-renderPDiff (PDiff pDN (Just lSwitchSDiff) (Just _)) acc =
-    "Shared PhenotypeName(" <> pDN <>
-        "), but differing SwitchNodeStates(" <> showt lSwitchSDiff <>
-         ") and differing Fingerprints\n" <> acc
+renderPhDiff :: PhDiff -> T.Text
+renderPhDiff (PhDiff phDName mSWND mFPD mMkdSSD phErrD) = phDNameT <> otherT
+    where
+        otherT = mSWNDT <> mFPDT <> mMkdSSDT <> phErrDT
+        phDNameT
+            | T.null otherT = ""
+            | otherwise = "Shared PhenotypeName (" <> phDName <> "), but with \
+                \the following differences:\n"
+        mSWNDT = maybe "" (\swStateDiff -> "Differing SwitchNodeStates: " <>
+            showt swStateDiff <> "\n") mSWND
+        mFPDT = maybe "" (\_ -> "Differing fingerPrints" <> "\n") mFPD
+        mMkdSSDT = maybe "" (\(mkdSSL, mkdSSR) ->
+            "Differing Marked SubSpaces: \n" <> showt mkdSSL <> "\n" <>
+            showt mkdSSR <> "\n") mMkdSSD
+        phErrDT = renderPhErrorSplitDiff phErrD
+        
+renderPhErrorSplitDiff :: SplitDiff [PhenotypeError] [PhErrorDiff] -> T.Text
+renderPhErrorSplitDiff (SD (LD phErrsL) (RD phErrsR) (FC phErrDiffs)) =
+    phErrsLRender <> phErrsRRender <> phEDNameRender
+    where
+        phErrsLRender
+            | null phErrsL = ""
+            | otherwise = "Left unique PhenotypeErrorNames:\n" <>
+                T.intercalate "\n" (phErrorName <$> phErrsL) <> "\n"
+        phErrsRRender
+            | null phErrsL = ""
+            | otherwise = "Right unique PhenotypeErrorNames:\n" <>
+                T.intercalate "\n" (phErrorName <$> phErrsR) <> "\n"
+        phEDNameRender = T.intercalate "\n" (renderPhErrorDiff <$> phErrDiffs)
+            <> "\n"
+
+renderPhErrorDiff :: PhErrorDiff -> T.Text
+renderPhErrorDiff (PhErrorDiff phEDName mPhErrID mPhErrFPD) = 
+    phEDNameRender <> otherRender
+    where
+        phEDNameRender
+            | T.null otherRender = ""
+            | otherwise = "Shared PhenotypeErrorName (" <> phEDName <> "), but\
+                \ with the following differences:\n "
+        otherRender = mPhErrIDRender <> mPhErrFPDRender
+        mPhErrIDRender = maybe "" (\phEIndexDiff ->
+            "Differing PHEIndices: " <> showt phEIndexDiff) mPhErrID
+        mPhErrFPDRender = maybe "" (\_ ->
+            "Differing PhenotypeError fingerprints: \n") mPhErrFPD
 
 renderLayerDiff :: (LayerRange, LayerRange)
                 -> SplitDiff [NodeName] [NodeDiff]
@@ -891,7 +917,12 @@ tpTimeline mM lniBMap tmln = (namedNodeFirstLists, phPrevalences)
         phPrevalences = (fmap . fmap . fmap) annotatorF nonEmptySwPhNs
         annotatorF phName = (phName,(B.toList . B.map (elem phName)) presPhsVec)
         nonEmptySwPhNs :: [(SwitchName, [PhenotypeName])]
-        nonEmptySwPhNs = (fmap . fmap . fmap) phenotypeName nonEmptySwPhs
+        nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
+        allPhNamesF :: [Phenotype] -> [PhenotypeName]
+        allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
+            where
+                phErrNames = filter (not . null) $
+                    (fmap phErrorName . phenotypeErrors) <$> phs
         nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
         namedNodeFirstLists :: [(NodeName, [(NodeState, WasForced)])]
         namedNodeFirstLists = zipWith namerF [0..] nodeFirstLists

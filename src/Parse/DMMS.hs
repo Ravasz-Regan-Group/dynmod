@@ -276,9 +276,8 @@ switchProfilesParse = between (symbol "SwitchProfiles{")
 switchPhenotypesParse :: Parser SwitchProfile
 switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
                                 (symbol "SwitchPhenotypes}") $
-    runPermutation $
-        (,) <$> toPermutation (identifier "SwitchName")
-            <*> toPermutation (some (try phenotypeParse))
+        (,) <$> identifier "SwitchName"
+            <*> some (try phenotypeParse)
 
 phenotypeParse :: Parser Phenotype
 phenotypeParse =   barePhParse
@@ -294,13 +293,12 @@ barePhParse = do
     return $ Phenotype phName switchState phFingerprint Nothing []
 
 wrappedPhParse :: Parser Phenotype
-wrappedPhParse = between (symbol "Phenotype{") (symbol "Phenotype}") $ do
+wrappedPhParse = do
     mainPh <- barePhParse
-    errorPhs <- some errorPhParse
-    void $ errorPhcheck (mainPh {phenotypeErrors = errorPhs})
-    let phErrFpL = length . phErrorFingerprint
-        sortedPhErrors = (reverse . L.sortOn phErrFpL) errorPhs
-    return $ mainPh {phenotypeErrors = sortedPhErrors}
+    errorPhs <- many errorPhParse
+    let fullPH = mainPh {phenotypeErrors = errorPhs}
+    void $ errorPhcheck fullPH
+    return fullPH
 
 errorPhParse :: Parser PhenotypeError
 errorPhParse = do
@@ -353,15 +351,35 @@ phErrSubloopCheck fPrint phErr
 -- Note that you may not write to an element of a SubSpace without a state, even
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 
 fingerPrintParse :: Parser [SubSpace]
-fingerPrintParse = sepBy1 (parens (fingerNodeParse `sepBy1` comma))
-                          (symbol "->")
+fingerPrintParse = sepBy1 ((try withBlockerSSParse) <|> withoutBlockerSSParse)
+                          (symbol "->") >>= lastFPNodeCheck
+    where
+        lastFPNodeCheck sbsps = case (snd . last) sbsps of
+            Nothing -> return sbsps
+            Just blockSS -> fail $ "PhenotypeEndsWithABlock: notany" <> errStr
+                where
+                    errStr = "(" <> (L.intercalate ", " . fmap stringF) blockSS
+                                 <> ")"
+                    stringF (nNm, nSt) = T.unpack nNm <> ":" <> show nSt
 
-fingerNodeParse :: Parser (NodeName, NodeState)
-fingerNodeParse = do
+withBlockerSSParse :: Parser SubSpace
+withBlockerSSParse =
+    (,) <$> parens (constraintFNodeParse `sepBy1` comma)
+        <*> ((symbol "->" >> symbol "notany") >>
+                Just <$> (parens (constraintFNodeParse `sepBy1` comma))
+            )
+
+withoutBlockerSSParse :: Parser SubSpace
+withoutBlockerSSParse = (,) <$> parens (constraintFNodeParse `sepBy1` comma)
+                            <*> pure Nothing
+
+constraintFNodeParse :: Parser (NodeName, NodeState)
+constraintFNodeParse = do
     fingerNode <- variable
     void colon
     fingerNodeState <- integer
     return (fingerNode, fingerNodeState)
+
 
 modelLayerParse :: Parser ModelLayer
 modelLayerParse = try
@@ -1051,7 +1069,7 @@ parseDiscreteLogic = between (symbol "DiscreteLogic{") (symbol "DiscreteLogic}")
     ((try pInt <|> pBin) >>= gateConsistencyCheck)
         where pInt = some parseNodeStateAssign
             -- A boolean gate will by definition have 1 assignment. 
-              pBin = (:[]) <$> parseBoolNodeStateAssign
+              pBin = (L.singleton) <$> parseBoolNodeStateAssign
 
 -- Sanity check on gate definitions. Return a NodeGate on success. 
 -- Return a useful error message on failure. Use mkLogicalGate. 

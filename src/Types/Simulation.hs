@@ -286,7 +286,7 @@ otherStates lVec lniBMap nName rangeTop = vecs
     where
         vecs = sequenceA ((flip (U.//)) <$> updateList) lVec
         currentState = lVec U.! nodeIndex
-        updateList = (:[]) <$> (zip (repeat nodeIndex) others)
+        updateList = (L.singleton) <$> (zip (repeat nodeIndex) others)
         others = filter (/= currentState) $ fillDown rangeTop
         nodeIndex = lniBMap BM.! nName
 
@@ -579,7 +579,7 @@ lNISwitchThread oldLNIBM newLNIBM thread =
                     mkAttractor <$> preppedValid
     where
         preppedValid :: Validation [InvalidLVReorder] Attractor
-        preppedValid = sequenceA $ (liftError (:[])) <$> switchedVecs
+        preppedValid = sequenceA $ (liftError (L.singleton)) <$> switchedVecs
         switchedVecs = lNISwitchVec oldLNIBM newLNIBM <$> thread
 
 -- Check if a Thread (with its LayerNameIndexBimap), is an attractor of a 

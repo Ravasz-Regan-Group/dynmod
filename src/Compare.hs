@@ -12,7 +12,8 @@ module Compare
     , SwitchProfilesDiff
     , SwitchDiff
     , PhenotypeDiff
-    , PDiff(..)
+    , PhDiff(..)
+    , PhErrorDiff(..)
     , LayerDiff
     , NodeDiff(..)
     , LinkDiff
@@ -50,13 +51,22 @@ type DMMSMappingDiff = SplitDiff DMMSModelMapping
                       (SplitDiff DMMSModelMapping DMMSModelMapping)
 type SwitchProfilesDiff = SplitDiff [SwitchProfile] [SwitchDiff]
 type SwitchDiff = (NodeName, PhenotypeDiff)
-type PhenotypeDiff = SplitDiff [Phenotype] [PDiff]
-data PDiff = PDiff { pDiffName :: PhenotypeName
-                   , switchNSDiff :: Maybe (NodeState, NodeState)
--- We call fingerprints different if they are not cyclic permutations of each
--- other. 
-                   , fPrintDiff :: Maybe ([SubSpace], [SubSpace])
-                   } deriving (Show, Eq)
+type PhenotypeDiff = SplitDiff [Phenotype] [PhDiff]
+-- We call fingerprints and marked SubSpaces different if they are not identical
+-- to each other, here and in a PhErrorDiff. If at some future time we go back
+-- to cyclic permutations, update this. 
+data PhDiff = PhDiff { pDiffName :: PhenotypeName
+                     , switchNSDiff :: Maybe (NodeState, NodeState)
+                     , fPrintDiff :: Maybe ([SubSpace], [SubSpace])
+                     , markedSSDiff :: Maybe ([(NodeName, NodeState)]
+                                            ,[(NodeName, NodeState)])
+                     , phErrorDiff :: SplitDiff [PhenotypeError] [PhErrorDiff]
+                     } deriving (Show, Eq)
+
+data PhErrorDiff = PhErrorDiff { phErrDiffName :: PhenotypeErrorName
+                               , phErrIndexDiff :: Maybe (PHEIndex, PHEIndex)
+                               , phErrFPDiff :: Maybe ([SubSpace], [SubSpace])
+                               } deriving (Show, Eq)
 
 type LayerDiff = ( ((ModelName, LayerRange), (ModelName, LayerRange))
                  , SplitDiff [NodeName] [NodeDiff])
@@ -161,27 +171,63 @@ spCompare (phsL, phsR) = let
                                          (phenotypeName <$> phsR)]
     fcPhenotypesR = [x | x <- phsR, elem (phenotypeName x)
                                          (phenotypeName <$> phsL)]
-    fcPhs = zipWith f (L.sortOn phenotypeName fcPhenotypesL)
-                      (L.sortOn phenotypeName fcPhenotypesR)
-    f p1 p2 = ( phenotypeName p1
-              , (switchNodeState p1, switchNodeState p2)
-              , (fingerprint p1, fingerprint p2)
-              )
+    fcPhs = zip (L.sortOn phenotypeName fcPhenotypesL)
+                (L.sortOn phenotypeName fcPhenotypesR)
   in SD (LD lPhenotypes) (RD rPhenotypes) (FC (phenotypeCompare <$> fcPhs))
         
-phenotypeCompare :: ( PhenotypeName
-                    , (NodeState, NodeState)
-                    , ([SubSpace], [SubSpace])
-                    )
-                 -> PDiff
-phenotypeCompare (pN, (nSL, nSR), (sbspL, sbspR)) = PDiff pN sNSD fPD
+phenotypeCompare :: (Phenotype, Phenotype) -> PhDiff
+phenotypeCompare (phL, phR) =
+    PhDiff (phenotypeName phL) swNameDiff fingerPrintDiff mkdSSDiff phErrDiff
     where
-        sNSD
-            | nSL == nSR = Nothing
-            | otherwise  = Just (nSL, nSR)
-        fPD
-            | areCyclicPermutes sbspL sbspR = Nothing
-            | otherwise                     = Just (sbspL, sbspR)
+        swNameDiff
+            | swNodeStateL == swNodeStateR = Nothing
+            | otherwise = Just (swNodeStateL, swNodeStateR)
+        swNodeStateL = switchNodeState phL
+        swNodeStateR = switchNodeState phR
+        fingerPrintDiff
+            | fPrintL == fPrintR = Nothing
+--             | areCyclicPermutes sbspL sbspR = Nothing 
+            | otherwise = Just (fPrintL, fPrintR)
+        fPrintL = fingerprint phL
+        fPrintR = fingerprint phR
+        mkdSSDiff = case (mSSL, mSSR) of
+            (Nothing, Nothing) -> Nothing
+            (Just jMSSL, Just jMSSR)
+                | jMSSL == jMSSR -> Nothing
+                | otherwise -> Just (jMSSL, jMSSR)
+            (Just jMSSL, Nothing) -> Just (jMSSL, [])
+            (Nothing, Just jMSSR) -> Just ([], jMSSR)
+        mSSL = markedSubSpace phL
+        mSSR = markedSubSpace phR
+        phErrsL = phenotypeErrors phL
+        phErrsR = phenotypeErrors phR
+        phErrDiff = let
+            lPhErrors = [x | x <- phErrsL, notElem (phErrorName x)
+                                                   (phErrorName <$> phErrsR)]
+            rPhErrors = [x | x <- phErrsR, notElem (phErrorName x)
+                                                   (phErrorName <$> phErrsL)]
+            fcPhErrorsL = [x | x <- phErrsL, elem (phErrorName x)
+                                                  (phErrorName <$> phErrsR)]
+            fcPhErrorsR = [x | x <- phErrsR, elem (phErrorName x)
+                                                  (phErrorName <$> phErrsL)]
+            fcPhErrs = zip (L.sortOn phErrorName fcPhErrorsL)
+                             (L.sortOn phErrorName fcPhErrorsR)
+         in SD (LD lPhErrors) (RD rPhErrors) (FC (phErrorCompare <$> fcPhErrs))
+
+phErrorCompare :: (PhenotypeError, PhenotypeError) -> PhErrorDiff
+phErrorCompare (phErrL, phErrR) = PhErrorDiff phELName phErrIDiff phErrorFPDiff
+    where
+        phELName = phErrorName phErrL
+        phErrIDiff
+            | phErrIndexL == phErrIndexR = Nothing
+            | otherwise = Just (phErrIndexL, phErrIndexR)
+        phErrIndexL = phIndex phErrL
+        phErrIndexR = phIndex phErrR
+        phErrorFPDiff
+            | phErrFPL == phErrFPR = Nothing
+            | otherwise = Just (phErrFPL, phErrFPR)
+        phErrFPL = phErrorFingerprint phErrL
+        phErrFPR = phErrorFingerprint phErrR
 
 layerCompare :: ModelLayer -> ModelLayer -> LayerDiff
 layerCompare mlL mlR = let

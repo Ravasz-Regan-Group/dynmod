@@ -372,7 +372,7 @@ mkPublishNodeOverlap dmM
 -- Which DMNodes in a list overlap with each other?
 overlappingNodes :: [DMNode] -> [((NodeName, NodeName), Double)]
 overlappingNodes [] = []
-overlappingNodes (_:[]) = []
+overlappingNodes [_]= []
 overlappingNodes (n:ns) = nInsert <> (overlappingNodes ns)
     where
         nInsert :: [((NodeName, NodeName), Double)]

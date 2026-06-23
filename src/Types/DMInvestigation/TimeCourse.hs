@@ -92,7 +92,7 @@ type RealAnnotatedLayerVec = U.Vector (RealNodeState, AvgWasForced)
 -- False(not forced) = 0.0 and True(forced) = 1.0. 0 <= awf <= 1
 type AvgWasForced = Double
 -- Represents the distribution of present Phenotypes at this time-step. It is
--- weighted over all runs, NOT form among the Switch's Phenotypes. 
+-- weighted over all runs, NOT from among the Switch's Phenotypes. 
 type PhenotypeWeights = M.HashMap PhenotypeName Double
 
 data ExpStepper = SD PSStepper
