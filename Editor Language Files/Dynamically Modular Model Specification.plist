@@ -63,6 +63,7 @@
 		<string>ModelMapping</string>
 		<string>SwitchProfiles</string>
 		<string>SwitchPhenotypes</string>
+		<string>Phenotype</string>
 		<string>ModelMetaData</string>
 		<string>ModelGraph</string>
 		<string>Node</string>

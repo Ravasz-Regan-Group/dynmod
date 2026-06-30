@@ -78,7 +78,7 @@ nBChartDia cMap lniBMap exMeta bCHNodeNs pulseStats = fig
         bcNodeIndicesVec = B.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = L.reverse $ (opaque . (cMap M.!)) <$> bCHNodeNs
 
-phBChartDia :: ColorMap
+phBChartDia :: PhColorMap
             -> ModelLayer
             -> M.HashMap NodeName [PhenotypeName]
             -> TCExpMeta
@@ -86,7 +86,7 @@ phBChartDia :: ColorMap
             -> [PulseSpacing]
             -> [M.HashMap PhenotypeName (Double, StdDev)]
             -> Diagram B
-phBChartDia cMap mL switchMap exMeta bChSwitchNs pSps statMs = fig
+phBChartDia phCMap mL switchMap exMeta bChSwitchNs pSps statMs = fig
     where
         fig = (extrudeBottom 100 chBlLabel) === chartBlock
         chBlLabel = expLabelDia (3 * floatfSSetting) (tcExpName exMeta)
@@ -97,7 +97,7 @@ phBChartDia cMap mL switchMap exMeta bChSwitchNs pSps statMs = fig
                 resized = extrudeLeft 100 (scale scaleN dx)
                 scaleN = 0.75 * (width dy / width dx)
         chartRes = (uncurry phDiaF) <$> pairs
-        phDiaF = phSingleBChDia fontSizeSetting cMap switchMap
+        phDiaF = phSingleBChDia fontSizeSetting phCMap switchMap
         pairs = zip bChSwitchNs avgs
 --         We aren't using the standard deviations for now. 
         avgs =  (fmap . fmap . fmap) fst pulseStats
@@ -130,12 +130,12 @@ phDataExtractor blank phNamess statM = (fmap . fmap) extractorF phNamess
         extractorF phName = M.findWithDefault blank phName statM
 
 phSingleBChDia :: Int
-               -> ColorMap
+               -> PhColorMap
                -> M.HashMap NodeName [PhenotypeName]
                -> SwitchName
                -> [[Double]]
                -> Diagram B
-phSingleBChDia fontSizeSetting cMap switchMap swName avgs = fig
+phSingleBChDia fontSizeSetting phCMap switchMap swName avgs = fig
     where
         fig = fst $ (runBackendR dEnv . toRenderable) layout
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 1600 1200
@@ -165,8 +165,7 @@ phSingleBChDia fontSizeSetting cMap switchMap swName avgs = fig
           $ legend_position .~ LegendRight
           $ legend_orientation .~ LOCols 4
           $ def
-        blendedColors = opaque <$> (phTCBlend 0.85 swColor (L.length phNames))
-        swColor = cMap M.! swName
+        blendedColors = (phCMap M.!) <$> phNames
         phNames = switchMap M.! swName
 
 -- Arrange multiple Phenotype bar charts in a block with minimum row length i

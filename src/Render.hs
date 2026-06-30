@@ -114,7 +114,7 @@ renderPhenotype ph =
     (T.intercalate " -> " $ renderSubSpace <$> (fingerprint ph))
 
 renderSubSpace :: SubSpace -> T.Text
-renderSubSpace (sSp, mNotanySS) = "(" <> wrapRSSElem sSp <> ")" <> notanyE
+renderSubSpace (mNotanySS, sSp) = notanyE <> "(" <> wrapRSSElem sSp <> ")"
     where
         notanyE = case mNotanySS of
             Nothing -> ""
@@ -917,12 +917,7 @@ tpTimeline mM lniBMap tmln = (namedNodeFirstLists, phPrevalences)
         phPrevalences = (fmap . fmap . fmap) annotatorF nonEmptySwPhNs
         annotatorF phName = (phName,(B.toList . B.map (elem phName)) presPhsVec)
         nonEmptySwPhNs :: [(SwitchName, [PhenotypeName])]
-        nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
-        allPhNamesF :: [Phenotype] -> [PhenotypeName]
-        allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
-            where
-                phErrNames = filter (not . null) $
-                    (fmap phErrorName . phenotypeErrors) <$> phs
+        nonEmptySwPhNs = (fmap . fmap . concatMap) allPhNames nonEmptySwPhs
         nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
         namedNodeFirstLists :: [(NodeName, [(NodeState, WasForced)])]
         namedNodeFirstLists = zipWith namerF [0..] nodeFirstLists

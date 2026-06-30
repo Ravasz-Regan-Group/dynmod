@@ -27,8 +27,8 @@ module Types.Figures
     , ColorMap
     , mkColorMap
     , PhColorMap
+    , LocalAlphaColor
     , mkPhColorMap
-    , phTCBlend
     , gradientPick
     , attMatch
     , bcFilterF
@@ -65,12 +65,17 @@ import GHC.Generics (Generic)
 import Data.Maybe (mapMaybe, fromMaybe, isJust)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
+import qualified Debug.Trace as TR
 
 -- Basic types to support all manner of figures.
 
 type SVGText = T.Text
 type ColorMap = M.HashMap NodeName LocalColor
-type PhColorMap = M.HashMap PhenotypeName LocalColor
+-- PhColorMap includes PhenotypeErrorNames; their colors are made more
+-- transparent than their parent PhenotypeNames. 
+type PhColorMap = M.HashMap PhenotypeName LocalAlphaColor
+type LocalAlphaColor = C.AlphaColour Double
+
 type PUCGradient = B.Vector LocalColor
 type StdDev = Double
 
@@ -149,13 +154,34 @@ mkColorMap dmm = M.fromList nameColorPairs
         nameColorPairs = (\n -> (nodeName n, nodeColor n)) <$> nodesMetas
         nodesMetas = nodeMeta <$> ((concat . modelNodes) dmm)
 
+-- Make a color map for PhenotypeNames, including alpha changes for
+-- PhenotypeErrorNames. 
 mkPhColorMap :: ModelMapping -> ColorMap -> PhColorMap
-mkPhColorMap mM cMap = (M.fromList . concatMap phBlendF) nonEmptyPhs
+mkPhColorMap mM cMap = (M.fromList . concatMap phBlendF) nonEmptyPhSWs
+  where
+    phBlendF (nN, phs) = concatMap alphaBlendF attachedBlends
+      where
+        alphaBlendF (c, (phN, phErrNs)) = (phN, C.opaque c):dissolvedPairs
+          where
+            dissolvedPairs = zip phErrNs acBlends
+            acBlends = alphaBlend 0.65 c (L.length phErrNs)
+        attachedBlends = zip cBlends nameBatches
+        nameBatches = nameBatchF <$> phs
+        nameBatchF ph = (phenotypeName ph, phErrorNames)
+          where phErrorNames = (fmap phErrorName . phenotypeErrors) ph
+        cBlends = phTCBlend 0.85 (cMap M.! nN) (L.length phs)
+    
+    nonEmptyPhSWs = ((fmap . fmap) snd . nonEmptyPhenotypes) mM
+
+alphaBlend :: Double -> LocalColor -> Int -> [LocalAlphaColor]
+alphaBlend alphaAnchor phColor phErrCount
+    | phErrCount <= 0 = []
+    | otherwise = C.withOpacity phColor <$> stepF phErrCount
     where
-        phBlendF (nN, phs) = zip (phenotypeName <$> phs) cBlends
-            where
-                cBlends = phTCBlend 0.85 (cMap M.! nN) (L.length phs)
-        nonEmptyPhs = ((fmap . fmap) snd . nonEmptyPhenotypes) mM
+        stepF :: Int -> [Double]
+        stepF i = drop 1 $ ((1 -) . ((alphaAnchor/x) *)) <$> [0..x]
+            where x = fromIntegral i
+        -- alphaAnchor: How close to transparent do we want to go?
 
 -- Pick a color from one of the perceptually uniform color gradients in
 -- Constants. 
@@ -334,7 +360,7 @@ attractorReorder :: LayerNameIndexBimap
                  -> (Attractor, Phenotype)
 attractorReorder lniBMap att ph = (reorderedAtt, ph)
     where
-        reorderedAtt = mergePair $ B.break (fst . flip isSSMatch firstIntSS) att
+        reorderedAtt = mergePair $ B.break (snd . flip isSSMatch firstIntSS) att
         mergePair (x, y) = y <> x
         firstIntSS = (head . fmap (toIntSubSpace lniBMap) . fingerprint) ph
 
@@ -445,56 +471,75 @@ wholePhMatch :: LayerNameIndexBimap
              -> Thread
              -> Phenotype
              -> [(PhenotypeName, [[Int]])]
-wholePhMatch lniBMap thread ph = filter (not . L.null . snd) purgedMatches
+wholePhMatch lniBMap thread ph = filter (not . L.null . snd) -- purgedMatches
+     phMatchList
   where
---     rangedMatches = (fmap . fmap . fmap) mkRange purgedMatches
-    purgedMatches = B.toList purgedMatchVec
-    purgedMatchVec = fst $ B.foldl' purgerF purgeAcc phMatchVec
---     Remove the PhentypeError matches that are just the starts of Phenotype
---     or longer PhenotypeError matches
-    purgeAcc = (B.empty, [])
-    purgerF (cleanMatches, fullerMatches) (phName, phEMatches) = newAcc
-        where
-            newAcc = ( B.snoc cleanMatches (phName, newCleanMatches)
-                     , newCleanMatches <> fullerMatches)
-            newCleanMatches = filter (purgeFilterF fullerMatches) phEMatches
-            purgeFilterF fMatches phEMatch = not $
-                any (L.isPrefixOf phEMatch) fMatches
-    phMatchVec = fst $ B.ifoldr phMatch (rAcc, sAcc) thread
-    sAcc = B.replicate (length allPhNames) (0, [])
-    rAcc = (B.fromList . fmap (\x -> (x, []))) allPhNames
-    allPhNames = (phenotypeName ph):phErrNames
-    phErrNames = phErrorName <$> phErrs
-    phMatch :: Int -> LayerVec
+--     purgedMatches = B.toList purgedMatchVec
+--     purgedMatchVec = fst $ B.foldl' purgerF purgeAcc phMatchVec
+-- --     Remove the PhentypeError matches that are just the starts of Phenotype
+-- --     or longer PhenotypeError matches
+--     purgeAcc = (B.empty, [])
+--     purgerF (cleanMatches, fullerMatches) (phName, phEMatches) =
+--       (newCleanMatches, newFullerMatches)
+--         where
+--           newCleanMatches = B.snoc cleanMatches (phName, phCleanMatches)
+--           newFullerMatches =  fullerMatches <> phCleanMatches
+--           phCleanMatches = filter purgeFF phEMatches
+--           purgeFF phEMatch = (not . any (isStrictPrefixOf phEMatch))
+--                                                     fullerMatches
+    phMatchList = B.toList phMatchVec
+    phMatchVec = fst $ B.ifoldl' phMatch (rAcc, sAcc) thread
+    sAcc = B.replicate (length allPhNs) (0, [])
+    rAcc = (B.fromList . fmap (\x -> (x, []))) allPhNs
+    allPhNs = allPhNames ph
+    phMatch :: (PHMResultVec, PHMStateVec)
+            -> Int -> LayerVec
             -> (PHMResultVec, PHMStateVec)
-            -> (PHMResultVec, PHMStateVec)
-    phMatch threadIndex lVec accVecs = builtMatches
+    phMatch accVecs threadIndex lVec = builtMatches
       where
-        builtMatches = B.ifoldr phFoldF (fst accVecs, B.empty) (snd accVecs)
-        phFoldF :: Int -> (PhLoopIndex, [Int])
+        builtMatches = B.ifoldl' phFoldF (fst accVecs, B.empty) (snd accVecs)
+        phFoldF :: (PHMResultVec, PHMStateVec)
+                -> Int -> (PhLoopIndex, [Int])
                 -> (PHMResultVec, PHMStateVec)
-                -> (PHMResultVec, PHMStateVec)
-        phFoldF pheIndex (phSSIndex, matchAcc) (rVec, sVec) = (newRVec, newSVec)
+        phFoldF (rVec, sVec) pheIndex (phSSIndex, matchAcc) = (newRVec, newSVec)
           where
             (newRVec, newSVec) = case isSSMatch lVec sSpace of
-              (True, _) -> case phSSIndex == ssLoopMax of
+              -- If we match, nothing else matters. 
+              (_, True) -> case phSSIndex == ssLoopMax of
                 True -> (nRVec, nSVec)
-                    where
-                        nRVec = B.accum rUpdate rVec [(pheIndex, newMatchAcc)]
-                        rUpdate (phN, matchIntss) newMatchInts =
+                  where
+                    nRVec = B.accum rUpdate rVec [(pheIndex, newMatchAcc)]
+                    rUpdate (phN, matchIntss) newMatchInts =
                                     (phN, L.snoc matchIntss newMatchInts)
-                        nSVec = B.cons (0, []) sVec
-                False -> (rVec, B.cons (phSSIndex + 1, newMatchAcc) sVec)
-              (False, Just True) -> (rVec, B.cons (0, []) sVec)
-              (False, _) -> (rVec, B.cons (phSSIndex, matchAcc) sVec)
+                    nSVec = B.snoc sVec (0, [])
+                False -> (rVec, B.snoc sVec (phSSIndex + 1, newMatchAcc))
+              (Nothing, False) -> case any snd anyPrevSSMatches of
+-- Reset if we don't match and any of the previous SubSpaces do. 
+                False -> (rVec, B.snoc sVec (phSSIndex, matchAcc))
+                True -> (rVec, B.snoc sVec (0, []))
+                where
+                  anyPrevSSMatches = aPSSMF <$> [0..(phSSIndex - 2)]
+                  aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
+-- Keep going if we don't match and do keep the notany condition, but reset if
+-- any of the previous SubSpaces do. 
+              (Just False, False) -> case any snd anyPrevSSMatches of
+                False -> (rVec, B.snoc sVec (phSSIndex, matchAcc))
+                True -> (rVec, B.snoc sVec (0, []))
+                where
+                  anyPrevSSMatches = aPSSMF <$> [0..(phSSIndex - 2)]
+                  aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
+-- Reset if we don't match and do not keep the notany condition.
+              (Just True, False) -> TR.trace
+                ("(phSSIndex, matchAcc): " <> show (phSSIndex, matchAcc) <>
+                  ", threadIndex: " <> show threadIndex)
+                  (rVec, B.snoc sVec (0, []))
             newMatchAcc = L.snoc matchAcc threadIndex
             sSpace = (phIntSSVecVec B.! pheIndex) B.! phSSIndex
             ssLoopMax = phSSLoopMaxIVec B.! pheIndex
-    phSSLoopMaxIVec = B.map (pred . B.length) phSSVecVec
+    phSSLoopMaxIVec = B.map (\v ->(B.length v) - 1) phSSVecVec
     phIntSSVecVec = (B.map . B.map) (toIntSubSpace lniBMap) phSSVecVec
     phSSVecVec = (B.fromList . fmap B.fromList) ((fingerprint ph):phErrFPs)
-    phErrFPs = phErrorFingerprint <$> phErrs
-    phErrs = phenotypeErrors ph
+    phErrFPs = (fmap phErrorFingerprint . phenotypeErrors) ph
 
 -- Sometimes we want only the range of a Phenotype match. Partial; use only on
 -- the output of wholePhMatch. 
@@ -502,7 +547,7 @@ mkRange :: [Int] -> ThreadSlice
 mkRange matchIndices = (head matchIndices, last matchIndices)
 
 toIntSubSpace :: LayerNameIndexBimap -> SubSpace -> IntSubSpace
-toIntSubSpace lniBMap = BF.bimap toIntF (fmap toIntF)
+toIntSubSpace lniBMap = BF.bimap (fmap toIntF) toIntF
     where toIntF = (fmap . BF.first) (lniBMap BM.!)
 
 -- Results Vector of the places the Phenotype and its PhenotypeErrors occur in
@@ -517,8 +562,8 @@ type PhLoopIndex = Int
 
 -- Do the states in the Int-converted constraint or (possiblly) blocking
 -- Subspace match the equivalent states in the LayerVec?
-isSSMatch :: LayerVec -> IntSubSpace -> (Bool, Maybe Bool)
-isSSMatch lV (consSS, mBlockSS) = (isCons, mIsBlock)
+isSSMatch :: LayerVec -> IntSubSpace -> (Maybe Bool, Bool)
+isSSMatch lV (mBlockSS, consSS) = (mIsBlock, isCons)
     where
         mIsBlock = (all (isStateMatch lV)) <$> mBlockSS
         isCons = all (isStateMatch lV) consSS

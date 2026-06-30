@@ -27,7 +27,6 @@ import Graphics.Rendering.Chart
 import Graphics.Rendering.Chart.Backend.Diagrams
 import qualified Plots as P
 import Plots.Axis.Line (axisLine, axisLineStyle)
-import qualified Data.Colour.Names as CN
 import qualified Data.HashMap.Strict as M
 import qualified Data.Text as T
 import TextShow
@@ -108,7 +107,7 @@ baseScDia cMap phCMap switchMap exMeta (allStopDs, allPhDists, allNStats) =
 --                     legend_label_style . font_size .~ 12
                   $ def
         barsStopD =
-            plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
+            plot_bars_titles .~ (T.unpack <$> stopPhNames)
           $ plot_bars_values .~ addIndexes plotValues
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> stopDColors)
@@ -116,22 +115,21 @@ baseScDia cMap phCMap switchMap exMeta (allStopDs, allPhDists, allNStats) =
             where
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
-        stopDColors = (fmap opaque . (CN.whitesmoke:) . fmap (phCMap M.!))
-                        stopPhNames
+        stopDColors = (phCMap M.!) <$> stopPhNames
         xPlotLabels = showRound <$> xRange
         showRound :: Double -> String; showRound = printf "%.2f"
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
-        plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
+        plotValues = (fmap snd . fst) <$> stopDs
         stopDs = (BF.first stopDF) <$> allStopDs
         stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
-timeInSwPhsDia :: ColorMap
+timeInSwPhsDia :: PhColorMap
                -> SCExpMeta
                -> [PhDistribution]
                -> (ScanSwitch, [PhenotypeName])
                -> TimeInSwitchPhsFig
-timeInSwPhsDia cMap exMeta allPhDists (scSw, phNs) = (,) scSw $
+timeInSwPhsDia phCMap exMeta allPhDists (scSw, phNs) = (,) scSw $
     (fst . runBackendR dEnv . toRenderable) layout
     where
         dEnv = unsafePerformIO $ defaultEnv vectorAlignmentFns 300 325
@@ -167,7 +165,7 @@ timeInSwPhsDia cMap exMeta allPhDists (scSw, phNs) = (,) scSw $
         plotVF ns phDM = (phDM M.!) <$> ns
         layoutTitle = scExpName exMeta <> ", Time In: " <> scSw
         (xTitle, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
-        phNColors = (opaque . (cMap M.!)) <$> phNs
+        phNColors = (phCMap M.!) <$> phNs
 
 envKDOESWDia :: PhColorMap
              -> M.HashMap ScanSwitch [PhenotypeName]
@@ -201,10 +199,10 @@ envKDOEVertLayout :: PhColorMap
                   -> SCExpMeta
                   -> ScanStats
                   -> [Layout PlotIndex Double]
-envKDOEVertLayout cMap switchMap exMeta (allStopDs, allPhDists, _) =
+envKDOEVertLayout phCMap switchMap exMeta (allStopDs, allPhDists, _) =
     stopPHlayout:timeInSwlayouts
     where
-        timeInSwlayouts = envKDOELayout cMap exMeta allPhDists <$> scanSwsPairs
+        timeInSwlayouts = envKDOELayout phCMap exMeta allPhDists <$> scanSwsPairs
         scanSwsPairs = (zip scanSws . fmap (switchMap M.!)) scanSws
         scanSws = scExpSwitches exMeta
         stopPHlayout =
@@ -220,7 +218,7 @@ envKDOEVertLayout cMap switchMap exMeta (allStopDs, allPhDists, _) =
                   $ legend_orientation .~ LORows 2
                   $ def
         barsStopD =
-            plot_bars_titles .~ (T.unpack <$> ("NoStopPhenotype":stopPhNames))
+            plot_bars_titles .~ (T.unpack <$> stopPhNames)
           $ plot_bars_values .~ addIndexes plotValues
           $ plot_bars_style .~ BarsStacked
           $ plot_bars_item_styles .~ (mkStyle <$> stopDColors)
@@ -228,21 +226,20 @@ envKDOEVertLayout cMap switchMap exMeta (allStopDs, allPhDists, _) =
             where
                 mkStyle c = (solidFillStyle c, bstyles)
                 bstyles = Just (solidLine 0.5 $ opaque black)
-        stopDColors = (fmap opaque . (CN.whitesmoke:) . fmap (cMap M.!))
-                    stopPhNames
+        stopDColors = (phCMap M.!) <$> stopPhNames
         xPlotLabels = show <$> xRange
         xRange = (snd . head . scanXAxisData . scMetaScanKind) exMeta
-        plotValues = (\(xs, y) -> y:(snd <$> xs)) <$> stopDs
+        plotValues = (fmap snd . fst) <$> stopDs
         stopDs = (BF.first stopDF) <$> allStopDs
         stopDF stM = zip stopPhNames ((stM M.!) <$> stopPhNames)
         stopPhNames = (fmap fst . stopPhenotypes) exMeta
 
-envKDOELayout :: ColorMap
+envKDOELayout :: PhColorMap
               -> SCExpMeta
               -> [PhDistribution]
               -> (ScanSwitch, [PhenotypeName])
               -> Layout PlotIndex Double
-envKDOELayout cMap exMeta allPhDists (swName, phNs) = layout
+envKDOELayout phCMap exMeta allPhDists (swName, phNs) = layout
   where
     layout =
         layout_legend .~ legend
@@ -282,7 +279,7 @@ envKDOELayout cMap exMeta allPhDists (swName, phNs) = layout
           showRound :: Double -> String
           showRound = printf "%.2f"
           (xTitleBase, xRange) = (head . scanXAxisData . scMetaScanKind) exMeta
-          phNColors = (opaque . (cMap M.!)) <$> phNs
+          phNColors = (phCMap M.!) <$> phNs
 
 -- Pull out what being scanned over, and the range of the scan. 
 scanXAxisData :: MetaScanKind -> [(String, [Double])]

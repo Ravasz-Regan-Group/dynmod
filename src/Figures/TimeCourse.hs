@@ -295,7 +295,7 @@ phRunDia cMap mM bc pulseSps tmLn =
         -- started in, if such exists, so we pair them before passing to
         -- runSwitchPHDia
         switchPHPairs = findBar bc <$> strippedSwitches
-        paddedPHNBlocks = (alignL . vcat) <$>
+        paddedPHNBlocks = (alignL . alignY 0 . vcat) <$>
                                 (padder maxphNBlockW <<$>> phNBlocks)
         maxphNBlockW = maximum $ (concatMap . fmap) width phNBlocks
         padder m d = extrudeLeft 1.0 $ padX (m / (width d)) d
@@ -305,13 +305,18 @@ phRunDia cMap mM bc pulseSps tmLn =
         stripWelderF :: [[Diagram B]] -> Diagram B
         stripWelderF switchStripss =  (alignY 0 . vcat) sepdWelds
             where
-                sepdWelds = L.intersperse phESeparator firstWelds
+                sepdWelds
+                    | all ((==) 1 . length) switchStripss = firstWelds
+                    | otherwise = L.intersperse phESeparator firstWelds
                 firstWelds = (alignY 0 . vcat) <$> switchStripss
                 phESeparator = hrule (fromIntegral stripLength)
-                                                    # dashingN [5.0, 5.0] 0.0
+                                                    # dashingG [3, 5] 0.0
+                                                    # lw ultraThin
+                                                    # alignL
         stripLength = B.length tmLn
         switchStripsss :: [[[Diagram B]]]
-        switchStripsss = switchStripsDia cMap stripHt tmLn <$> switchPhs
+        switchStripsss = switchStripsDia phCMap stripHt tmLn <$> switchPhs
+        phCMap = mkPhColorMap mM cMap
         (stripHt, swFWidth) = (2.0, 24.0) :: (Double, Double)
         switchPhs = snd <<$>> strippedSwitches
         -- Note that some Switches do not have Phenotypes, so these must be
@@ -343,57 +348,42 @@ phNameBlockDia stripHt phs = (alignY 0 . vcat) <$> paddedLabels
         padder m d = extrudeLeft 1.0 $ padX (m / (width d)) d
         maxW = maximum $ (concatMap . fmap) width phLabels
         phLabels :: [[Diagram B]]
-        phLabels = (uncurry (phStripLabelDia stripHt)) <<$>> allPhNames
-        allPhNames = phNames:indexedPhErrNames
-        indexedPhErrNames :: [[(Int, PhenotypeErrorName)]]
-        indexedPhErrNames = (zip [1..]) <$> strippedPhErrors
-        strippedPhErrors = filter (not . null) $
-            (fmap phErrorName . phenotypeErrors) <$> phs
-        phNames = zip (repeat 0) $ phenotypeName <$> phs
+        phLabels = (uncurry (phStripLabelDia stripHt)) <<$>> indexedPhNames
+        indexedPhNames = (zip [0..]) <$> allPhNamess
+        allPhNamess = allPhNames <$> phs
 
 phStripLabelDia :: Double -> Int -> PhenotypeName -> Diagram B
-phStripLabelDia stripHt phErrIndex phN = (nameD <> errIndexD) # alignL
+phStripLabelDia stripHt phErrIndex phN = (tText' stripHt indexT) # alignL
     where
-        errIndexD = case phErrIndex of
-            0 -> mempty
-            i -> tText' stripHt ("E:" <> showt i)
-        nameD = tText' stripHt phN
+        indexT = case phErrIndex of
+            0 -> phN
+            i -> phN <> ":E" <> showt i
 
-switchStripsDia :: ColorMap
+switchStripsDia :: PhColorMap
                 -> Double
                 -> B.Vector PhenotypeWeights
                 -> (NodeName, [Phenotype])
                 -> [[Diagram B]]
-switchStripsDia cMap stripHt tmLn (nName, phs) = phDiass
+switchStripsDia phCMap stripHt tmLn (_, phs) =
+    phStripDia stripHt tmLn <<$>> coloredPhs
     where
-        phDiass = phStripDia stripHt tmLn <<$>> (coloredPhs:coloredPhErrs)
-        coloredPhErrs = zipWith insertF blendedColors phErrorNames
-        insertF c phENs = zip (repeat c) phENs
-        coloredPhs = zip blendedColors phNames
-        blendedColors = phTCBlend 0.65 baseColor (L.length phs)
-        baseColor = cMap M.! nName
-        phErrorNames = filter (not . null) $
-            (fmap phErrorName . phenotypeErrors) <$> phs
-        phNames = phenotypeName <$> phs
+        coloredPhs = colorPairF <<$>> allPhNss
+        colorPairF phN = (phCMap M.! phN, phN)
+        allPhNss = allPhNames <$> phs
 
 phStripDia :: Double
            -> B.Vector PhenotypeWeights
-           -> (LocalColor, PhenotypeName)
+           -> (LocalAlphaColor, PhenotypeName)
            -> Diagram B
-phStripDia stripHt tmLn phPair = hcat $
-                            phStateDia stripHt phPair <$> B.toList tmLn
-
-phStateDia :: Double
-           -> (LocalColor, PhenotypeName)
-           -> PhenotypeWeights
-           -> Diagram B
-phStateDia stripHt (phColor, phName) phWeights = dia
+phStripDia stripHt tmLn (phColor, phName) = hcat $ phStateDia <$> B.toList tmLn
     where
-        dia = rect 1 stripHt # fcA cPick # lineWidth none
-        cPick
-            | phWeight == 0 = C.transparent
-            | otherwise = C.withOpacity phColor phWeight
-        phWeight = M.findWithDefault 0 phName phWeights
+        phStateDia phWeights = rect 1 stripHt # fcA cPick # lineWidth none
+            where
+                cPick
+                    | phWeight == 0 = C.transparent
+                    | otherwise = C.dissolve ((1/alphaChV) * phWeight) phColor
+                alphaChV = C.alphaChannel phColor
+                phWeight = M.findWithDefault 0 phName phWeights
 
 runSwitchPHDia :: ColorMap
                -> Double
@@ -408,13 +398,9 @@ runSwitchPHDia cMap stripHt rectW (sw, mPhName) =
         swText = case mPhName of
             Nothing -> swName
             Just phName -> swName <> " - " <> phName
-        rectH = stripHt * ((fromIntegral . length) allPhNames)
+        rectH = stripHt * ((fromIntegral . length) allPhNs)
         swColor = cMap M.! swName
-        allPhNames = phNames <> concat phErrNames
-        phErrNames = filter (not . null) $
-            (fmap phErrorName . phenotypeErrors) <$> phs
-        phNames = phenotypeName <$> phs
-        phs = (snd . snd) sw
+        allPhNs = (concatMap allPhNames . snd . snd) sw
         swName = fst sw
 
 -- Make a clarifying guide for phenotype time course figures. 

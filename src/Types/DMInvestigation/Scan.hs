@@ -638,14 +638,13 @@ runVariationPrep (lniBMap, mM) scanEx att gen (SCVar rIC actNAlts) =
      (stopDMap, phDistMap, nodeStatMap)
   where
     nodeStatMap = pure $ force $ scanNodeStats lniBMap trScanRun
-    phDistMap = pure $ force $ phDistribution allPhNames trScanRun
+    phDistMap = pure $ force $ phDistribution allPhNs trScanRun
     stopDMap = pure $ force $ stopDistribution stopPhNames scanRun
     trScanRun = trimPhStoppedTmln stopPhNames <$> scanRun
     stopPhNames = (fmap fst . stopPhenotypes . scExpMeta) scanEx
 --  Make sure to include PhenotypeErrorNames. 
-    allPhNames = (concatMap phNameF . concatMap snd . fmap snd) nonEPhs
-    phNameF ph = (phenotypeName ph):((fmap phErrorName . phenotypeErrors) ph)
-    nonEPhs = nonEmptyPhenotypes mM
+    allPhNs = (concatMap . concatMap) allPhNames nonEPhs
+    nonEPhs =  (fmap (snd . snd) . nonEmptyPhenotypes) mM
     scanRun = L.unfoldr scanResUnfoldF unFSeed
     unFSeed = (0, gen)
     mRIC = scanInputFix scanEx
@@ -710,7 +709,7 @@ isAtStopPH :: LayerNameIndexBimap
            -> LayerVec
            -> (PhenotypeName, SubSpace)
            -> Bool
-isAtStopPH lniBMap lVec (_, subSp) = fst $ isSSMatch lVec intSubSp
+isAtStopPH lniBMap lVec (_, subSp) = snd $ isSSMatch lVec intSubSp
     where intSubSp = toIntSubSpace lniBMap subSp
 
 -- Randomly pick one of the states of an Attractor and fix its inputs with the

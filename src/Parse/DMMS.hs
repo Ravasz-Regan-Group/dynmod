@@ -27,9 +27,9 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as LE
 import Data.Scientific
-import qualified Data.List as L
+import qualified Data.List.Extra as L
 import Data.Maybe (fromJust, mapMaybe)
-import qualified Data.Bifunctor as B
+import qualified Data.Bifunctor as BF
 import Data.Void
 import Data.Char (toLower)
 import Data.Word (Word8)
@@ -213,7 +213,7 @@ indexShift offSet g = Gr.mkGraph sNodes sEdges -- Reassemble the graph.
     where
         -- Shift the node IDs and the node references in the edges. 
         sEdges = ((\i (x, y, z) -> (x + i, y + i, z)) offSet) <$> edges
-        sNodes = (B.first (+ offSet)) <$> nodes
+        sNodes = (BF.first (+ offSet)) <$> nodes
         -- Dissasemble the graph to get at the nodes and edges.
         (edges, nodes)  = (Gr.labEdges g, Gr.labNodes g)
 
@@ -277,11 +277,11 @@ switchPhenotypesParse :: Parser SwitchProfile
 switchPhenotypesParse = between (symbol "SwitchPhenotypes{")
                                 (symbol "SwitchPhenotypes}") $
         (,) <$> identifier "SwitchName"
-            <*> some (try phenotypeParse)
+            <*> some (try barePhParse <|> (wrappedPhParse >>= errorPhcheck))
 
-phenotypeParse :: Parser Phenotype
-phenotypeParse =   barePhParse
-              <|> (wrappedPhParse >>= errorPhcheck)
+-- phenotypeParse :: Parser Phenotype
+-- phenotypeParse =  (try barePhParse)
+--               <|> (wrappedPhParse >>= errorPhcheck)
 
 barePhParse :: Parser Phenotype
 barePhParse = do
@@ -293,7 +293,7 @@ barePhParse = do
     return $ Phenotype phName switchState phFingerprint Nothing []
 
 wrappedPhParse :: Parser Phenotype
-wrappedPhParse = do
+wrappedPhParse = between (symbol "Phenotype{") (symbol "Phenotype}") $ do
     mainPh <- barePhParse
     errorPhs <- many errorPhParse
     let fullPH = mainPh {phenotypeErrors = errorPhs}
@@ -311,7 +311,8 @@ errorPhParse = do
     return $ PhError phEName phErrorIndex phErrFingerprint
 
 -- Check that each PhenotypeError starts with the same SubSpace as the parent
--- Phenotype, and is the same except that the loop is shorter. Each subsequent
+-- Phenotype, and is the same except that the loop is shorter, aside from
+-- PhenotypeErrors of point Phenotypes, which may differ. Each subsequent
 -- PhenotypeError must be shorter than the previous.
 errorPhcheck :: Phenotype -> Parser Phenotype
 errorPhcheck phs = case (length . fingerprint) phs of
@@ -335,7 +336,7 @@ errorPhcheck phs = case (length . fingerprint) phs of
             tooLongPhErrors = filter (bigErrFF (length phFPrint)) phErrs
             bigErrFF :: Int -> PhenotypeError -> Bool
             bigErrFF i phErr = i <= (length . phErrorFingerprint) phErr
-            phErrLengths = (length . phErrorFingerprint) <$> phErrs
+            phErrLengths = reverse $ (length . phErrorFingerprint) <$> phErrs
             phErrs = phenotypeErrors phs
             phName = phenotypeName phs
             phFPrint = fingerprint phs
@@ -352,11 +353,11 @@ phErrSubloopCheck fPrint phErr
 -- if the DMNode in question is binary; ie CyclinA:1, not CyclinA. 
 fingerPrintParse :: Parser [SubSpace]
 fingerPrintParse = sepBy1 ((try withBlockerSSParse) <|> withoutBlockerSSParse)
-                          (symbol "->") >>= lastFPNodeCheck
+                          (symbol "->") >>= firstFPNodeCheck
     where
-        lastFPNodeCheck sbsps = case (snd . last) sbsps of
+        firstFPNodeCheck sbsps = case (fst . head) sbsps of
             Nothing -> return sbsps
-            Just blockSS -> fail $ "PhenotypeEndsWithABlock: notany" <> errStr
+            Just blockSS -> fail $ "PhenotypeBeginsWithABlock: notany" <> errStr
                 where
                     errStr = "(" <> (L.intercalate ", " . fmap stringF) blockSS
                                  <> ")"
@@ -364,14 +365,17 @@ fingerPrintParse = sepBy1 ((try withBlockerSSParse) <|> withoutBlockerSSParse)
 
 withBlockerSSParse :: Parser SubSpace
 withBlockerSSParse =
-    (,) <$> parens (constraintFNodeParse `sepBy1` comma)
-        <*> ((symbol "->" >> symbol "notany") >>
-                Just <$> (parens (constraintFNodeParse `sepBy1` comma))
+    (,) <$> (symbol "notany" >>
+                Just <$> (parens (constraintFNodeParse `sepBy1` comma)
+                         )
+            )
+        <*> (symbol "->" >>
+                parens (constraintFNodeParse `sepBy1` comma)
             )
 
 withoutBlockerSSParse :: Parser SubSpace
-withoutBlockerSSParse = (,) <$> parens (constraintFNodeParse `sepBy1` comma)
-                            <*> pure Nothing
+withoutBlockerSSParse = (,) <$> pure Nothing
+                            <*> parens (constraintFNodeParse `sepBy1` comma)
 
 constraintFNodeParse :: Parser (NodeName, NodeState)
 constraintFNodeParse = do
@@ -565,7 +569,7 @@ linkEffectCheck (dmNode, linksWNNs)
                     misAligned = (length . filter (not . pairEq)) lInputPairs
                     aligned = (length . filter pairEq) lInputPairs
                     pairEq (i, j) = i == j
-                    lInputPairs = (fmap . B.first) (U.! lIndex) tTPairs
+                    lInputPairs = (fmap . BF.first) (U.! lIndex) tTPairs
                     tTPairs = Map.toList tTable
                     linkMax = (maximum . fmap (U.! lIndex) .  Map.keys) tTable
                     lIndex = (fromJust . L.elemIndex nNm) gOrder

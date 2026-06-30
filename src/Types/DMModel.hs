@@ -99,6 +99,7 @@ module Types.DMModel
     , tTInputOutput
     , dmmsNodes
     , nonEmptyPhenotypes
+    , allPhNames
     , modelNodes'
     , modelEdges'
     , modelCiteKeys
@@ -160,7 +161,7 @@ instance (Hashable a, Ord a, Floating a)=> Hashable (C.Colour a) where
 -- the functions of that network. 
 
 type LocalColor = C.Colour Double
-defaultColor :: LocalColor -- Erzs� red
+defaultColor :: LocalColor -- Erzsó red
 defaultColor = SC.sRGB24 148 17 0
 
 type FileFormatVersion = Ver.SemVer
@@ -232,9 +233,9 @@ data Phenotype = Phenotype { phenotypeName :: PhenotypeName
 type PhenotypeName = T.Text
 -- The maybe piece is the block that may exist after this constraint and before
 -- the next one. 
-type SubSpace = ([(NodeName, NodeState)], Maybe [(NodeName, NodeState)])
+type SubSpace = (Maybe [(NodeName, NodeState)], [(NodeName, NodeState)])
                 
-type IntSubSpace = ([(NodeIndex, NodeState)], Maybe [(NodeIndex, NodeState)])
+type IntSubSpace = (Maybe [(NodeIndex, NodeState)], [(NodeIndex, NodeState)])
 
 data PhenotypeError = PhError { phErrorName :: PhenotypeErrorName
                               , phIndex :: PHEIndex
@@ -776,7 +777,7 @@ data ModelInvalid =
   | ProfileSwitchNotInModelGraph NodeName
   | MissingPhenotypes (NodeName, [NodeState])
   | ExcessPhenotypes (NodeName, [NodeState])
-  | PhenotypeEndsWithABlock T.Text
+  | PhenotypeBeginsWithABlock T.Text
   | RepeatedSubSpaceNode (NodeName, PhenotypeName, NodeState, [NodeName])
   | RepeatedPhErrSubSpaceNode (NodeName, PhenotypeName, Int, [NodeName])
   | SubSpaceIsASubSet ([(NodeName, NodeState)], [[(NodeName, NodeState)]])
@@ -786,7 +787,7 @@ data ModelInvalid =
   | NonSubLoopPhErrors (PhenotypeName, [PhenotypeName])
   | PointPhErrorsInALoopPh [PhenotypeName]
   | PhNegStates (NodeName, [NodeState])
-  | PhErrNegStates (PhenotypeName, [NodeState])
+  | PhErrNegOr0States (PhenotypeName, [NodeState])
   | PhOutOfOrder (NodeName, [NodeState])
   | PhErrorOutOfOrder (PhenotypeName, [NodeState])
   | PhMissingOrTooHigh (NodeName, [NodeState])
@@ -1057,7 +1058,8 @@ phIsMonotonic sProfile@(pName, phs)
 phErrsAreMonotonic :: (PhenotypeName, [PhenotypeError])
                    -> Validation [ModelInvalid] [PhenotypeError]
 phErrsAreMonotonic (phName, phErrs)
-    | (not . null . filter (< 0)) sts = Failure [PhErrNegStates (phName, sts)]
+    | (not . null . filter (<= 0)) sts =
+        Failure [PhErrNegOr0States (phName, sts)]
     | (not . isIncreasing) sts = Failure [PhErrorOutOfOrder (phName, sts)]
     | otherwise = Success phErrs
     where sts = phIndex <$> phErrs
@@ -1080,7 +1082,7 @@ phNoMissingOrTooHigh sProfile@(pName, phs)
 phErrNoMissingOrTooHigh :: (PhenotypeName, [PhenotypeError])
                         -> Validation [ModelInvalid] [PhenotypeError]
 phErrNoMissingOrTooHigh (phName, phErrs)
-    | (maximum sts + 1) == (length . nubInt) sts = Success phErrs
+    | (maximum sts) == (length . nubInt) sts = Success phErrs
     | otherwise = Failure [PhErrMissingOrTooHigh (phName, sts)]
     where
         sts = phIndex <$> phErrs
@@ -1165,7 +1167,7 @@ noSubSpaceRepeatedNodes sProfiles = traverse go sProfiles
           where
             go'' :: NodeName -> PhenotypeName -> NodeState -> SubSpace
                  -> Validation [ModelInvalid] SubSpace
-            go'' sN1 phN1 snNS1 sbSps1@(conSS, mBlockSS) = case mBlockSS of
+            go'' sN1 phN1 snNS1 sbSps1@(mBlockSS, conSS) = case mBlockSS of
               Nothing
                 | null repeatedCNNames -> Success sbSps1
                 | otherwise -> Failure [RepeatedSubSpaceNode errC]
@@ -1195,7 +1197,7 @@ noPhErrSSRepdNodes swName phError =
         phErrI = phIndex phError
         phErrSbSpcs = phErrorFingerprint phError
         go :: Int -> SubSpace -> Validation [ModelInvalid] SubSpace
-        go phEI sbSpc@(conSS, mBlockSS) = case mBlockSS of
+        go phEI sbSpc@(mBlockSS, conSS) = case mBlockSS of
             Nothing
                 | null repeatedCNNames -> Success sbSpc
                 | otherwise -> Failure [RepeatedPhErrSubSpaceNode errC]
@@ -1220,14 +1222,17 @@ noPhErrSSRepdNodes swName phError =
 -- In the whole of a ModelMapping, no SubSpace of a Phenotype (as opposed to a 
 -- PhenotypeError) should be a subset of any other. Point Phenotypes may contain
 -- ErrorPhenotypes which are not simply shorter versions of themselves. These
--- PhenotypeErrors must not be a subset of any other. Note that we do not care
--- about blocking SubSpaces, only the constraining Subspaces. 
+-- PhenotypeErrors must not be a subset of any other Phenotype, nor a subset of
+-- the beginning of any other PhenotypeError. Note that we do not care about
+-- blocking SubSpaces, only the constraining Subspaces. 
 noSubSpaceSubSets :: [SwitchProfile]
                   -> Validation [ModelInvalid] [SwitchProfile]
 noSubSpaceSubSets sProfiles =
-    case fst $ L.foldl' f ([], consSubSpaceSets) consSubSpaceSets of
-    []   -> Success sProfiles
-    errs -> sequenceA errs
+  case fst $ L.foldl' f ([], consSubSpaceSets) consSubSpaceSets of
+    [] -> case fst $ L.foldl' f ([], consSSHeadSets) consSSHeadSets of
+        [] -> Success sProfiles
+        errs2 -> sequenceA errs2
+    errs1 -> sequenceA errs1
     where
         f (acc, []) _ = (acc, [])
         f (acc, _:remainingHS) sSSet = (newAcc, remainingHS)
@@ -1239,11 +1244,13 @@ noSubSpaceSubSets sProfiles =
                     where
                         supersets = Set.toList <$>
                                 (filter (Set.isSubsetOf sSSet) remainingHS)
-        consSubSpaceSets = Set.fromList <$> (consSubSpaces <> pointPhErrFPs)
-        pointPhErrFPs = (fmap fst . concatMap phErrorFingerprint) pointPhErrors
+        consSubSpaceSets = Set.fromList <$> consSubSpaces
+        consSSHeadSets = Set.fromList <$> (consSSHeads <> pointPhErrFPs)
+        pointPhErrFPs = (snd . L.head . phErrorFingerprint) <$> pointPhErrors
         pointPhErrors = concatMap phenotypeErrors pointPhs
         pointPhs = filter ((== 1) . length . fingerprint) phs
-        consSubSpaces = (fmap fst . concatMap fingerprint) phs
+        consSSHeads = (snd . L.head . fingerprint) <$> phs
+        consSubSpaces = (fmap snd . concatMap fingerprint) phs
         phs = concatMap snd sProfiles
 
 -- Do the NodeNames in the SubSpaces of a SwitchProfile occur in the
@@ -1272,7 +1279,7 @@ subSpaceNodesInSwitch' (nName, (dmmsMMFineNNames, phs))
         phErrs = concatMap phenotypeErrors phs
 
 pullSubSpacePairs :: [SubSpace] -> [(NodeName, NodeState)]
-pullSubSpacePairs = concatMap (\(cSS, mBSS) -> cSS <> fromMaybe [] mBSS)
+pullSubSpacePairs = concatMap (\(mBSS, cSS) -> fromMaybe [] mBSS <> cSS)
 
 -- Check that each node in each SubSpace has a corresponding DMNode, and that
 -- its referenced state exists. This includes the SubSpaces of the
@@ -1367,7 +1374,7 @@ findMarkedSubSpace loopPh pointPhs = case mtchs of
     [ph] -> case filter (areMutuallySatisfiable matchSS) loopPhFP of
         [] -> Success loopPh {markedSubSpace = Nothing}
         [loopPhMatchSS] -> case loopPhMatchSS == loopPhFPHeadSS of
-            True -> Success $ loopPh {markedSubSpace = Just (fst matchSS)}
+            True -> Success $ loopPh {markedSubSpace = Just (snd matchSS)}
             False -> Failure $ [PointSubSpaceMatchNotAtLoopPhHead err1]
                 where
                     err1 = ((errF ph), (phenotypeName loopPh, [loopPhMatchSS]))
@@ -1391,7 +1398,7 @@ findMarkedSubSpace loopPh pointPhs = case mtchs of
 -- blocks attached to the constraint subspaces, as they cannot cause loop
 -- loop Phenotypes to cross. 
 areMutuallySatisfiable :: SubSpace -> SubSpace -> Bool
-areMutuallySatisfiable (ssX, _) (ssY, _)
+areMutuallySatisfiable (_, ssX) (_, ssY)
     | L.null mutualNodes = True
     | otherwise = all id matchedSSs
     where
@@ -1823,7 +1830,12 @@ dmmsNodes mg = zip strippedNS namedES
         ns = Gr.labNodes mg
         es = Gr.labEdges mg
 
--- Give me only those Switches from the ModelMapping whose Phenotypes are not
+-- Produce those Switches from the ModelMapping whose Phenotypes are not
 -- empty. 
 nonEmptyPhenotypes :: ModelMapping -> [Switch]
 nonEmptyPhenotypes = filter (not . null . snd . snd)
+
+-- Produce the PhenotypeName and PhenotypeErrorNames, if any, from a Phenotype.
+-- This give a useful ordering. 
+allPhNames :: Phenotype -> [PhenotypeName]
+allPhNames ph = phenotypeName ph:(fmap phErrorName . phenotypeErrors) ph

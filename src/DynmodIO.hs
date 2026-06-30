@@ -857,6 +857,7 @@ tcRunDiaIO :: Path Abs File
            -> IO ()
 tcRunDiaIO fPath cMap mM mL expMeta xMark (attID, (bc, repRs)) = do
     let figKs = tcExpFigures expMeta
+        phCMap = mkPhColorMap mM cMap
         stripHt = 2.0 :: Double
         params = (stripHt, 24.0) :: (Double, Double)
         reps = ((fromIntegral . expReps) expMeta) :: Double
@@ -909,12 +910,7 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (attID, (bc, repRs)) = do
     when ((not . null) (phenotypeAvgBars figKs)) $ do
         let phCHNodeNs = phenotypeAvgBars figKs
             nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
-            allPhNamesF :: [Phenotype] -> [PhenotypeName]
-            allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
-                where
-                    phErrNames = filter (not . null) $
-                        (fmap phErrorName . phenotypeErrors) <$> phs
-            nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
+            nonEmptySwPhNs = (fmap . fmap . concatMap) allPhNames nonEmptySwPhs
             allPhNs = concatMap snd nonEmptySwPhNs
             switchMap = HM.fromList nonEmptySwPhNs
             pulseSpcs = (fmap . fmap) snd avgTmlnPSs
@@ -926,7 +922,7 @@ tcRunDiaIO fPath cMap mM mL expMeta xMark (attID, (bc, repRs)) = do
             formattedData = ((xMarkTxt <>) . renderPhBCData) <$> chartVecsss
 -- Integrate the [[PulseSpacing]] with the Phenotype prevalence averages.
             pulseStatRepRs = zipZip pulseSpcs phStatRepRs
-            phBCF = phBChartDia cMap mL switchMap expMeta phCHNodeNs
+            phBCF = phBChartDia phCMap mL switchMap expMeta phCHNodeNs
             phBChartFgs :: [Diagram B]
             phBChartFgs = ((vsep 5.0) . fmap (uncurry phBCF)) <$> pulseStatRepRs
             numFigs = length phBChartFgs
@@ -963,12 +959,7 @@ scRunDiaIO fPath cMap mM mL exMeta (attID, (bc, scPrep)) = do
     overLayVs = needOverlays exMeta
     phCMap = mkPhColorMap mM cMap
     nonEmptySwPhs = snd <<$>> (nonEmptyPhenotypes mM)
-    allPhNamesF :: [Phenotype] -> [PhenotypeName]
-    allPhNamesF phs = (phenotypeName <$> phs) <> (concat phErrNames)
-      where
-        phErrNames = filter (not . null) $
-            (fmap phErrorName . phenotypeErrors) <$> phs
-    nonEmptySwPhNs = (fmap . fmap) allPhNamesF nonEmptySwPhs
+    nonEmptySwPhNs = (fmap . fmap . concatMap) allPhNames nonEmptySwPhs
     switchMap = HM.fromList nonEmptySwPhNs
   figDir <- mkExpPath fPath (SCEM exMeta) ""
   bcDir <- parseRelDir bcPatternStr
