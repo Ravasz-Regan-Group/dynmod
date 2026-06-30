@@ -471,23 +471,23 @@ wholePhMatch :: LayerNameIndexBimap
              -> Thread
              -> Phenotype
              -> [(PhenotypeName, [[Int]])]
-wholePhMatch lniBMap thread ph = filter (not . L.null . snd) -- purgedMatches
-     phMatchList
+wholePhMatch lniBMap thread ph = filter (not . L.null . snd) purgedMatches
+--      phMatchList
   where
---     purgedMatches = B.toList purgedMatchVec
---     purgedMatchVec = fst $ B.foldl' purgerF purgeAcc phMatchVec
--- --     Remove the PhentypeError matches that are just the starts of Phenotype
--- --     or longer PhenotypeError matches
---     purgeAcc = (B.empty, [])
---     purgerF (cleanMatches, fullerMatches) (phName, phEMatches) =
---       (newCleanMatches, newFullerMatches)
---         where
---           newCleanMatches = B.snoc cleanMatches (phName, phCleanMatches)
---           newFullerMatches =  fullerMatches <> phCleanMatches
---           phCleanMatches = filter purgeFF phEMatches
---           purgeFF phEMatch = (not . any (isStrictPrefixOf phEMatch))
---                                                     fullerMatches
-    phMatchList = B.toList phMatchVec
+    purgedMatches = B.toList purgedMatchVec
+    purgedMatchVec = fst $ B.foldl' purgerF purgeAcc phMatchVec
+--     Remove the PhentypeError matches that are just the starts of Phenotype
+--     or longer PhenotypeError matches
+    purgeAcc = (B.empty, [])
+    purgerF (cleanMatches, fullerMatches) (phName, phEMatches) =
+      (newCleanMatches, newFullerMatches)
+        where
+          newCleanMatches = B.snoc cleanMatches (phName, phCleanMatches)
+          newFullerMatches =  fullerMatches <> phCleanMatches
+          phCleanMatches = filter purgeFF phEMatches
+          purgeFF phEMatch = (not . any (isStrictPrefixOf phEMatch))
+                                                    fullerMatches
+--     phMatchList = B.toList phMatchVec
     phMatchVec = fst $ B.ifoldl' phMatch (rAcc, sAcc) thread
     sAcc = B.replicate (length allPhNs) (0, [])
     rAcc = (B.fromList . fmap (\x -> (x, []))) allPhNs
