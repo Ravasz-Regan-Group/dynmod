@@ -245,11 +245,12 @@ excludeBCwAllParse = ExcludeBarCodesWithAll <$>
 phenotypeSetParse :: Parser (NodeName, PhenotypeName)
 phenotypeSetParse = (,) <$> variable <*> (colon >> variable)
 
--- Parse a VEXTimeCourse. 
+-- Parse a VEXExperiment. 
 experimentParse :: Parser VEXExperiment
 experimentParse = (VXTC <$> timecourseParse)
               <|> (TXSC <$> scanParse)
 
+-- Parse a VEXTimeCourse. 
 timecourseParse :: Parser VEXTimeCourse
 timecourseParse = generalTCParse
               <|> pulse1Parse
@@ -372,20 +373,20 @@ manualPRNGParse = Just <$> (lexeme $ rword "ManualPRNGSeed" >>
 -- Parse a Pulse1. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
 pulse1Parse :: Parser VEXTimeCourse
-pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}")
-    (runPermutation $
-        Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
-                               (durationParse "t_0")
-                        <*> toPermutationWithDefault (DefaultD 50)
-                               (durationParse "t_end")
-                   )
-               <*> toPermutation startingModelStateParse
-               <*> toPermutation (durationParse "Duration")
-               <*> toPermutation flipParse
-               <*> toPermutationWithDefault 1 expRepsParse
-               <*> toPermutationWithDefault defFigKinds figKindsParse
-               <*> toPermutationWithDefault Nothing manualPRNGParse
-        
+pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}") (runPermutation $
+    Pulse1 <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
+                              (durationParse "t_0")
+                    <*> toPermutationWithDefault (DefaultD 50)
+                              (durationParse "t_end")
+               )
+           <*> toPermutation startingModelStateParse
+           <*> toPermutation (durationParse "Duration")
+           <*> toPermutation flipParse
+           <*> toPermutationWithDefault 1 expRepsParse
+           <*> toPermutationWithDefault defFigKinds figKindsParse
+           <*> toPermutationWithDefault Nothing manualPRNGParse
+           <*> toPermutationWithDefault Nothing
+                    (Just <$> (identifier "ExperimentName"))
     )
 
 flipParse :: Parser (NodeName, RealNodeState)
@@ -395,20 +396,20 @@ flipParse = rword "FlipTo" >> colon >> (,) <$> variable <*>
 -- Parse a KDOE. t_0 and t_end are optional, so they get the default values
 -- of: t_0 = 50, t_end = 50
 kdoeTCParse :: Parser VEXTimeCourse
-kdoeTCParse = between (symbol "KDOE{") (symbol "KDOE}")
-    (runPermutation $
-        KnockDOverE <$>
-                 ((,) <$> toPermutationWithDefault (DefaultD 50)
+kdoeTCParse = between (symbol "KDOE{") (symbol "KDOE}") (runPermutation $
+    KnockDOverE <$> ((,) <$> toPermutationWithDefault (DefaultD 50)
                            (durationParse "t_0")
-                      <*> toPermutationWithDefault (DefaultD 50)
+                         <*> toPermutationWithDefault (DefaultD 50)
                            (durationParse "t_end")
-                           )
-                       <*> toPermutation startingModelStateParse
-                       <*> toPermutation (durationParse "Duration")
-                       <*> toPermutation nodeAlterationsParse
-                       <*> toPermutationWithDefault 1 expRepsParse
-                       <*> toPermutationWithDefault defFigKinds figKindsParse
-                       <*> toPermutationWithDefault Nothing manualPRNGParse
+                    )
+                <*> toPermutation startingModelStateParse
+                <*> toPermutation (durationParse "Duration")
+                <*> toPermutation nodeAlterationsParse
+                <*> toPermutationWithDefault 1 expRepsParse
+                <*> toPermutationWithDefault defFigKinds figKindsParse
+                <*> toPermutationWithDefault Nothing manualPRNGParse
+                <*> toPermutationWithDefault Nothing
+                        (Just <$> (identifier "ExperimentName"))
         
     )
 
@@ -417,20 +418,21 @@ kdoeTCParse = between (symbol "KDOE{") (symbol "KDOE}")
 kdoeAtTransitionParse :: Parser VEXTimeCourse
 kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
                                 (symbol "KDOEAtTransition}")
-    (runPermutation $
-        KDOEAtTransition <$>
-                 ((,) <$> toPermutationWithDefault (DefaultD 50)
+    (runPermutation $ KDOEAtTransition <$>
+            ((,) <$> toPermutationWithDefault (DefaultD 50)
                            (durationParse "t_0")
-                      <*> toPermutationWithDefault (DefaultD 50)
+                <*> toPermutationWithDefault (DefaultD 50)
                            (durationParse "t_end")
-                           )
-                       <*> toPermutation startingModelStateParse
-                       <*> toPermutation (durationParse "Duration")
-                       <*> toPermutation flipParse
-                       <*> toPermutation nodeAlterationsParse
-                       <*> toPermutationWithDefault 1 expRepsParse
-                       <*> toPermutationWithDefault defFigKinds figKindsParse
-                       <*> toPermutationWithDefault Nothing manualPRNGParse
+            )
+        <*> toPermutation startingModelStateParse
+        <*> toPermutation (durationParse "Duration")
+        <*> toPermutation flipParse
+        <*> toPermutation nodeAlterationsParse
+        <*> toPermutationWithDefault 1 expRepsParse
+        <*> toPermutationWithDefault defFigKinds figKindsParse
+        <*> toPermutationWithDefault Nothing manualPRNGParse
+        <*> toPermutationWithDefault Nothing
+                (Just <$> (identifier "ExperimentName"))
         
     )
 

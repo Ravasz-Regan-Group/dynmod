@@ -26,6 +26,7 @@ module Types.DMInvestigation
     , ExperimentStep(..)
     , VEXInputPulse(..)
     , ManualSeed
+    , ManualName
     , NodeAlteration(..)
     , WildTypeVsMutantAlt
     , nodeAltName

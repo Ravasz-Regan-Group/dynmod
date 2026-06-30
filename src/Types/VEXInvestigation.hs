@@ -57,6 +57,7 @@ data VEXTimeCourse =
               ExperimentReps
               FigKinds
               ManualSeed
+              ManualName
 -- A parsed KDOE{}.
     | KnockDOverE (Duration, Duration) -- t_0 and t_end
                    InitialEnvironment
@@ -65,6 +66,7 @@ data VEXTimeCourse =
                    ExperimentReps
                    FigKinds
                    ManualSeed
+                   ManualName
 -- A parsed KDOEAtTransition
     | KDOEAtTransition (Duration, Duration) -- t_0 and t_end
                         InitialEnvironment
@@ -74,11 +76,13 @@ data VEXTimeCourse =
                         ExperimentReps
                         FigKinds
                         ManualSeed
+                        ManualName
     deriving (Eq, Show)
 
 -- An integer suppllied when the user wants to manually specify an experiment's
 -- RPNG seed for reproducibility purposes. 
 type ManualSeed = Maybe Int
+type ManualName = Maybe T.Text
 
 data VEXInputPulse = VEXInPt
     { vexRealInputCoord :: [(NodeName, RealNodeState)]

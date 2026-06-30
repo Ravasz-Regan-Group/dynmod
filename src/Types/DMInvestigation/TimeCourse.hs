@@ -152,8 +152,13 @@ data TCExpOPMeta = TCEOPM
 
 mkTimeCourse :: ModelMapping -> ModelLayer -> VEXTimeCourse
              -> Validation [VEXInvestigationInvalid] DMTimeCourse
-mkTimeCourse mM mL (GeneralTC exNm inEnv expStep vexPlss exReps fkds
-                                                                mPRMNGSeed) =
+mkTimeCourse mM mL (GeneralTC exNm
+                              inEnv
+                              expStep
+                              vexPlss
+                              exReps
+                              fkds
+                              mPRMNGSeed) =
     TCExp <$> expMeta
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper expStep mL)
@@ -171,8 +176,14 @@ mkTimeCourse mM mL (GeneralTC exNm inEnv expStep vexPlss exReps fkds
                                   mPRMNGSeed
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
             listedPulses = pure <$> (traverse (mkInputPulse mL) vexPlss)
-mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
-                                                                mPRMNGSeed)
+mkTimeCourse mM mL (Pulse1 (t_0, t_end)
+                            inEnv
+                            dur
+                           (pName, pState)
+                           exReps
+                           fkds
+                           mPRMNGSeed
+                           mManualName)
     | (isInt 7 pState) && elem (pName, round pState) (initCoord inEnv) = Failure
         [Pulse1FlipDoesNotChangeStartingModelState (pName, pState)]
     | otherwise = 
@@ -201,13 +212,20 @@ mkTimeCourse mM mL (Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds
                 Just a -> (pName, pState):(L.delete a initialCs)
             -- Switch from NodeStates to RealNodeStates. 
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
-            expName = "pulse1_" <> pName <> "_wInputs_" <> textInputs
+            expName = maybe autoName id mManualName
+            autoName = "pulse1_" <> pName <> "_wInputs_" <> textInputs
             expDetails = "pulse1_" <> pName <> "-" <> showt pState <>
                 "-" <> showt dur <> "_wInputs_" <> textInputs
             textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
             inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
-mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
-                                                                mPRMNGSeed) =
+mkTimeCourse mM mL (KnockDOverE (t_0, t_end)
+                                 inEnv
+                                 dur
+                                 nAlts
+                                 exReps
+                                 fkds
+                                 mPRMNGSeed
+                                 mManualName) =
     TCExp <$> expM
           <*> mkAttFilter mM mL inEnv
           <*> pure (mkStepper SynchronousExpStepper mL)
@@ -230,12 +248,20 @@ mkTimeCourse mM mL (KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds
         endPl = VEXInPt initialCs [] t_end
         -- Switch from NodeStates to RealNodeStates. 
         initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
-        expName = "KD_OE_" <> kdoeName nAlts <> "_wInputs_" <> textInputs
+        expName = maybe autoName id mManualName
+        autoName = "KD_OE_" <> kdoeName nAlts <> "_wInputs_" <> textInputs
         expDetails = "KD_OE_" <> kdoeDetails nAlts <> "_wInputs_" <> textInputs
         textInputs = T.intercalate "_" $ inishowt <$> (initCoord inEnv)
         inishowt (aNN, aNS) = aNN <> "-" <> showt aNS
-mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts 
-                                                    exReps fkds mPRMNGSeed)
+mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end)
+                                      inEnv
+                                      pDur
+                                     (pN, pSt)
+                                      nAlts 
+                                      exReps
+                                      fkds
+                                      mPRMNGSeed
+                                      mManualName)
     | (isInt 7 pSt) && elem (pN, round pSt) (initCoord inEnv) =
         Failure [KDOEATFlipDoesNotChangeStartingModelState (pN, pSt)]
     | otherwise =
@@ -247,7 +273,7 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
         where
             expM = mkTCExpMeta mM
                                mL
-                               expNm
+                               expName
                                expDtls
                                initialCs
                                exReps
@@ -260,7 +286,8 @@ mkTimeCourse mM mL (KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
                 Just a -> (pN, pSt):(L.delete a initialCs)
             -- Switch from NodeStates to RealNodeStates. 
             initialCs = ((fromIntegral <<$>>) . initCoord) inEnv
-            expNm = "KDOEAtTr_" <> kdoeName nAlts <> "_wPulse_" <> pN <>
+            expName = maybe autoName id mManualName
+            autoName = "KDOEAtTr_" <> kdoeName nAlts <> "_wPulse_" <> pN <>
                 "_wInputs_" <> textInputs
             expDtls = "KDOEAtTr_" <> kdoeDetails nAlts <> "_wPulse_" <>
                 pulseDetails <> "_wInputs_" <> textInputs

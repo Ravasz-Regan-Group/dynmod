@@ -632,7 +632,8 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderInitialEnvironment inEnv
                 , renderFigKinds fkds
                 ] <> fmap renderVEXInputPulse vexPlss
-    Pulse1 (t_0, t_end) inEnv dur (pName, pState) exReps fkds mPRMNGSeed ->
+    Pulse1 (t_0, t_end) inEnv dur (pName, pState)
+        exReps fkds mPRMNGSeed mManualName ->
         vexWrap "Pulse1" bLines Nothing
         where
             bLines = [
@@ -643,9 +644,11 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderVexVar "SampleSize" showtl (Just 1) exReps
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
+                , renderManualName mManualName
                 , renderUserDuration "t_end" t_end
                 ]
-    KnockDOverE (t_0, t_end) inEnv dur nAlts exReps fkds mPRMNGSeed ->
+    KnockDOverE (t_0, t_end) inEnv dur nAlts exReps
+        fkds mPRMNGSeed mManualName ->
         vexWrap "KDOE" bLines Nothing
         where
             bLines = [
@@ -656,10 +659,11 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderVexVar "SampleSize" showtl (Just 1) exReps
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
+                , renderManualName mManualName
                 , renderUserDuration "t_end" t_end
                 ]
     KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps fkds
-        mPRMNGSeed -> vexWrap "KDOEAtTransition" bLines Nothing
+        mPRMNGSeed mManualName -> vexWrap "KDOEAtTransition" bLines Nothing
         where
             bLines =[
                   renderUserDuration "t_0" t_0
@@ -670,6 +674,7 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderNodeAlterations nAlts
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
+                , renderManualName mManualName
                 , renderUserDuration "t_end" t_end
                 ]
 
@@ -697,6 +702,9 @@ renderVexVar vName renderF mDefault vexV = case (vexV ==) <$> mDefault of
 
 renderManualSeed :: ManualSeed -> TL.Text
 renderManualSeed = maybe "" (\sd -> "ManualPRNGSeed: " <> showtl sd)
+
+renderManualName :: ManualName -> TL.Text
+renderManualName = maybe "" (\x -> "ExperimentName: " <> showtl x)
 
 renderExperimentStep :: ExperimentStep -> TL.Text
 renderExperimentStep = showtl
