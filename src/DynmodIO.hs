@@ -842,7 +842,7 @@ mkExpPath vexFPath dmExpMeta figsOrRess = do
             (MetaTwoDEnvScan _ _ _ _) -> parseRelDir "TwoDEnvScan"
             (MetaThreeDEnvScan _ _ _ _) -> parseRelDir "ThreeDEnvScan"
     dirExpDifferentiator<- case dmExpMeta of
-        TCEM tcXMeta -> parseRelDir ((T.unpack . tcExpDetails) tcXMeta)
+        TCEM tcXMeta -> parseRelDir ((T.unpack . tcExpName) tcXMeta)
         SCEM scXMeta -> parseRelDir ((T.unpack . scExpName) scXMeta)
     let dirFull = dirStem </> dirExpWhat </> dirCat </> dirExpDifferentiator
     return dirFull

@@ -65,7 +65,6 @@ import GHC.Generics (Generic)
 import Data.Maybe (mapMaybe, fromMaybe, isJust)
 import Data.Ix (range)
 import qualified Data.Bifunctor as BF
-import qualified Debug.Trace as TR
 
 -- Basic types to support all manner of figures.
 
@@ -330,8 +329,8 @@ mkBar lniBMap att sColor (sName, phs)
         slices = (uncurry (mkSlice attSize phErrMap)) <$> 
             (zip phNames matchTHSlices)
         matchTHSlices = (fmap . fmap . fmap . fmap) mkRange matchTHInts
-        matchTHInts = uncurry (wholePhMatch lniBMap) <$> orderedPairs
-        orderedPairs = attractorReorder lniBMap att <$> orderedPHs
+        matchTHInts = uncurry (wholePhMatch lniBMap) <$> attPhPairs
+        attPhPairs = zip (repeat att) orderedPHs
 --      An Attractor might contain a Phenotype in an incorrect order, because
 --      the begining of an Attractor is found randomnly in state space. If we
 --      match the first SubSpace of a loop Phenotype anywhere in an attractor,
@@ -353,16 +352,6 @@ mkPhErrorMap phs = M.fromList $ builderF <$> phErrors
         builderF phE = (phErrorName phE, phEData)
             where phEData = (phIndex phE, (length . phErrorFingerprint) phE)
         phErrors = concatMap phenotypeErrors phs
-
-attractorReorder :: LayerNameIndexBimap
-                 -> Attractor
-                 -> Phenotype
-                 -> (Attractor, Phenotype)
-attractorReorder lniBMap att ph = (reorderedAtt, ph)
-    where
-        reorderedAtt = mergePair $ B.break (snd . flip isSSMatch firstIntSS) att
-        mergePair (x, y) = y <> x
-        firstIntSS = (head . fmap (toIntSubSpace lniBMap) . fingerprint) ph
 
 bcFilterF :: Maybe BarcodeFilter -> Barcode -> Bool
 bcFilterF Nothing _ = True
@@ -397,13 +386,10 @@ phCheckAll bcPs (nName, phName) = case L.find ((==) nName . fst) bcPs of
                 phENMatch = L.find (\x -> phName == (fstOf3 x)) attMatchess
         Just (Miss _) -> False        
 
-matchSlice :: PhenotypeName
-           -> Slice
-           -> Bool
+matchSlice :: PhenotypeName -> Slice -> Bool
 matchSlice _ (Miss _) = False
-matchSlice phName (Match _ attMatchess checkedPhN)
-    | phName == checkedPhN = True
-    | otherwise = isJust $ L.find (\x -> phName == (fstOf3 x)) attMatchess
+matchSlice phName (Match _ attMatchess _) = isJust $
+    L.find (\x -> phName == (fstOf3 x)) attMatchess
 
 barPhenotype :: Bar -> Maybe PhenotypeName
 barPhenotype br = case barKind br of
@@ -431,9 +417,8 @@ mkSlice :: AttractorSize
 mkSlice attSize _ _ [] = Miss attSize
 mkSlice attSize phErrMap phName phSlicess = Match attSize attMIndicies phName
     where
-        attMIndicies = (NL.fromList . fmap attMIndexF) phSlicess
-        attMIndexF (phN, phSlices) =
-            (phN, range <$> phSlices, (phErrMap M.!? phName))
+        attMIndicies = (NL.fromList . fmap attMIF) phSlicess
+        attMIF (phN, phSlices) = (phN, range <$> phSlices, (phErrMap M.!? phN))
 
 -- Mark where on a Thread the Phenotypes (or their PhenotypeErrors) of its
 -- ModelMapping match.
@@ -529,10 +514,7 @@ wholePhMatch lniBMap thread ph = filter (not . L.null . snd) purgedMatches
                   anyPrevSSMatches = aPSSMF <$> [0..(phSSIndex - 2)]
                   aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
 -- Reset if we don't match and do not keep the notany condition.
-              (Just True, False) -> TR.trace
-                ("(phSSIndex, matchAcc): " <> show (phSSIndex, matchAcc) <>
-                  ", threadIndex: " <> show threadIndex)
-                  (rVec, B.snoc sVec (0, []))
+              (Just True, False) -> (rVec, B.snoc sVec (0, []))
             newMatchAcc = L.snoc matchAcc threadIndex
             sSpace = (phIntSSVecVec B.! pheIndex) B.! phSSIndex
             ssLoopMax = phSSLoopMaxIVec B.! pheIndex
