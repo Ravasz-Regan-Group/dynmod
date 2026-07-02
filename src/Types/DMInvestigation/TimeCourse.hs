@@ -423,7 +423,7 @@ mkIBBCFilter mM bc = case bc of
   ExcludeBarCodesWithAll phens -> ExcludeBarCodesWithAll <$> phValidate phens
   where
     phValidate phs
-      | (not . null) bcfsRepeats = Failure $ [BCFSwitchRepeats bcfsRepeats]
+--       | (not . null) bcfsRepeats = Failure $ [BCFSwitchRepeats bcfsRepeats]
       | (not . null) bcfPhRepeats =
           Failure $ [BCFPhenotypeRepeats bcfPhRepeats]
       | (not . null) npSwitches =
@@ -448,7 +448,7 @@ mkIBBCFilter mM bc = case bc of
         phNames = concatMap snd mMPhenotypes
         npSwitches = filter (`notElem` switchNames) (fst <$> phs)
         switchNames = fst <$> mMPhenotypes
-        bcfsRepeats = (repeated . fmap fst) phs
+--         bcfsRepeats = (repeated . fmap fst) phs
         mMPhenotypes = ((fmap . fmap . fmap) phenotypeName .
           (filter (not . null . snd)) . ((fmap . fmap) snd)) mM
 

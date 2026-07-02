@@ -209,7 +209,7 @@ data VEXInvestigationInvalid =
     | NonInputNodesInISDPinnedInput [NodeName]
     | InValidISDPinnedInputs [(NodeName, NodeState)] T.Text
     | ExcessUnpinnedISDInputs T.Text
-    | BCFSwitchRepeats [NodeName]
+--     | BCFSwitchRepeats [NodeName]
     | BCFPhenotypeRepeats [NodeName]
     | UnknownSwitchesInBCFilter [NodeName]
     | UnknownPhenotypesInBCFilter [(NodeName, PhenotypeName)]
@@ -290,8 +290,8 @@ vexErrorPrep (InValidISDPinnedInputs badPairs properPairText) =
         T.intercalate ", " (showt <$> badPairs) <> properPairText
 vexErrorPrep (ExcessUnpinnedISDInputs pChs) =
     "ExcessUnpinnedISDInputs: " <> pChs
-vexErrorPrep (BCFSwitchRepeats nNms) = "BCFSwitchRepeats: " <>
-    T.intercalate ", " nNms
+-- vexErrorPrep (BCFSwitchRepeats nNms) = "BCFSwitchRepeats: " <>
+--     T.intercalate ", " nNms
 vexErrorPrep (BCFPhenotypeRepeats nNms) = "BCFPhenotypeRepeats: " <>
     T.intercalate ", " nNms
 vexErrorPrep (UnknownSwitchesInBCFilter nNms) =
