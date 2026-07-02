@@ -360,9 +360,9 @@ bcFilterF (Just (OnlyBarCodesWithAny sPhPairs)) bc =
 bcFilterF (Just (OnlyBarCodesWithAll sPhPairs)) bc =
     all (phCheckAll (bcPairs bc)) sPhPairs
 bcFilterF (Just (ExcludeBarCodesWithAny sPhPairs)) bc = not $
-    all (phCheckAny (bcPairs bc)) sPhPairs
+    any (phCheckAny (bcPairs bc)) sPhPairs
 bcFilterF (Just (ExcludeBarCodesWithAll sPhPairs)) bc = not $
-    all (phCheckAll (bcPairs bc)) sPhPairs
+    any (phCheckAll (bcPairs bc)) sPhPairs
 
 bcPairs :: Barcode -> [(NodeName, BarKind)]
 bcPairs = fmap (\x -> (switchName x, barKind x))
