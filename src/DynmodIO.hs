@@ -809,9 +809,9 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         return (newGen, (xMark, absFileNameWExt))
     where
         attList = HS.toList attSet
-        tcPhData = (lniBMap, phs)
+        tcPhData = (lniBMap, phss)
         scPhData = (lniBMap, mM)
-        phs = concatMap (snd . snd) mM
+        phss = fmap (snd . snd) mM
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         lRanges = layerRanges mL
         layerBCG = mkBarcode cMap mM lniBMap -- Make (BC, Att) pairs

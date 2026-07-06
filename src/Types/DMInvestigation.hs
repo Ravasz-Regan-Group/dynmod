@@ -322,8 +322,8 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
             L.mapAccumL (runExperiment phData layerBCG atts) gen exps
         layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
         exps = (fmap fst . experiments) lExpSpec
-        phData = (lniBMap, phs)
-        phs = concatMap (snd . snd) mMap
+        phData = (lniBMap, phss)
+        phss = fmap (snd . snd) mMap
         LayerSpecs lniBMap _ _ _ = layerPrep mL
         mL = layerExpMLayer lExpSpec
         mMap = layerExpMMapping lExpSpec
@@ -334,7 +334,7 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- each attractor in the set, where n is the length of the attractor, starting
 -- at the next in the loop each time. (Barcode, RepResults or ScanResult)s are
 -- then combined if their Barcodes are identical. 
-runExperiment :: (LayerNameIndexBimap, [Phenotype])
+runExperiment :: (LayerNameIndexBimap, [[Phenotype]])
               -> (Attractor -> (Barcode, Attractor))
               -> HS.HashSet Attractor
               -> StdGen

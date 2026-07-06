@@ -725,12 +725,12 @@ textInputOptions inPtNDs = T.intercalate "\n" $ txtInputOpt <$> inPtNDs
                 rNS = L.reverse $ (nodeName . nodeMeta) <$> ns
                 otherOpts nN = "    " <> nN <> ":1"
 
-runTimeCourse :: (LayerNameIndexBimap, [Phenotype])
+runTimeCourse :: (LayerNameIndexBimap, [[Phenotype]])
               -> DMTimeCourse
               -> StdGen
               -> (Barcode, Attractor)
               -> (StdGen, (Barcode, RepResults))
-runTimeCourse (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
+runTimeCourse (lniBMap, phss) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
     where
         bundledRs = (annIplResultReps, pSpacess)
         annIplResultReps = (fmap . fmap . fmap) zipper iplResultReps
@@ -744,7 +744,7 @@ runTimeCourse (lniBMap, phs) tcEx gen (bc, att) = (newGen, (bc, bundledRs))
         pulseF = pulseFold attL (tcExpStepper tcEx)
         attL = length att 
         zipper ptl = B.zip ptl $
-            phenotypeMatch lniBMap phs (B.map (fst . U.unzip) ptl)
+            phenotypeMatch lniBMap phss (B.map (fst . U.unzip) ptl)
 
 -- Produce the duration of an InputPulse, along with any input changes or node
 -- alterations. 

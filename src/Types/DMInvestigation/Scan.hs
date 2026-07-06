@@ -650,13 +650,13 @@ runVariationPrep (lniBMap, mM) scanEx att gen (SCVar rIC actNAlts) =
     mRIC = scanInputFix scanEx
     relN = requiredSteps scanEx
     maxN = maxRunSteps scanEx
-    phs = concatMap (snd . snd) mM
+    phss = fmap (snd . snd) mM
     scanResUnfoldF (relStAcc, g)
       | relStAcc >= relN = Nothing
       | otherwise = Just (tmln, newSeed)
         where
           newSeed = (relStAcc + B.length tmln, nG)
-          tmln = B.zip pTmln $ phenotypeMatch lniBMap phs lVecs
+          tmln = B.zip pTmln $ phenotypeMatch lniBMap phss lVecs
           lVecs = B.map (fst . U.unzip) pTmln
 --        We keep the last of a Timeline stopped by a stop Phenotype in order
 --        to be able to do stats on it later. 
@@ -799,7 +799,7 @@ scanNodeStats lniBMap trSCRun = M.fromList statPairs
         bareStateVs = (B.map (fst . U.unzip . fst) . B.concat) trSCRun
 
 -- Run a Scan, but do not prep the data for figures
-runScanRaw :: (LayerNameIndexBimap, [Phenotype])
+runScanRaw :: (LayerNameIndexBimap, [[Phenotype]])
            -> DMScan
            -> StdGen
            -> (Barcode, Attractor)
@@ -854,13 +854,13 @@ runScanRaw lInfo scanEx gen (bc, att) = case scanKind scanEx of
     rVarF = runVariationRaw lInfo scanEx att
 
 -- Run an ScanVariation, but do not prep for figures. 
-runVariationRaw :: (LayerNameIndexBimap, [Phenotype])
+runVariationRaw :: (LayerNameIndexBimap, [[Phenotype]])
                 -> DMScan
                 -> Attractor
                 -> StdGen
                 -> ScanVariation
                 -> (StdGen, [Timeline])
-runVariationRaw (lniBMap, phs) scanEx att gen (SCVar rIC actNAlts) =
+runVariationRaw (lniBMap, phss) scanEx att gen (SCVar rIC actNAlts) =
     (newGen, res)
   where
     res = L.unfoldr scanResUnfoldF unFSeed
@@ -874,7 +874,7 @@ runVariationRaw (lniBMap, phs) scanEx att gen (SCVar rIC actNAlts) =
       | otherwise = Just (tmln, newSeed)
         where
           newSeed = (relStAcc + B.length tmln, nG)
-          tmln = B.zip pTmln $ phenotypeMatch lniBMap phs lVecs
+          tmln = B.zip pTmln $ phenotypeMatch lniBMap phss lVecs
           lVecs = B.map (fst . U.unzip) pTmln
 --        We keep the last of a Timeline stopped by a stop Phenotype in order
 --        to be able to do stats on it later. 
