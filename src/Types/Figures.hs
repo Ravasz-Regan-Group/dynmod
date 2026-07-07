@@ -489,26 +489,19 @@ purgePhEOverlaps [] = []
 purgePhEOverlaps phIntss = zipWith (:) phInts purgedPhErrss
     where
         purgedPhErrss = ((fmap . fmap . fmap) (filter phEOverlapF) phErrIntss)
-        phInts = head <$> phIntss
-        phErrIntss = tail <$> phIntss
+        (phInts, phErrIntss) = (head <$> phIntss, tail <$> phIntss)
         phEOverlapF :: [Int] -> Bool
-        phEOverlapF phErrInts = case (mFirstI, mLastI) of
-            (Just startI, Just endI)
-                | any (insideF (startI, endI)) phInts -> False
-                | otherwise -> True
-                where
-                    insideF (i, j) (_, phBareIntss) = any insideF' phBareIntss
-                        where
-                            insideF' phBareInts = case (mFPhI, mLPhI) of
-                                (Just m, Just n) -> not (i >= m && j <= n)
-                                _ -> True
-                                where
-                                    mFPhI = fst <$> L.uncons phBareInts
-                                    mLPhI = snd <$> L.unsnoc phBareInts
-            _ -> False
+        phEOverlapF [] = False
+        phEOverlapF phErrInts
+            | any (insideF (startI, endI)) phInts = False
+            | otherwise = True
             where
-                mFirstI = fst <$> L.uncons phErrInts
-                mLastI = snd <$> L.unsnoc phErrInts
+                (startI, endI) = (head phErrInts, last phErrInts)
+                insideF (i, j) (_, phBareIntss) = any insideF' phBareIntss
+                    where
+                        insideF' [] = False
+                        insideF' phBareInts = i >= m && j <= n
+                            where (m, n) = (head phBareInts, last phBareInts)
 
 -- Find the places a Phenotype, or its associated PhenotypeErrors, is present in
 -- a Thread. Note that a Phenotype or PhenotypeError MUST start at its first
@@ -520,11 +513,11 @@ wholePhMatch :: LayerNameIndexBimap
              -> [(PhenotypeName, [[Int]])]
 wholePhMatch lniBMap thread ph = B.toList tailStrippedVec
   where
--- If the Phentotype fingerprint is in the process of matching when the a run
--- ends, a PhenotypeError might match just because the Phenotype did not get a
--- chance to finish. Check the accumulator of phMatch to see if the Phenotype
--- was wainting for finish matching, and then strip any PhenotypeError match
--- that finished in that window. 
+-- If the Phentotype fingerprint is in the process of matching when a run ends,
+-- a PhenotypeError might match just because the Phenotype did not get a chance
+-- to finish. Check the accumulator of phMatch to see if the Phenotype was
+-- waiting for finish matching, and then strip any PhenotypeError match that
+-- finished in that window. 
     tailStrippedVec = case finalSAcc B.! 0 of
       (_, []) -> purgeVec
       (_, startI:_) -> (B.map . fmap) (filter (tailPurgeF startI)) purgeVec
