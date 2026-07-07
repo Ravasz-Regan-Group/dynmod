@@ -327,14 +327,16 @@ mkBar lniBMap att sColor (sName, phs)
     | otherwise = BR (MatchBar slices sColor) attSize sName phNames
     where
         slices = (uncurry (mkSlice attSize phErrMap)) <$> 
-            (zip phNames purgedThMatchInts)
+                    (zip phNames purgedThMatchInts)
 --      We do not want any Phenotypes with no matches, so we purge them. 
         purgedThMatchInts = purgeEmpties <$> matchTHInts
 --      An Attractor might contain a Phenotype in an incorrect order, because
 --      the begining of an Attractor is found randomnly in state space. We
 --      initially find Phenotypes on a doubled attractor, then ditch any matches
---      that begin after the end of the first copy, and then `rem attL` any
---      remaining matches to wrap them around to the begining. 
+--      that begin after the end of the first copy, then fill in any gaps in the
+--      Int sequence so that the Phenotype(or PhenotypeError) is colored in a
+--      solid line in the Barcode figure, and then `rem attL` any remaining
+--      matches to wrap them around to the begining. 
         matchTHInts = (fmap . fmap . fmap) (wrapPhMatches attSize) noErrOLPhInts
 --      We do not want a PhenotypeError to match at the same time as any
 --      Phenotype in its Switch, so we filter them out after the initial pass.
@@ -351,11 +353,18 @@ mkBar lniBMap att sColor (sName, phs)
         swSize = L.length orderedPHs
 
 -- Strip Phenotype matches that begin after the end of a doubled Attractor. 
+-- Then fill in any gaps in the Int sequence so that the Phenotype
+-- (or PhenotypeError) is colored in a solid line in the Barcode figure. 
 -- Then wrap matches that span the boundry around to the beginning. 
 wrapPhMatches :: Int -> [[Int]] -> [[Int]]
-wrapPhMatches attL matches = modBreak <$> noExcessMss
+wrapPhMatches attL matches = modBreak <$> filledInMss
     where
         modBreak = (fmap (`rem` attL) . concatPair . swap . break (>= attL))
+        filledInMss = fillF <$> noExcessMss
+            where
+                fillF :: [Int] -> [Int]
+                fillF [] = []
+                fillF fMatch = [head fMatch..last fMatch]
         noExcessMss = filter excessF matches
         excessF eMatch = case L.uncons eMatch of
             Nothing -> False
@@ -463,53 +472,43 @@ phenotypeMatch lniBMap phss thread = B.generate (B.length thread) lookuper
                             -> Int
                             -> M.HashMap Int [PhenotypeName]
                         itg aM j = M.insertWith (<>) j [phName] aM
-        phSlices :: [(PhenotypeName, [ThreadSlice])]
         phSlices = (fmap . fmap . fmap) mkRange purgedPhInts
         purgedPhInts = (concat . concat) purgedPhIntsss
 -- We do not want any Phenotypes with no matches, so we purge them. 
-        purgedPhIntsss :: [[[(PhenotypeName, [[Int]])]]]
         purgedPhIntsss = (fmap . fmap) purgeEmpties noErrorOLPhIntsss
 -- We do not want a PhenotypeError to match at the same time as any Phenotype
 -- in its Switch, so we filter them out after the initial pass. 
-        noErrorOLPhIntsss :: [[[(PhenotypeName, [[Int]])]]]
         noErrorOLPhIntsss = purgePhEOverlaps <$> phIntsss
-        phIntsss :: [[[(PhenotypeName, [[Int]])]]]
         phIntsss = (wholePhMatch lniBMap thread) <<$>> phss
 
 purgeEmpties :: [(PhenotypeName, [[Int]])] -> [(PhenotypeName, [[Int]])]
 purgeEmpties = filter (not . null . snd)
 
 purgePhEOverlaps :: [[(PhenotypeName, [[Int]])]] -> [[(PhenotypeName, [[Int]])]]
-purgePhEOverlaps phIntss = case (mPhInts, mPhErrIntss) of
-  (Just phInts, Just phErrIntss) ->
-    (fmap . fmap . fmap) (filter phEOverlapF) phErrIntss
+purgePhEOverlaps [] = []
+purgePhEOverlaps phIntss = zipWith (:) phInts purgedPhErrss
     where
-      phEOverlapF :: [Int] -> Bool
-      phEOverlapF phErrInts = case (mFirstI, mLastI) of
-        (Just startI, Just endI)
-          | any (insideF (startI, endI)) phInts -> False
-          | otherwise -> True
-          where
-            insideF (i, j) (_, phBareIntss) = any insideF' phBareIntss
-              where
-                insideF' phBareInts = case (mFPhI, mLPhI) of
-                  (Just m, Just n) -> not (i >= m && j <= n)
-                  _ -> True
-                  where
-                    mFPhI = fst <$> L.uncons phBareInts
-                    mLPhI = snd <$> L.unsnoc phBareInts
-        _ -> False 
-        where
-          mFirstI = fst <$> L.uncons phErrInts
-          mLastI = snd <$> L.unsnoc phErrInts
-  _ -> phIntss
-  where
-    mPhErrIntss :: Maybe [[(PhenotypeName, [[Int]])]]
-    mPhErrIntss = snd <$> splitIntss
-    mPhInts :: Maybe [(PhenotypeName, [[Int]])]
-    mPhInts = fst <$> splitIntss
---  (mPhInts, mPhErrIntss) = (fst <$> splitIntss, snd <$> splitIntss)
-    splitIntss = L.uncons phIntss
+        purgedPhErrss = ((fmap . fmap . fmap) (filter phEOverlapF) phErrIntss)
+        phInts = head <$> phIntss
+        phErrIntss = tail <$> phIntss
+        phEOverlapF :: [Int] -> Bool
+        phEOverlapF phErrInts = case (mFirstI, mLastI) of
+            (Just startI, Just endI)
+                | any (insideF (startI, endI)) phInts -> False
+                | otherwise -> True
+                where
+                    insideF (i, j) (_, phBareIntss) = any insideF' phBareIntss
+                        where
+                            insideF' phBareInts = case (mFPhI, mLPhI) of
+                                (Just m, Just n) -> not (i >= m && j <= n)
+                                _ -> True
+                                where
+                                    mFPhI = fst <$> L.uncons phBareInts
+                                    mLPhI = snd <$> L.unsnoc phBareInts
+            _ -> False
+            where
+                mFirstI = fst <$> L.uncons phErrInts
+                mLastI = snd <$> L.unsnoc phErrInts
 
 -- Find the places a Phenotype, or its associated PhenotypeErrors, is present in
 -- a Thread. Note that a Phenotype or PhenotypeError MUST start at its first
@@ -519,10 +518,19 @@ wholePhMatch :: LayerNameIndexBimap
              -> Thread
              -> Phenotype
              -> [(PhenotypeName, [[Int]])]
-wholePhMatch lniBMap thread ph = B.toList purgeVec
+wholePhMatch lniBMap thread ph = B.toList tailStrippedVec
   where
---     Remove the PhentypeError matches that are just the starts of Phenotype
---     or longer PhenotypeError matches. 
+-- If the Phentotype fingerprint is in the process of matching when the a run
+-- ends, a PhenotypeError might match just because the Phenotype did not get a
+-- chance to finish. Check the accumulator of phMatch to see if the Phenotype
+-- was wainting for finish matching, and then strip any PhenotypeError match
+-- that finished in that window. 
+    tailStrippedVec = case finalSAcc B.! 0 of
+      (_, []) -> purgeVec
+      (_, startI:_) -> (B.map . fmap) (filter (tailPurgeF startI)) purgeVec
+        where tailPurgeF i mtchs = i > head mtchs
+-- Remove the PhentypeError matches that are just the starts of Phenotype or
+-- longer PhenotypeError matches. 
     purgeVec = fst $ B.foldl' purgerF purgeAcc phMatchVec
     purgeAcc = (B.empty, [])
     purgerF (cleanMatches, fullerMatches) (phName, phEMatches) =
@@ -533,7 +541,7 @@ wholePhMatch lniBMap thread ph = B.toList purgeVec
           phCleanMatches = filter purgeFF phEMatches
           purgeFF phEMatch = (not . any (isStrictPrefixOf phEMatch))
                                                     fullerMatches
-    phMatchVec = fst $ B.ifoldl' phMatch (rAcc, sAcc) thread
+    (phMatchVec, finalSAcc) = B.ifoldl' phMatch (rAcc, sAcc) thread
     sAcc = B.replicate (length allPhNs) (0, [])
     rAcc = (B.fromList . fmap (\x -> (x, []))) allPhNs
     allPhNs = allPhNames ph
