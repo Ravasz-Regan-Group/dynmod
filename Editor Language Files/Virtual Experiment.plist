@@ -50,6 +50,7 @@
 		<string>t_end</string>
 		<string>FlipTo</string>
 		<string>SampleSize</string>
+		<string>WriteResults</string>
 		<string>NodeTimeCourse</string>
 		<string>PhenotypeTimeCourse</string>
 		<string>AvgBarChartNodes</string>

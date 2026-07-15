@@ -159,7 +159,7 @@ declareSymbolFont = comm5 "DeclareSymbolFont"
 declareMathSymbol :: LaTeXC l => l -> l -> l -> l -> l
 declareMathSymbol = comm4 "DeclareMathSymbol"
 
--- Id there is ever a need for operators likt "lim", which take arguments. 
+-- If there is ever a need for operators likt "lim", which take arguments. 
 declareMathOperator :: LaTeXC l => String -> l
 declareMathOperator xs = comm2 "DeclareMathOperator" (commS (xs ++ "op"))
                             (fromLaTeX $ TeXRaw $ T.pack xs)

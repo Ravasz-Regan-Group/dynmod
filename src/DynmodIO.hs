@@ -218,8 +218,7 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                         | otherwise = " experiments. "
 --                 PS.pPrint (tmlnLF <$> invRs)
                 putStrLn $ "Ran " <> show numExp <> expTense
-                let allMarks = fmap fst $
-                        concatMap layerExperimentHooksIO layerResultIOs
+                let allMarks = concatMap layerExperimentMarksIO layerResultIOs
                 putStrLn $ "Experiment marks: " <> show allMarks
 
 
@@ -733,8 +732,8 @@ runLayerExperimentsIO fPath cMap gen (atts, lExpSpec) = do
     mapM_ (writeFiveDFig fPath) mAttESpaceFig
     let exps = experiments lExpSpec
         runExperimentIOF = runExperimentIO fPath cMap mMap mL atts
-    (nGen, eHooks) <- mapAccumM runExperimentIOF gen exps
-    let lResult = LayerResultIO mMap mL eHooks
+    (nGen, eMarks) <- mapAccumM runExperimentIOF gen exps
+    let lResult = LayerResultIO mMap mL eMarks
     return (nGen, lResult)        
 
 -- Run a DMExperiment by folding up the InputPulses according to the chosen step
@@ -760,7 +759,7 @@ runExperimentIO :: Path Abs File
                 -> HS.HashSet Attractor
                 -> StdGen
                 -> (DMExperiment, VEXExperiment)
-                -> IO (StdGen, ExperimentHook)
+                -> IO (StdGen, ExperimentMark)
 runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
     TCDMEx tcExp -> do
         let expGen = fromMaybe gen (manualTCPRNGSeed tcExp)
@@ -772,18 +771,12 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
             (xMark, newGen) = uniform markGen
             dmXOutput = preOutput (ExpOutput vexEx (TCO attResults) xMark)
         putStrLn $ "Running experiment: " <> expName
-        fullDir <- mkExpPath fPath (TCEM expMeta) "Results"
-        let noDetailsDir = parent fullDir
-        ensureDir noDetailsDir
-        let fileNameStr = expName
-        relFileName <- parseRelFile fileNameStr
-        relFileNameWExt <- addExtension ".csv" relFileName
-        let absFileNameWExt = noDetailsDir </> relFileNameWExt
-        RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
+        when (tcDoWriteResults expMeta)
+             (writeTCExpResults fPath expMeta dmXOutput)
         putStrLn $ "Generating figures for " <> expName
         let combinedAttResults = zip [1..] $ resCombine attResults
         mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark) combinedAttResults
-        return (newGen, (xMark, absFileNameWExt))
+        return (newGen, xMark)
     ScDMex scanExp -> do
         let filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
             expMeta = scExpMeta scanExp
@@ -806,7 +799,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         putStrLn $ "Generating figures for " <> expName
         let attIDedPreppedRess = zip [1..] $ preppedRess
         mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attIDedPreppedRess
-        return (newGen, (xMark, absFileNameWExt))
+        return (newGen, xMark)
     where
         attList = HS.toList attSet
         tcPhData = (lniBMap, phss)
@@ -846,6 +839,18 @@ mkExpPath vexFPath dmExpMeta figsOrRess = do
         SCEM scXMeta -> parseRelDir ((T.unpack . scExpName) scXMeta)
     let dirFull = dirStem </> dirExpWhat </> dirCat </> dirExpDifferentiator
     return dirFull
+
+-- Write out TimeCourse experiment results
+writeTCExpResults :: Path Abs File -> TCExpMeta -> DMExpOutput -> IO ()
+writeTCExpResults fPath expMeta dmXOutput = do
+    fullDir <- mkExpPath fPath (TCEM expMeta) "Results"
+    let noDetailsDir = parent fullDir
+    ensureDir noDetailsDir
+    let fileNameStr = (T.unpack . tcExpName) expMeta
+    relFileName <- parseRelFile fileNameStr
+    relFileNameWExt <- addExtension ".csv" relFileName
+    let absFileNameWExt = noDetailsDir </> relFileNameWExt
+    RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
 
 tcRunDiaIO :: Path Abs File
            -> ColorMap

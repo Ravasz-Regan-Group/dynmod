@@ -22,11 +22,13 @@ module Types.DMInvestigation
     , BarcodeFilter(..)
     , VEXExperiment(..)
     , VEXTimeCourse(..)
+    , VEXTCCommonMeta(..)
     , InitialEnvironment(..)
     , ExperimentStep(..)
     , VEXInputPulse(..)
     , ManualSeed
     , ManualName
+    , DoWriteResults
     , NodeAlteration(..)
     , WildTypeVsMutantAlt
     , nodeAltName
@@ -63,7 +65,6 @@ module Types.DMInvestigation
     , DMExpOutput(..)
     , ExpOutput(..)
     , ExpOP(..)
-    , ExperimentHook
     , ExperimentMark
     , TimeCourseOutput
     , TCOutputParameters(..)
@@ -106,7 +107,6 @@ import Types.DMInvestigation.TimeCourse
 import Types.DMInvestigation.Scan
 import Types.VEXInvestigation
 import Data.Validation
-import Path
 import TextShow
 import qualified Data.HashSet as HS
 import System.Random (StdGen)
@@ -150,7 +150,7 @@ data DMExperiment = TCDMEx DMTimeCourse
 data LayerResultIO = LayerResultIO {
       layerResultMMIO :: ModelMapping
     , layerResultMLIO :: ModelLayer
-    , layerExperimentHooksIO :: [ExperimentHook]
+    , layerExperimentMarksIO :: [ExperimentMark]
     } 
 
 
@@ -172,7 +172,7 @@ data ExpOP = TCO TimeCourseOutput
            deriving (Eq, Show)
 
 
-type ExperimentHook = (ExperimentMark, Path Abs File)
+-- type ExperimentHook = (ExperimentMark, Path Abs File)
 -- An Int to mark a particular run of a particular experiment, so that we don't
 -- have to validate an experiment that we literally just did. 
 type ExperimentMark = Word

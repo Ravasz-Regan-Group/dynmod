@@ -28,6 +28,7 @@ import qualified Data.Vector as B
 import TextShow
 import qualified Data.List as L
 import Data.Function (on)
+import Data.Maybe (fromJust)
 
 renderGML :: GML -> T.Text
 renderGML = flip gmlListRender 0
@@ -621,19 +622,24 @@ renderVEXExperiment (TXSC vexScan) = renderScanVEXExperiment vexScan
 -- Render TimeCourse experiments. 
 renderTCVEXExperiment :: VEXTimeCourse -> TL.Text
 renderTCVEXExperiment tcExp = case tcExp of
-    GeneralTC exNm inEnv expStep vexPlss exReps fkds mPRMNGSeed ->
-        vexWrap "GeneralExperiment" bLines $ Just $ TL.fromStrict exNm
+    GeneralTC inEnv 
+              expStep
+              vexPlss
+             (VEXTCCMeta exReps fkds mPRMNGSeed mExNm doWriteRs) ->
+        vexWrap "GeneralExperiment" bLines $ Just $
+            TL.fromStrict (fromJust mExNm)
         where
             bLines = [
-                  "ExperimentName: " <> TL.fromStrict exNm
+                  "ExperimentName: " <> TL.fromStrict (fromJust mExNm)
                 , renderVexVar "SampleSize" showtl Nothing exReps
                 , renderManualSeed mPRMNGSeed
+                , renderDoWriteResults doWriteRs
                 , renderExperimentStep expStep
                 , renderInitialEnvironment inEnv
                 , renderFigKinds fkds
                 ] <> fmap renderVEXInputPulse vexPlss
     Pulse1 (t_0, t_end) inEnv dur (pName, pState)
-        exReps fkds mPRMNGSeed mManualName ->
+        (VEXTCCMeta exReps fkds mPRMNGSeed mManualName doWriteRs) ->
         vexWrap "Pulse1" bLines Nothing
         where
             bLines = [
@@ -645,10 +651,11 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
                 , renderManualName mManualName
+                , renderDoWriteResults doWriteRs
                 , renderUserDuration "t_end" t_end
                 ]
-    KnockDOverE (t_0, t_end) inEnv dur nAlts exReps
-        fkds mPRMNGSeed mManualName ->
+    KnockDOverE (t_0, t_end) inEnv dur nAlts
+        (VEXTCCMeta exReps fkds mPRMNGSeed mManualName doWriteRs) ->
         vexWrap "KDOE" bLines Nothing
         where
             bLines = [
@@ -660,10 +667,12 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
                 , renderManualName mManualName
+                , renderDoWriteResults doWriteRs
                 , renderUserDuration "t_end" t_end
                 ]
-    KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts exReps fkds
-        mPRMNGSeed mManualName -> vexWrap "KDOEAtTransition" bLines Nothing
+    KDOEAtTransition (t_0, t_end) inEnv pDur (pN, pSt) nAlts
+        (VEXTCCMeta exReps fkds mPRMNGSeed mManualName doWriteRs) ->
+        vexWrap "KDOEAtTransition" bLines Nothing
         where
             bLines =[
                   renderUserDuration "t_0" t_0
@@ -675,6 +684,7 @@ renderTCVEXExperiment tcExp = case tcExp of
                 , renderFigKinds fkds
                 , renderManualSeed mPRMNGSeed
                 , renderManualName mManualName
+                , renderDoWriteResults doWriteRs
                 , renderUserDuration "t_end" t_end
                 ]
 
@@ -702,6 +712,11 @@ renderVexVar vName renderF mDefault vexV = case (vexV ==) <$> mDefault of
 
 renderManualSeed :: ManualSeed -> TL.Text
 renderManualSeed = maybe "" (\sd -> "ManualPRNGSeed: " <> showtl sd)
+
+renderDoWriteResults :: DoWriteResults -> TL.Text
+renderDoWriteResults doWriteRs
+    | doWriteRs = "WriteResults: True"
+    | otherwise = ""
 
 renderManualName :: ManualName -> TL.Text
 renderManualName = maybe "" (\x -> "ExperimentName: " <> showtl x)

@@ -49,6 +49,7 @@ library
       Figures.InputSpaceFigure
       Figures.Scan
       Figures.TimeCourse
+      Graphics.Rendering.Chart.Plot.BarErrBars
       Parse.Attractor
       Parse.GML
       Parse.UI
@@ -77,6 +78,7 @@ library
     , bytestring
     , colour
     , containers
+    , data-default-class
     , deepseq
     , diagrams-cairo
     , diagrams-lib
@@ -84,6 +86,7 @@ library
     , fgl
     , hashable
     , hxt
+    , lens
     , megaparsec
     , mtl
     , optparse-applicative

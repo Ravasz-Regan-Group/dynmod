@@ -89,6 +89,8 @@ library:
   - text-show
   - text-show-instances
   - hxt
+  - lens
+  - data-default-class
 
 executables:
   dynmod:

@@ -42,47 +42,45 @@ data VEXExperiment = VXTC VEXTimeCourse
 -- TimeCourses
 data VEXTimeCourse =
 -- A parsed GeneralExperiment{}.
-    GeneralTC T.Text -- Experiment name
-               InitialEnvironment
-               ExperimentStep
-              [VEXInputPulse]
-               ExperimentReps
-               FigKinds
-               ManualSeed
+    GeneralTC InitialEnvironment
+              ExperimentStep
+             [VEXInputPulse]
+              VEXTCCommonMeta
 -- A parsed Pulse1{}.
     | Pulse1 (Duration, Duration) -- t_0 and t_end
               InitialEnvironment
               Duration -- pulse duration
              (NodeName, RealNodeState)
-              ExperimentReps
-              FigKinds
-              ManualSeed
-              ManualName
+              VEXTCCommonMeta
 -- A parsed KDOE{}.
     | KnockDOverE (Duration, Duration) -- t_0 and t_end
                    InitialEnvironment
                    Duration -- pulse duration
                   [NodeAlteration]
-                   ExperimentReps
-                   FigKinds
-                   ManualSeed
-                   ManualName
+                   VEXTCCommonMeta
 -- A parsed KDOEAtTransition
     | KDOEAtTransition (Duration, Duration) -- t_0 and t_end
                         InitialEnvironment
                         Duration -- pulse duration
                        (NodeName, RealNodeState)
                        [NodeAlteration]
-                        ExperimentReps
-                        FigKinds
-                        ManualSeed
-                        ManualName
+                        VEXTCCommonMeta
     deriving (Eq, Show)
+
+data VEXTCCommonMeta = VEXTCCMeta ExperimentReps
+                                  FigKinds
+                                  ManualSeed
+                                  ManualName
+                                  DoWriteResults
+    deriving (Eq, Show)
+                           
 
 -- An integer suppllied when the user wants to manually specify an experiment's
 -- RPNG seed for reproducibility purposes. 
 type ManualSeed = Maybe Int
 type ManualName = Maybe T.Text
+-- Do we write the Timcourse resuts to a csv?
+type DoWriteResults = Bool
 
 data VEXInputPulse = VEXInPt
     { vexRealInputCoord :: [(NodeName, RealNodeState)]

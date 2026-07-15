@@ -488,7 +488,7 @@ purgePhEOverlaps :: [[(PhenotypeName, [[Int]])]] -> [[(PhenotypeName, [[Int]])]]
 purgePhEOverlaps [] = []
 purgePhEOverlaps phIntss = zipWith (:) phInts purgedPhErrss
     where
-        purgedPhErrss = ((fmap . fmap . fmap) (filter phEOverlapF) phErrIntss)
+        purgedPhErrss = (fmap . fmap . fmap) (filter phEOverlapF) phErrIntss
         (phInts, phErrIntss) = (head <$> phIntss, tail <$> phIntss)
         phEOverlapF :: [Int] -> Bool
         phEOverlapF [] = False

@@ -11,7 +11,7 @@ import Types.DMModel
 import Types.DMInvestigation
 import Types.Simulation
 import Types.Figures
-import Utilities
+import Graphics.Rendering.Chart.Plot.BarErrBars
 import Diagrams.Prelude
 import Diagrams.Backend.Cairo
 import Graphics.Rendering.Chart hiding (scale)
@@ -45,38 +45,44 @@ nBChartDia cMap lniBMap exMeta bCHNodeNs pulseStats = fig
           $ layout_y_axis . laxis_override .~ axisGridHide
           $ layout_x_axis . laxis_generate .~ autoIndexAxis xAxisNs
           $ layout_left_axis_visibility . axis_show_ticks .~ False
-          $ layout_plots .~ ((plotBars . uncurry mkNodePlot) <$>
-                (zip (plotValues) (reverse nColors)))
-                -- [plotBars barsAvgs]
+          $ layout_plots .~ (concatMap (uncurry mkNodePlot) prpdValues)
           $ def
             where
                 legend = Just $
                     legend_label_style . font_size .~ 12
-                  $ def
-        
-        mkNodePlot someValue nClr = 
---             plot_bars_titles .~ legendNames
-            plot_bars_values .~ [someValue]
-          $ plot_bars_style .~ BarsClustered
-          $ plot_bars_spacing .~ BarsFixWidth 50
-          $ plot_bars_item_styles .~
-                (mkStyle <$> (replicate (length avgs) nClr))
-          $ def
-            where
-                mkStyle c = (solidFillStyle c, bstyles)
-                bstyles = Just (solidLine 0.5 $ opaque black)
-        
+                  $ def        
 --         legendNames = zipWith zipper (repeat "Pulse ") [0..]
 --         zipper :: String -> Int -> String ; zipper x y = x ++ show y
-        plotValues = addIndexes transposedAvgs
+        prpdValues = zip plotValuesWStdDevs (reverse nColors)
+        plotValuesWStdDevs = addIndexes transposedAvgsWStdDevs
         xAxisNs = T.unpack <$> bCHNodeNs
-        transposedAvgs = L.transpose avgs
-        (avgs, _ {-stdDevs-}) = (isoBimap (fmap B.toList) . L.unzip .
-            fmap B.unzip) selectedPulseStats
+        transposedAvgsWStdDevs = L.transpose avgsWStdDevs
+        avgsWStdDevs = fmap B.toList selectedPulseStats
 --         Select just the DMNodes we want charts for. 
+        selectedPulseStats :: [B.Vector (RealNodeState, StdDev)] 
         selectedPulseStats = flip B.backpermute bcNodeIndicesVec <$> pulseStats
         bcNodeIndicesVec = B.fromList $ (lniBMap BM.!) <$> bCHNodeNs
         nColors = L.reverse $ (opaque . (cMap M.!)) <$> bCHNodeNs
+
+mkNodePlot :: (PlotIndex, [(RealNodeState, StdDev)])
+           -> AlphaColour Double
+           -> [Plot PlotIndex Double]
+mkNodePlot (pIndex, nValueWStdDevs) nClr = [plotBars nBPlot]
+-- [plotBars nBPlot, plotBEBs nErrBPlot]
+    where
+        nBPlot = plot_bars_values .~ [(pIndex, nValues)]
+               $ plot_bars_style .~ BarsClustered
+               $ plot_bars_spacing .~ BarsFixWidth 50
+               $ plot_bars_item_styles .~ (mkStyle <$> (repeat nClr))
+               $ def
+--         nErrBPlot = plot_bebs_values .~ [(pIndex, errVals)]
+--                   $ plot_bebs_spacing .~  BEBsFixWidth 50
+--                   $ plot_bebs_tick_length .~ 5
+-- --                   $ plot_bebs_title .~ "First Error Bars"
+--                   $ def
+--         errVals = (uncurry symBEBPoint) <$> nValueWStdDevs
+        mkStyle c = (solidFillStyle c, Just (solidLine 0.5 $ opaque black))        
+        nValues = fst <$> nValueWStdDevs
 
 phBChartDia :: PhColorMap
             -> ModelLayer

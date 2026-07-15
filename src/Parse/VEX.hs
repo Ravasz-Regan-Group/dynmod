@@ -262,15 +262,30 @@ generalTCParse :: Parser VEXTimeCourse
 generalTCParse = between (symbol "GeneralExperiment{")
                           (symbol "GeneralExperiment}")
     (runPermutation $
-        GeneralTC <$> toPermutation (identifier "ExperimentName")
-                  <*> toPermutation startingModelStateParse
+        GeneralTC <$> toPermutation startingModelStateParse
                   <*> toPermutation modelStepTypeParse
                   <*> toPermutation (some pulseParse)
-                  <*> toPermutationWithDefault 1 expRepsParse
-                  <*> toPermutationWithDefault defFigKinds figKindsParse
-                  <*> toPermutationWithDefault Nothing manualPRNGParse
+            <*> (VEXTCCMeta
+                    <$> toPermutationWithDefault 1 expRepsParse
+                    <*> toPermutationWithDefault defFigKinds figKindsParse
+                    <*> toPermutationWithDefault Nothing manualPRNGParse
+                    <*> toPermutation (Just <$> (identifier "ExperimentName"))
+                    <*> toPermutationWithDefault False doWriteResultsParse
+                )
         
     )
+
+tcCommonMetaParse :: Permutation Parser VEXTCCommonMeta
+tcCommonMetaParse = 
+    VEXTCCMeta <$> toPermutationWithDefault 1 expRepsParse
+               <*> toPermutationWithDefault defFigKinds figKindsParse
+               <*> toPermutationWithDefault Nothing manualPRNGParse
+               <*> toPermutationWithDefault Nothing
+                                (Just <$> (identifier "ExperimentName"))
+               <*> toPermutationWithDefault False doWriteResultsParse
+
+doWriteResultsParse :: Parser DoWriteResults
+doWriteResultsParse = boolVariableParse "WriteResults"
 
 -- Parse an InitialEnvironment. When we go to run the actual experiment, this
 -- will be transformed into a [LayerVec]. 
@@ -382,11 +397,7 @@ pulse1Parse = between (symbol "Pulse1{") (symbol "Pulse1}") (runPermutation $
            <*> toPermutation startingModelStateParse
            <*> toPermutation (durationParse "Duration")
            <*> toPermutation flipParse
-           <*> toPermutationWithDefault 1 expRepsParse
-           <*> toPermutationWithDefault defFigKinds figKindsParse
-           <*> toPermutationWithDefault Nothing manualPRNGParse
-           <*> toPermutationWithDefault Nothing
-                    (Just <$> (identifier "ExperimentName"))
+           <*> tcCommonMetaParse
     )
 
 flipParse :: Parser (NodeName, RealNodeState)
@@ -405,12 +416,7 @@ kdoeTCParse = between (symbol "KDOE{") (symbol "KDOE}") (runPermutation $
                 <*> toPermutation startingModelStateParse
                 <*> toPermutation (durationParse "Duration")
                 <*> toPermutation nodeAlterationsParse
-                <*> toPermutationWithDefault 1 expRepsParse
-                <*> toPermutationWithDefault defFigKinds figKindsParse
-                <*> toPermutationWithDefault Nothing manualPRNGParse
-                <*> toPermutationWithDefault Nothing
-                        (Just <$> (identifier "ExperimentName"))
-        
+                <*> tcCommonMetaParse
     )
 
 -- Parse a KDOEAtTransition. t_0 and t_end are optional, so they get the default
@@ -428,12 +434,7 @@ kdoeAtTransitionParse = between (symbol "KDOEAtTransition{")
         <*> toPermutation (durationParse "Duration")
         <*> toPermutation flipParse
         <*> toPermutation nodeAlterationsParse
-        <*> toPermutationWithDefault 1 expRepsParse
-        <*> toPermutationWithDefault defFigKinds figKindsParse
-        <*> toPermutationWithDefault Nothing manualPRNGParse
-        <*> toPermutationWithDefault Nothing
-                (Just <$> (identifier "ExperimentName"))
-        
+        <*> tcCommonMetaParse
     )
 
 -- Parse a VEXScan
