@@ -772,7 +772,7 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
             dmXOutput = preOutput (ExpOutput vexEx (TCO attResults) xMark)
         if null filteredAtts
             then do
-                putStrLn "Every attractor has been filterd out. Please adjust \
+                putStrLn "Every attractor has been filtered out. Please adjust \
                     \your filters. "
                 return (newGen, Nothing)
             else do
