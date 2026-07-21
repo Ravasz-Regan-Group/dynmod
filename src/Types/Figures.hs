@@ -535,15 +535,15 @@ wholePhMatch lniBMap thread ph = B.toList tailStrippedVec
           purgeFF phEMatch = (not . any (isStrictPrefixOf phEMatch))
                                                     fullerMatches
     (phMatchVec, finalSAcc) = B.ifoldl' phMatch (rAcc, sAcc) thread
-    sAcc = B.replicate (length allPhNs) (0, [])
+    sAcc :: PHMStateVec
+    sAcc = (B.replicate (length allPhNs) (0, []))
     rAcc = (B.fromList . fmap (\x -> (x, []))) allPhNs
     allPhNs = allPhNames ph
     phMatch :: (PHMResultVec, PHMStateVec)
             -> Int -> LayerVec
             -> (PHMResultVec, PHMStateVec)
-    phMatch accVecs threadIndex lVec =
-      B.ifoldl' curriedFPFold (fst accVecs, B.empty) (snd accVecs)
-      where curriedFPFold = phFPFold lniBMap ph lVec threadIndex
+    phMatch (rAc, sAc) threadIndex lVec = B.ifoldl' fPFold (rAc, B.empty) sAc
+      where fPFold = phFPFold lniBMap ph lVec threadIndex
 
 
 phFPFold :: LayerNameIndexBimap
@@ -567,24 +567,22 @@ phFPFold lniBMap ph lVec threadIndex (rVec, sVec) pheIndex
                                     (phN, L.snoc matchIntss newMatchInts)
             nSVec = B.snoc sVec (0, [])
         False -> (rVec, B.snoc sVec (phSSIndex + 1, newMatchAcc))
-      (Nothing, False) -> case any snd anyPrevSSMatches of
--- Reset if we don't match and any of the previous SubSpaces do. 
+-- Reset if we don't match and do not keep the notany condition. Check if the
+-- place we reset at is the start of a new cycle. 
+      (Just True, False) -> firstMatch
+-- Keep going if we don't match and do keep the notany condition (or there isn't
+-- a notany condition), but reset if any of the previous SubSpaces do. Make sure
+-- to check if the place we reset at is the start of a new cycle. 
+      (_, False) -> case anyPrevSSMatches of
         False -> (rVec, B.snoc sVec (phSSIndex, matchAcc))
-        True -> (rVec, B.snoc sVec (0, []))
-        where
-          anyPrevSSMatches = aPSSMF <$> [0..(phSSIndex - 2)]
-          aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
--- Keep going if we don't match and do keep the notany condition, but reset if
--- any of the previous SubSpaces do. 
-      (Just False, False) -> case any snd anyPrevSSMatches of
-        False -> (rVec, B.snoc sVec (phSSIndex, matchAcc))
-        True -> (rVec, B.snoc sVec (0, []))
-        where
-          anyPrevSSMatches = aPSSMF <$> [0..(phSSIndex - 2)]
-          aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
--- Reset if we don't match and do not keep the notany condition.
-      (Just True, False) -> (rVec, B.snoc sVec (0, []))
+        True -> firstMatch
     newMatchAcc = L.snoc matchAcc threadIndex
+    firstMatch = case isFirstMatch of
+      False -> (rVec, B.snoc sVec (0, []))
+      True -> (rVec, B.snoc sVec (1, [threadIndex]))
+    isFirstMatch = snd $ isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! 0)
+    anyPrevSSMatches = (any snd . fmap aPSSMF) [0..(phSSIndex - 2)]
+    aPSSMF i = isSSMatch lVec ((phIntSSVecVec B.! pheIndex) B.! i)
     sSpace = (phIntSSVecVec B.! pheIndex) B.! phSSIndex
     ssLoopMax = phSSLoopMaxIVec B.! pheIndex
     phSSLoopMaxIVec = B.map (\v ->(B.length v) - 1) phSSVecVec

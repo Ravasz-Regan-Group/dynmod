@@ -14,13 +14,14 @@ import qualified Data.HashMap.Strict as M
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as B
 import Data.Validation
+import Data.Text as T
 import Data.Tuple (swap)
 import qualified Data.List as L
 
 data AttractorsInvalid =
       AttractorCheckSwitchNamesDifferent ([NodeName], [NodeName])
     | AttractorCheckSwitchNodesDifferent (NodeName, ([NodeName], [NodeName]))
-    | NotAnAttractor Thread
+    | NotAnAttractor T.Text
     | InvalidLVReorder InvalidLVReorder
     deriving (Show, Eq)
 
@@ -46,8 +47,8 @@ largeBasinAtts' (mL, SamplingParameters _ _ _ limitedInps) atts =
             | HS.null excessAtts = HS.empty
             | otherwise = excessAtts <> go (excessAtts <> checkAtts) excessAtts
             where
-                excessAtts = HS.fromList $ filter attFilterF rundowns
-                attFilterF = not . flip elem checkAtts
+                excessAtts = HS.fromList $ L.filter attFilterF rundowns
+                attFilterF = not . flip L.elem checkAtts
                 rundowns = attRunDownSimple stepper <$> fixedVecs
                 fixedVecs = liftA2 U.update attVecs iLevels
                 attVecs = (mconcat . fmap B.toList . HS.toList) accumAtts
@@ -205,17 +206,17 @@ attCheck :: LayerNameIndexBimap
          -> Validation [AttractorsInvalid] Thread
 attCheck dmmsLNIBMap dmmsPSStepper csvLNIBMap thread
     | isAtt dmmsLNIBMap dmmsPSStepper csvLNIBMap thread = Success thread
-    | otherwise = Failure [NotAnAttractor thread]
+    | otherwise = Failure [NotAnAttractor "Not an Attractor, please resample"]
 
 -- Note that both ModelMappings here have already gone through a parsing, which
 -- means that every switch name is unique, as is its associated NodeName list,
 -- and no two switches share any NodeNames in common. 
 mmCheck :: DMMSModelMapping -> DMMSModelMapping -> [AttractorsInvalid]
 mmCheck csvMMap dmmsMMap = case lrUniques cSwitches dSwitches of
-    ([], []) -> foldr switchContentsF [] pairedMMs
+    ([], []) -> L.foldr switchContentsF [] pairedMMs
     err -> [AttractorCheckSwitchNamesDifferent err]
     where
-        pairedMMs = zipWith zipper sortedCSV sortedDMMS
+        pairedMMs = L.zipWith zipper sortedCSV sortedDMMS
         zipper (x, xs) (_, ys) = (x, xs, ys)
         sortedCSV = L.sortOn fst csvMMap
         sortedDMMS = L.sortOn fst dmmsMMap

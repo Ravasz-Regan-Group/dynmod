@@ -79,7 +79,7 @@ data VEXTCCommonMeta = VEXTCCMeta ExperimentReps
 -- RPNG seed for reproducibility purposes. 
 type ManualSeed = Maybe Int
 type ManualName = Maybe T.Text
--- Do we write the Timcourse resuts to a csv?
+-- Do we write the DMExperiment results to a csv?
 type DoWriteResults = Bool
 
 data VEXInputPulse = VEXInPt
@@ -101,6 +101,7 @@ data VEXScan = VEXScan
     [(NodeName, PhenotypeName)]
     ExperimentStep
     PlottingNodes
+    DoWriteResults
     deriving (Eq, Show)
 
 -- Optional manual Scan name.
@@ -431,7 +432,8 @@ data ExperimentStep = SynchronousExpStepper
 
 instance TextShow ExperimentStep where
     showb SynchronousExpStepper = showbLitString "SynchronousExpStepper"
-    showb (NoisyExpStepper prob) = showbLitString "NoisyExpStepper " <> showb prob
+    showb (NoisyExpStepper prob) = showbLitString "NoisyExpStepper " <>
+                                                                    showb prob
     showb AsynchronousExpStepper = showbLitString "AsynchronousExpStepper"
 
 type ExperimentReps = Int

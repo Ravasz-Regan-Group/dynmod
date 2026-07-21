@@ -46,7 +46,8 @@ data TCExpMeta = TCEMeta {
     , tcExpKind :: TCExpKind -- Was the parsed VEXTimeCourse general or preset?
     , tcExpFigures :: FigKinds
     , tcManualSeed :: ManualSeed
-    , tcDoWriteResults :: Bool -- Do we write experiment results to a csv?
+    -- Do we write experiment results to a csv?
+    , tcDoWriteResults :: DoWriteResults
     }  deriving (Eq, Show)
 
 data TCExpKind = P1

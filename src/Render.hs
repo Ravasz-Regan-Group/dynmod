@@ -29,6 +29,7 @@ import TextShow
 import qualified Data.List as L
 import Data.Function (on)
 import Data.Maybe (fromJust)
+import qualified Data.List.NonEmpty as NL
 
 renderGML :: GML -> T.Text
 renderGML = flip gmlListRender 0
@@ -562,7 +563,7 @@ purgeTableRenderGate lr n = dmmsWrap "NodeGate" entries Nothing
 -- the result from memory as quickly as possible. 
 
 renderDMExpOutput :: DMExpOutput -> TL.Text
-renderDMExpOutput dmExpOP = layerGatesT <> "\n" <> lniBMapT <> "\n" <> expOPT
+renderDMExpOutput dmExpOP = expOPT <> "\n" <> layerGatesT <> "\n" <> lniBMapT
     where
         expOPT = (renderSingleExpOP mM lniBMap . dmExpOutput) dmExpOP
         layerGatesT = "Layer Gates: " <> TL.intercalate "\n" gateTs
@@ -607,8 +608,8 @@ renderExprL s (Binary Or expr1 expr2) =
     (renderExprL s expr1) <> " or " <> (renderExprL s expr2)
 
 renderSingleExpOP :: ModelMapping -> LayerNameIndexBimap -> ExpOutput -> TL.Text
-renderSingleExpOP mM lniBMap expOutPut = "Experiment: \n" <> vexExpT <>
-    "\n" <> "ExperimentMark: " <> expMarkT <> "\n" <> "Output: \n" <> outputT
+renderSingleExpOP mM lniBMap expOutPut = outputT <> "\n" <> "Experiment: \n" <>
+    vexExpT <> "\n" <> "ExperimentMark: " <> expMarkT
     where
         vexExpT = (renderVEXExperiment . opVexExp) expOutPut
         expMarkT = (showtl . expMark) expOutPut
@@ -796,8 +797,18 @@ renderUserDuration vexVarName (UserD i) = vexVarName <> ": " <> showtl i <> "\n"
 
 -- Render Scans
 renderScanVEXExperiment :: VEXScan -> TL.Text
-renderScanVEXExperiment (VEXScan scKind inEnv mScNm nAlts iFix maxN relN stopPhs
-    expStep (plottingSws, plottingNs)) = vexWrap "Scan" bLines Nothing
+renderScanVEXExperiment (VEXScan
+    scKind
+    inEnv
+    mScNm
+    nAlts
+    iFix
+    maxN
+    relN
+    stopPhs
+    expStep
+    (plottingSws, plottingNs)
+    doWriteRs) = vexWrap "Scan" bLines Nothing
     where
         bLines = [
               renderInitialEnvironment inEnv
@@ -811,6 +822,7 @@ renderScanVEXExperiment (VEXScan scKind inEnv mScNm nAlts iFix maxN relN stopPhs
             , renderVexVar "ScanNodes" renderTList (Just []) plottingNs
             , renderScanKind scKind
             , renderNodeAlterations nAlts
+            , renderDoWriteResults doWriteRs
             ]
 
 renderScanKind :: ScanKind -> TL.Text
@@ -898,10 +910,26 @@ renderBar br = TL.intercalate ", " [bKindT, aSizeT, sNameT, phNamesT]
 renderBarKind :: BarKind -> TL.Text
 renderBarKind (FullMiss bHeight) = "FullMiss " <> showtl bHeight
 renderBarKind (MatchBar slices lColor) =
-    "MatchBar " <> slicesT <> " " <> lColorT
+    "MatchBar " <> slicesT <> " Bar color: " <> lColorT
     where
-        slicesT = TL.intercalate "-" $ showtl <$> slices
+        slicesT = TL.intercalate "-" $ renderSlice <$> slices
         lColorT = (TL.pack . SC.sRGB24show) lColor
+
+renderSlice :: Slice -> TL.Text
+renderSlice (Miss attSize) = "\n    Miss " <> showtl attSize
+renderSlice (Match _ attMatchIndices phName) = "\n    Match " <> 
+    attMatchIndicesT <>  " " <> "PhenotypeName: " <>
+    TL.fromStrict phName
+    where
+        attMatchIndicesT = "attMatchIndices: " <> (TL.intercalate ", " .
+            fmap attMatchIndicesTF . NL.toList) attMatchIndices
+        attMatchIndicesTF (matchPhName, matchInts, mPHEIErrorLength) =
+            TL.fromStrict matchPhName <> " matches: " <> showtl matchInts <>
+            mPHEIErrorLengthT
+            where
+                mPHEIErrorLengthT = maybe "" phEIF mPHEIErrorLength
+                phEIF (phEI, errL) = ", PHEIndex: " <> showtl phEI <>
+                    ", PhenotypeError length: " <> showtl errL
 
 -- Render bare results 
 renderRepResults :: ModelMapping -> LayerNameIndexBimap -> RepResults -> TL.Text
@@ -961,44 +989,44 @@ type WasPresent = Bool
 -- Render the results of a DMScan, after being processed down to stop phenotype
 -- distributions, phenotype prevelances, and node averages. 
 renderScanResult :: (Barcode, ScanPrep) -> TL.Text
-renderScanResult (bc, scPrep) = preface <> body
+renderScanResult (bc, scPrep) =  body <> "\n\n\n\n\n" <> barcodeInfo
   where
-    preface = "Barcode, " <> (TL.intercalate ", " . fmap renderBar) bc <> "\n"
-      <> "ScanResults\n"
+    barcodeInfo = "Barcode: \n" <> (TL.intercalate "\n" . fmap renderBar) bc <>
+      "\n"
     body = case scPrep of
       SPREnv (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <> stopDsBody
-        <> "\n" <> phDistsPreface <> "/n" <> phDistsBody <> "/n" <>
-        nodeStatsPreface <> "/n" <> nodeStatsBody
+        <> "\n" <> phDistsPreface <> "\n" <> phDistsBody <> "\n" <>
+        nodeStatsPreface <> "\n" <> nodeStatsBody
         where
           stopDsBody = inCF $ renderStopDistribution <$> stopDs
           phDistsBody = inCF $ renderPhDistribution <$> phDists
           nodeStatsBody = inCF $ renderScanNodeStats <$> nodeStats
       SPRKDOE (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <>
-        stopDsBody <> "\n" <> phDistsPreface <> "/n" <> phDistsBody <> "/n" <>
-        nodeStatsPreface <> "/n" <> nodeStatsBody
+        stopDsBody <> "\n" <> phDistsPreface <> "\n" <> phDistsBody <> "\n" <>
+        nodeStatsPreface <> "\n" <> nodeStatsBody
         where
           stopDsBody = inCF $ renderStopDistribution <$> stopDs
           phDistsBody = inCF $ renderPhDistribution <$> phDists
           nodeStatsBody = inCF $ renderScanNodeStats <$> nodeStats
       SPREnvKDOE scanStatss -> stopDsPreface <> "\n" <> stopDssBody <> "\n" <>
-        phDistsPreface <> "/n" <> phDistssBody <> "/n" <> nodeStatsPreface <>
-        "/n" <> nodeStatssBody
+        phDistsPreface <> "\n" <> phDistssBody <> "\n" <> nodeStatsPreface <>
+        "\n" <> nodeStatssBody
         where
           stopDssBody = inCF2 $ renderStopDistribution <<$>> stopDss
           phDistssBody = inCF2 $ renderPhDistribution <<$>> phDistss
           nodeStatssBody = inCF2 $ renderScanNodeStats <<$>> nodeStatss
           (stopDss, phDistss, nodeStatss) = unzip3 scanStatss
       SPRTwoEnvWithoutKDOE scanStatss -> stopDsPreface <> "\n" <> stopDssBody <>
-        "\n" <> phDistsPreface <> "/n" <> phDistssBody <> "/n" <>
-        nodeStatsPreface <> "/n" <> nodeStatssBody
+        "\n" <> phDistsPreface <> "\n" <> phDistssBody <> "\n" <>
+        nodeStatsPreface <> "\n" <> nodeStatssBody
         where
           stopDssBody = inCF2 $ renderStopDistribution <<$>> stopDss
           phDistssBody = inCF2 $ renderPhDistribution <<$>> phDistss
           nodeStatssBody = inCF2 $ renderScanNodeStats <<$>> nodeStatss
           (stopDss, phDistss, nodeStatss) = unzip3 scanStatss
       SPRTwoEnvWithKDOE scanStatsss -> stopDsPreface <> "\n" <> stopDsssBody <>
-        "\n" <> phDistsPreface <> "/n" <> phDistsssBody <> "/n" <>
-        nodeStatsPreface <> "/n" <> nodeStatsssBody
+        "\n" <> phDistsPreface <> "\n" <> phDistsssBody <> "\n" <>
+        nodeStatsPreface <> "\n" <> nodeStatsssBody
         where
           stopDsssBody = inCF3Fmap renderStopDistribution stopDsss
           phDistsssBody = inCF3Fmap renderPhDistribution phDistsss
@@ -1008,8 +1036,8 @@ renderScanResult (bc, scPrep) = preface <> body
         wildTypeBody <> "\nMutant stats:\n" <> mutantBody
         where
           wildTypeBody = stopDsPreface <> "\n" <> stopDsssBody <> "\n" <>
-            phDistsPreface <> "/n" <> phDistsssBody <> "/n" <> nodeStatsPreface
-            <> "/n" <> nodeStatsssBody
+            phDistsPreface <> "\n" <> phDistsssBody <> "\n" <> nodeStatsPreface
+            <> "\n" <> nodeStatsssBody
           stopDsssBody = inCF3Fmap renderStopDistribution stopDsss
           phDistsssBody = inCF3Fmap renderPhDistribution phDistsss
           nodeStatsssBody = inCF3Fmap renderScanNodeStats nodeStatsss
@@ -1017,8 +1045,8 @@ renderScanResult (bc, scPrep) = preface <> body
           mutantBody = case mScanStatsss of 
             Nothing -> ""
             Just mutantScanStatsss -> stopDsPreface <> "\n"
-              <> mStopDsssBody <> "\n" <> phDistsPreface <> "/n" <>
-              mPhDistsssBody <> "/n" <> nodeStatsPreface <> "/n" <>
+              <> mStopDsssBody <> "\n" <> phDistsPreface <> "\n" <>
+              mPhDistsssBody <> "\n" <> nodeStatsPreface <> "\n" <>
               mNodeStatsssBody
               where
                 mStopDsssBody = inCF3Fmap renderStopDistribution mStopDsss
@@ -1046,7 +1074,7 @@ inCF4 = inCF3 . (fmap . fmap . fmap) inCF
  
 renderStopDistribution :: StopDistribution -> TL.Text
 renderStopDistribution (stopMap, noStopFrac) =
-    "Fraction of runs not Phenotype stopped :" <> showtl noStopFrac <> "\n" <>
+    "Fraction of runs not Phenotype stopped: " <> showtl noStopFrac <> "\n" <>
     "Run stop fractions by Phenotype:\n" <> mapTL
     where
         mapTL = (TL.intercalate ", " . fmap pairF . Map.toList) stopMap
@@ -1066,7 +1094,7 @@ renderScanNodeStats nodeStatMap =
         pairF (nName, (nAvg, nStdDev)) = showtl nName <> ": (" <> showtl nAvg <>
             ", " <> showtl nStdDev <> ")"
 
--- Render the unprocessed recults of a DMScan. 
+-- Render the unprocessed recsults of a DMScan. 
 renderRawScanResult :: ModelMapping
                     -> LayerNameIndexBimap
                     -> (Barcode, ScanResult)
@@ -1087,7 +1115,7 @@ renderRawScanResult mM lniBMap (bc, scRes) = preface <> body
             (SKRThreeEnv (tmlnssss, maybeTmlnssss)) -> case maybeTmlnssss of
                 Nothing -> inCF4 $ (fmap . fmap . fmap . fmap)
                     (renderTimeline mM lniBMap) tmlnssss
-                Just mutTmlnssss -> wildTypeF <> "/n" <> mutantTypeF
+                Just mutTmlnssss -> wildTypeF <> "\n" <> mutantTypeF
                     where
                         wildTypeF = "Wild type:\n" <>
                             (inCF4 . (fmap . fmap . fmap . fmap)

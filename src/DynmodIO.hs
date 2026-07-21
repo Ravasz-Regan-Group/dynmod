@@ -48,7 +48,7 @@ import Control.Monad.Reader (runReader)
 import Control.Monad.State.Strict (evalState)
 import qualified Data.List as L
 import qualified Data.Bifunctor as BF
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe, catMaybes)
 import Data.Traversable (mapAccumM)
 
 experimentDMMS :: Path Abs File
@@ -208,18 +208,19 @@ runVEX dmmsPath vexPath dmModel (Right (dmmsFilePStr, vexLayerExpSpecs)) = do
                 let cMap = mkColorMap dmModel
                 gen <- initStdGen
                 putStrLn "Running experiments..."
-                layerResultIOs <- runInvestigationIO dmmsPath cMap gen $
+                mEMarkss <- runInvestigationIO dmmsPath cMap gen $
                         zip attSets lExpSpecs
---                 let invRs =
---                         runInvestigation cMap gen $ zip attSets lExpSpecs
-                let numExp = sum $ (length . experiments) <$> lExpSpecs
+                let allMarks = (catMaybes . concat) mEMarkss
+                    numExp = sum $ (length . experiments) <$> lExpSpecs
                     expTense
                         | numExp == 1 = " experiment. "
                         | otherwise = " experiments. "
 --                 PS.pPrint (tmlnLF <$> invRs)
-                putStrLn $ "Ran " <> show numExp <> expTense
-                let allMarks = concatMap layerExperimentMarksIO layerResultIOs
-                putStrLn $ "Experiment marks: " <> show allMarks
+                if null allMarks
+                    then return ()
+                    else do
+                        putStrLn $ "Ran " <> show numExp <> expTense
+                        putStrLn $ "Experiment marks: " <> show allMarks
 
 
 -- A simple write to disk of the Diagram Bs for now. 
@@ -714,7 +715,7 @@ runInvestigationIO :: Path Abs File
                    -> ColorMap
                    -> StdGen
                    -> [(HS.HashSet Attractor, LayerExpSpec)]
-                   -> IO [LayerResultIO]
+                   -> IO [[Maybe ExperimentMark]]
 runInvestigationIO fPath cMap gen attLExpSpecPairs =
     snd <$> mapAccumM (runLayerExperimentsIO fPath cMap) gen attLExpSpecPairs
 
@@ -722,7 +723,7 @@ runLayerExperimentsIO :: Path Abs File
                       -> ColorMap
                       -> StdGen
                       -> (HS.HashSet Attractor, LayerExpSpec)
-                      -> IO (StdGen, LayerResultIO)
+                      -> IO (StdGen, [Maybe ExperimentMark])
 runLayerExperimentsIO fPath cMap gen (atts, lExpSpec) = do
     let mMap = layerExpMMapping lExpSpec
         mL = layerExpMLayer lExpSpec
@@ -732,9 +733,8 @@ runLayerExperimentsIO fPath cMap gen (atts, lExpSpec) = do
     mapM_ (writeFiveDFig fPath) mAttESpaceFig
     let exps = experiments lExpSpec
         runExperimentIOF = runExperimentIO fPath cMap mMap mL atts
-    (nGen, eMarks) <- mapAccumM runExperimentIOF gen exps
-    let lResult = LayerResultIO mMap mL eMarks
-    return (nGen, lResult)        
+    (nGen, mEMarks) <- mapAccumM runExperimentIOF gen exps
+    return (nGen, mEMarks)        
 
 -- Run a DMExperiment by folding up the InputPulses according to the chosen step
 -- style. First filter the attractors available. 
@@ -759,7 +759,7 @@ runExperimentIO :: Path Abs File
                 -> HS.HashSet Attractor
                 -> StdGen
                 -> (DMExperiment, VEXExperiment)
-                -> IO (StdGen, ExperimentMark)
+                -> IO (StdGen, Maybe ExperimentMark)
 runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
     TCDMEx tcExp -> do
         let expGen = fromMaybe gen (manualTCPRNGSeed tcExp)
@@ -770,13 +770,20 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
                 L.mapAccumL (runTimeCourse tcPhData tcExp) expGen filteredAtts
             (xMark, newGen) = uniform markGen
             dmXOutput = preOutput (ExpOutput vexEx (TCO attResults) xMark)
-        putStrLn $ "Running experiment: " <> expName
-        when (tcDoWriteResults expMeta)
-             (writeTCExpResults fPath expMeta dmXOutput)
-        putStrLn $ "Generating figures for " <> expName
-        let combinedAttResults = zip [1..] $ resCombine attResults
-        mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark) combinedAttResults
-        return (newGen, xMark)
+        if null filteredAtts
+            then do
+                putStrLn "Every attractor has been filterd out. Please adjust \
+                    \your filters. "
+                return (newGen, Nothing)
+            else do
+                putStrLn $ "Running experiment: " <> expName
+                when (tcDoWriteResults expMeta)
+                     (writeTCExpResults fPath expMeta dmXOutput)
+                putStrLn $ "Generating figures for " <> expName
+                let combinedAttResults = zip [1..] $ resCombine attResults
+                mapM_ (tcRunDiaIO fPath cMap mM mL expMeta xMark)
+                        combinedAttResults
+                return (newGen, Just xMark)
     ScDMex scanExp -> do
         let filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
             expMeta = scExpMeta scanExp
@@ -787,19 +794,19 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
 --             exOp = ExpOutput vexEx (SCO (ScRe attResults)) xMark
             exOp = ExpOutput vexEx (SCO (ScPr preppedRess)) xMark
             dmXOutput = preOutput exOp
-        putStrLn $ "Running experiment: " <> expName
-        fullDir <- mkExpPath fPath (SCEM expMeta) "Results"
-        let noDetailsDir = parent fullDir
-        ensureDir noDetailsDir
-        let fileNameStr = expName
-        relFileName <- parseRelFile fileNameStr
-        relFileNameWExt <- addExtension ".csv" relFileName
-        let absFileNameWExt = noDetailsDir </> relFileNameWExt
-        RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
-        putStrLn $ "Generating figures for " <> expName
-        let attIDedPreppedRess = zip [1..] $ preppedRess
-        mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attIDedPreppedRess
-        return (newGen, xMark)
+        if null filteredAtts
+            then do
+                putStrLn "Every attactor has been filterd out. Please adjust \
+                    \your filters. "
+                return (newGen, Nothing)
+            else do
+                putStrLn $ "Running experiment: " <> expName
+                when (scDoWriteResults expMeta)
+                     (writeScExpResults fPath expMeta dmXOutput)
+                putStrLn $ "Generating figures for " <> expName
+                let attIDedPreppedRess = zip [1..] $ preppedRess
+                mapM_ (scRunDiaIO fPath cMap mM mL expMeta) attIDedPreppedRess
+                return (newGen, Just xMark)
     where
         attList = HS.toList attSet
         tcPhData = (lniBMap, phss)
@@ -811,6 +818,16 @@ runExperimentIO fPath cMap mM mL attSet gen (ex, vexEx) = case ex of
         preOutput = DMExpOutput lGates lniBMap lRanges mM 
         lGates = (fmap nodeGate . layerNodes) mL
 
+writeScExpResults :: Path Abs File -> SCExpMeta -> DMExpOutput -> IO ()
+writeScExpResults fPath expMeta dmXOutput = do
+    fullDir <- mkExpPath fPath (SCEM expMeta) "Results"
+    let noDetailsDir = parent fullDir
+    ensureDir noDetailsDir
+    let fileNameStr = (T.unpack . scExpName) expMeta
+    relFileName <- parseRelFile fileNameStr
+    relFileNameWExt <- addExtension ".csv" relFileName
+    let absFileNameWExt = noDetailsDir </> relFileNameWExt
+    RW.writeFileL absFileNameWExt (renderDMExpOutput dmXOutput)
 
 -- Construct the path to the results or figures of a given DMExperiment. 
 mkExpPath :: Path Abs File -> ExpMeta -> String -> IO (Path Abs Dir)
@@ -986,7 +1003,9 @@ scRunDiaIO fPath cMap mM mL exMeta (attID, (bc, scPrep)) = do
       let
         swFig = envKDOESWDia phCMap switchMap exMeta scanStatss
         nodeFig = envKDOENodeDia cMap mL exMeta scanStatss
-        flatFigs = [("switches", swFig), ("nodes", nodeFig)]
+        flatFigs = case scExpScanNodes exMeta of
+            [] -> [("switches", swFig)]
+            _ -> [("switches", swFig), ("nodes", nodeFig)]
       mapM_ (simpleSCWrite bcAbsDir) flatFigs
     (SPRTwoEnvWithoutKDOE scanStatss) -> do
       let

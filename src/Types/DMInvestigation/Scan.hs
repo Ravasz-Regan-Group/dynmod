@@ -62,6 +62,8 @@ data SCExpMeta = SCEMeta {
     , scExpSwitches :: [ScanSwitch]
     , scExpScanNodes :: [ScanNode]
     , stopPhenotypes :: [(PhenotypeName, SubSpace)]
+    -- Do we write experiment results to a csv?
+    , scDoWriteResults :: DoWriteResults
     } deriving (Eq, Show)
 
 data MetaScanKind =
@@ -137,13 +139,29 @@ data ScanOutput = ScRe [(Barcode, ScanResult)]
 
 mkDMScan :: ModelMapping -> ModelLayer -> VEXScan
          -> Validation [VEXInvestigationInvalid] DMScan
-mkDMScan mM mL
-  (VEXScan scKnd inEnv mScanName nAlts iFix maxN relN stopPhs exStep pltNds) =
+mkDMScan mM mL (VEXScan scKnd
+                        inEnv
+                        mScanName
+                        nAlts
+                        iFix
+                        maxN
+                        relN
+                        stopPhs
+                        exStep
+                        pltNds
+                        doWriteRs) =
     case mkSCExpKind mL scKnd of
     Failure errs -> Failure errs
     Success intScKnd ->
         Sc <$> pure intScKnd
-           <*> mkSCExpMeta mM mL expName expDetails pltNds stopPhs scKnd
+           <*> mkSCExpMeta mM
+                           mL
+                           expName
+                           expDetails
+                           pltNds
+                           stopPhs
+                           scKnd
+                           doWriteRs
            <*> pure maxN
            <*> pure relN
            <*> mkIntNodeAlterations mL nAlts
@@ -308,16 +326,17 @@ kdoeScNLocks (RangeKDOESC nodeLocks _ _ _) = nodeLocks
 kdoeScNLocks (WholeKDOESC nodeLocks _) = nodeLocks
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of mkDMScan!
-mkSCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text
-            -> PlottingNodes -> [(ScanSwitch, PhenotypeName)] -> ScanKind
+mkSCExpMeta :: ModelMapping -> ModelLayer -> T.Text -> T.Text -> PlottingNodes
+            -> [(ScanSwitch, PhenotypeName)] -> ScanKind -> DoWriteResults
             -> Validation [VEXInvestigationInvalid] SCExpMeta
-mkSCExpMeta mM mL expName expDetails (scSws, scNodes) stopPhs scKnd =
+mkSCExpMeta mM mL expName expDetails (scSws, scNodes) stopPhs scKnd doWriteRs =
     SCEMeta <$> pure expName
             <*> pure expDetails
             <*> (pure . mkMetaScanKind inPts) scKnd
             <*> validateSCSwitches mM scSws
             <*> validateSCNodes mL scNodes
             <*> mkStopPhenotypes mM stopPhs
+            <*> pure doWriteRs
     where inPts = (inputs . modelGraph) mL
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of mkSCExpMeta!

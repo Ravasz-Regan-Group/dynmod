@@ -40,7 +40,6 @@ module Types.DMInvestigation
     , Duration
     , ExperimentReps
     , VEXInvestigationInvalid(..)
-    , LayerResultIO(..)
     , LayerResult(..)
     , ExperimentResult(..)
     , FigKinds(..)
@@ -60,7 +59,7 @@ module Types.DMInvestigation
     , AvgWasForced
     , PhenotypeWeights
     , PulseSpacing
-    , runInvestigation
+--     , runInvestigation
     , runTimeCourse
     , DMExpOutput(..)
     , ExpOutput(..)
@@ -108,9 +107,9 @@ import Types.DMInvestigation.Scan
 import Types.VEXInvestigation
 import Data.Validation
 import TextShow
-import qualified Data.HashSet as HS
-import System.Random (StdGen)
-import Data.Maybe (fromMaybe)
+-- import qualified Data.HashSet as HS
+-- import System.Random (StdGen)
+-- import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict as M
 import qualified Data.List as L
 
@@ -146,13 +145,6 @@ data ExpMeta = TCEM TCExpMeta
 
 data DMExperiment = TCDMEx DMTimeCourse
                   | ScDMex DMScan
-
-data LayerResultIO = LayerResultIO {
-      layerResultMMIO :: ModelMapping
-    , layerResultMLIO :: ModelLayer
-    , layerExperimentMarksIO :: [ExperimentMark]
-    } 
-
 
 data DMExpOutput = DMExpOutput { layerGateSet :: [NodeGate]
                                , layerNIBM :: LayerNameIndexBimap
@@ -304,29 +296,29 @@ mkDMExperiment mM mL vexExp@(TXSC e) =
 
 -- Run all the experiments from a DMInvestigation. The paired Attractors must
 -- be checked beforehand. 
-runInvestigation :: ColorMap
-                 -> StdGen
-                 -> [(HS.HashSet Attractor, LayerExpSpec)]
-                 -> [LayerResult]
-runInvestigation cMap gen attLExpSpecPairs = snd $
-    L.mapAccumL (runLayerExperiments cMap) gen attLExpSpecPairs
-
-runLayerExperiments :: ColorMap
-                    -> StdGen
-                    -> (HS.HashSet Attractor, LayerExpSpec)
-                    -> (StdGen, LayerResult)
-runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
-    where
-        lResult = LayerResult mMap mL eResults $ invesIBundle lExpSpec
-        (newGen, eResults) =
-            L.mapAccumL (runExperiment phData layerBCG atts) gen exps
-        layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
-        exps = (fmap fst . experiments) lExpSpec
-        phData = (lniBMap, phss)
-        phss = fmap (snd . snd) mMap
-        LayerSpecs lniBMap _ _ _ = layerPrep mL
-        mL = layerExpMLayer lExpSpec
-        mMap = layerExpMMapping lExpSpec
+-- runInvestigation :: ColorMap
+--                  -> StdGen
+--                  -> [(HS.HashSet Attractor, LayerExpSpec)]
+--                  -> [LayerResult]
+-- runInvestigation cMap gen attLExpSpecPairs = snd $
+--     L.mapAccumL (runLayerExperiments cMap) gen attLExpSpecPairs
+-- 
+-- runLayerExperiments :: ColorMap
+--                     -> StdGen
+--                     -> (HS.HashSet Attractor, LayerExpSpec)
+--                     -> (StdGen, LayerResult)
+-- runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
+--     where
+--         lResult = LayerResult mMap mL eResults $ invesIBundle lExpSpec
+--         (newGen, eResults) =
+--             L.mapAccumL (runExperiment phData layerBCG atts) gen exps
+--         layerBCG = mkBarcode cMap mMap lniBMap -- Make (BC, Att) pairs
+--         exps = (fmap fst . experiments) lExpSpec
+--         phData = (lniBMap, phss)
+--         phss = fmap (snd . snd) mMap
+--         LayerSpecs lniBMap _ _ _ = layerPrep mL
+--         mL = layerExpMLayer lExpSpec
+--         mMap = layerExpMMapping lExpSpec
 
 -- Run a DMExperiment by folding up the InputPulses according to the chosen step
 -- style. First filter the attractors available. 
@@ -334,28 +326,28 @@ runLayerExperiments cMap gen (atts, lExpSpec) = (newGen, lResult)
 -- each attractor in the set, where n is the length of the attractor, starting
 -- at the next in the loop each time. (Barcode, RepResults or ScanResult)s are
 -- then combined if their Barcodes are identical. 
-runExperiment :: (LayerNameIndexBimap, [[Phenotype]])
-              -> (Attractor -> (Barcode, Attractor))
-              -> HS.HashSet Attractor
-              -> StdGen
-              -> DMExperiment
-              -> (StdGen, ExperimentResult)
-runExperiment phData layerBCG attSet gen ex = case ex of
-    TCDMEx tcExp -> (newGen, TCExpRes (expMeta, attResults))
-        where
-            (newGen, attResults) =
-                L.mapAccumL (runTimeCourse phData tcExp) expGen filteredAtts
-            expMeta = tcExpMeta tcExp
-            filteredAtts = tcAttFilter tcExp $ layerBCG <$> attList
-            expGen = fromMaybe gen (manualTCPRNGSeed tcExp)
-    ScDMex scanExp -> (newGen, ScanExpRes (expMeta, attResults))
-        where
-            (newGen, attResults) =
-                L.mapAccumL (runScanRaw phData scanExp) gen filteredAtts
-            filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
-            expMeta = scExpMeta scanExp
-    where
-        attList = HS.toList attSet
+-- runExperiment :: (LayerNameIndexBimap, [[Phenotype]])
+--               -> (Attractor -> (Barcode, Attractor))
+--               -> HS.HashSet Attractor
+--               -> StdGen
+--               -> DMExperiment
+--               -> (StdGen, ExperimentResult)
+-- runExperiment phData layerBCG attSet gen ex = case ex of
+--     TCDMEx tcExp -> (newGen, TCExpRes (expMeta, attResults))
+--         where
+--             (newGen, attResults) =
+--                 L.mapAccumL (runTimeCourse phData tcExp) expGen filteredAtts
+--             expMeta = tcExpMeta tcExp
+--             filteredAtts = tcAttFilter tcExp $ layerBCG <$> attList
+--             expGen = fromMaybe gen (manualTCPRNGSeed tcExp)
+--     ScDMex scanExp -> (newGen, ScanExpRes (expMeta, attResults))
+--         where
+--             (newGen, attResults) =
+--                 L.mapAccumL (runScanRaw phData scanExp) gen filteredAtts
+--             filteredAtts = scAttFilter scanExp $ layerBCG <$> attList
+--             expMeta = scExpMeta scanExp
+--     where
+--         attList = HS.toList attSet
 
 
 -- Check the validity of any LimitedTo inputs. 
