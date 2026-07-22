@@ -989,7 +989,7 @@ scRunDiaIO fPath cMap mM mL exMeta (attID, (bc, scPrep)) = do
     bcAbsDir = figDir </> bcDir
     baseScDiaF = baseScDia cMap phCMap switchMap exMeta
   case scPrep of
-    SPREnv scanStats -> do
+    SPREnv scanStats _ _ -> do
       let
         BSFgs stopDFig timeInSwitchFigs avgNValueFigs = baseScDiaF scanStats
         flatFigs = stopDFig : (timeInSwitchFigs <> avgNValueFigs)

@@ -18,7 +18,7 @@ module Types.DMInvestigation.Scan
     , kdoeScNLocks
     , mkDMScan
     , runScanPrep
-    , runScanRaw
+--     , runScanRaw
 --     , mkScanPrep
     ) where
 
@@ -83,11 +83,17 @@ data MetaScanKind =
     deriving (Eq, Show)
 
 data SCExpKind = 
-      IntEnvSc IntEnvScan
-    | IntKDOESc IntKDOEScan
-    | IntEnvKDOEScan IntEnvScan IntKDOEScan XAxis
-    | IntTwoDEnvScan IntEnvScan IntEnvScan (Maybe IntKDOEScan)
-    | IntThreeDEnvScan IntEnvScan IntEnvScan IntEnvScan [IntNodeAlteration]
+      IntEnvSc IntEnvScan NodeName [Double]
+    | IntKDOESc IntKDOEScan [(NodeName, NodeState)] [Double]
+    | IntEnvKDOEScan IntEnvScan NodeName [Double]
+                     IntKDOEScan [(NodeName, NodeState)] [Double] XAxis
+    | IntTwoDEnvScan IntEnvScan NodeName [Double]
+                     IntEnvScan NodeName [Double]
+                     (Maybe (IntKDOEScan, [(NodeName, NodeState)], [Double]))
+    | IntThreeDEnvScan IntEnvScan NodeName [Double]
+                       IntEnvScan NodeName [Double]
+                       IntEnvScan NodeName [Double]
+                       [IntNodeAlteration] [NodeAlteration]
     deriving (Eq, Show)
 
 data IntEnvScan = IntESC RealInputCoord --[[DMNode]] input start state
@@ -113,7 +119,7 @@ data ScanResult = SKREnv [[Timeline]]
 
 -- Prepped data for making scan figures and writing out the results of a Scan. 
 data ScanPrep =
-      SPREnv ScanStats
+      SPREnv ScanStats NodeName [Double]
     | SPRKDOE ScanStats
     | SPREnvKDOE [ScanStats]
     | SPRTwoEnvWithoutKDOE [ScanStats]
@@ -177,21 +183,50 @@ mkDMScan mM mL (VEXScan scKnd
 
 mkSCExpKind :: ModelLayer -> ScanKind
            -> Validation [VEXInvestigationInvalid] SCExpKind
-mkSCExpKind mL (EnvSc soloEnv) = IntEnvSc <$> (mkIntEnvScan mL soloEnv)
-mkSCExpKind mL (KDOESc soloKDOE) = IntKDOESc <$> (mkIntKDOEScan mL soloKDOE)
-mkSCExpKind mL (EnvKDOEScan envScan kdoeScan xAx) =
-    IntEnvKDOEScan <$> mkIntEnvScan mL envScan
-                   <*> mkIntKDOEScan mL kdoeScan
-                   <*> pure xAx
-mkSCExpKind mL (TwoDEnvScan envScan1 envScan2 _ mKDOESc) =
+mkSCExpKind mL scKind = case scKind of
+    (EnvSc soloEnv) -> IntEnvSc <$> (mkIntEnvScan mL soloEnv)
+                                    <*> pure nName <*> pure spread
+        where (nName, spread) = mkMetaEnvSc inPts soloEnv
+    (KDOESc soloKDOE) -> IntKDOESc <$> (mkIntKDOEScan mL soloKDOE)
+                                        <*> pure lockNodes <*> pure probValues
+        where (lockNodes, probValues) = mkMetaKDOESc soloKDOE
+    (EnvKDOEScan envScan kdoeScan xAx) ->
+        IntEnvKDOEScan <$> mkIntEnvScan mL envScan
+                            <*> pure nName <*> pure spread
+                       <*> mkIntKDOEScan mL kdoeScan
+                            <*> pure lockNodes <*> pure probValues
+                       <*> pure xAx
+        where
+            (nName, spread) = mkMetaEnvSc inPts envScan
+            (lockNodes, probValues) = mkMetaKDOESc kdoeScan
+    (TwoDEnvScan envScan1 envScan2 _ mKDOESc) ->
         IntTwoDEnvScan <$> mkIntEnvScan mL envScan1
+                            <*> pure nName1 <*> pure spread1
                        <*> mkIntEnvScan mL envScan2
-                       <*> (traverse (mkIntKDOEScan mL) mKDOESc)
-mkSCExpKind mL  (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) =
-    IntThreeDEnvScan <$> mkIntEnvScan mL envScan1
-                     <*> mkIntEnvScan mL envScan2
-                     <*> mkIntEnvScan mL envScan3
-                     <*> mkIntNodeAlterations mL nAlts
+                            <*> pure nName2 <*> pure spread2
+                       <*> ((liftA2 insertF mPair) <$> intKDOES)
+        where
+            (nName1, spread1) = mkMetaEnvSc inPts envScan1
+            (nName2, spread2) = mkMetaEnvSc inPts envScan2
+            insertF (x, y) z = (z, x, y)
+            intKDOES :: Validation [VEXInvestigationInvalid] (Maybe IntKDOEScan)
+            intKDOES = traverse (mkIntKDOEScan mL) mKDOESc
+            mPair = mkMetaKDOESc <$> mKDOESc
+    (ThreeDEnvScan envScan1 envScan2 envScan3 _ nAlts) ->
+        IntThreeDEnvScan <$> mkIntEnvScan mL envScan1
+                                <*> pure nName1 <*> pure spread1
+                         <*> mkIntEnvScan mL envScan2
+                                <*> pure nName2 <*> pure spread2
+                         <*> mkIntEnvScan mL envScan3
+                                <*> pure nName3 <*> pure spread3
+                         <*> mkIntNodeAlterations mL nAlts
+                         <*> pure nAlts
+        where
+            (nName1, spread1) = mkMetaEnvSc inPts envScan1
+            (nName2, spread2) = mkMetaEnvSc inPts envScan2
+            (nName3, spread3) = mkMetaEnvSc inPts envScan3
+    where inPts = (inputs . modelGraph) mL
+
 
 -- The convention is to denote the limits on inputs which are composed of
 -- multiple boolean DMNodes by referring only to its highest level NodeName. 
@@ -356,16 +391,17 @@ mkMetaScanKind inPts sc = case sc of
                           (mkMetaEnvSc inPts envScan2)
                           (mkMetaEnvSc inPts envScan3)
                           overLayVs
-    where
-        mkMetaKDOESc (StepSpecKDOESC lockNodes probValues) =
-            (lockNodes, probValues)
-        mkMetaKDOESc (RangeKDOESC lockNodes startProb endProb scStps) =
-            (lockNodes, mkSteps startProb endProb scStps)
-        mkMetaKDOESc (WholeKDOESC lockNodes scStps) =
-            (lockNodes, mkSteps 0 1 scStps)
 
 -- This presumes that mkSCExpKind has passed. Do not use outside of
--- mkMetaScanKind!
+-- the chain of mkSCExpKind calls!
+mkMetaKDOESc :: KDOEScan -> ([(NodeName, NodeState)], [Double])
+mkMetaKDOESc (StepSpecKDOESC lockNodes probValues) = (lockNodes, probValues)
+mkMetaKDOESc (RangeKDOESC lockNodes startProb endProb scStps) =
+    (lockNodes, mkSteps startProb endProb scStps)
+mkMetaKDOESc (WholeKDOESC lockNodes scStps) = (lockNodes, mkSteps 0 1 scStps)
+
+-- This presumes that mkSCExpKind has passed. Do not use outside of
+-- the chain of mkSCExpKind calls!
 mkMetaEnvSc :: [[DMNode]] -> EnvScan -> (NodeName, [Double])
 mkMetaEnvSc inPts envScan = case envScan of
     (StepSpecESC nName stepValues) -> (nName, stepValues)
@@ -523,17 +559,19 @@ runScanPrep :: (LayerNameIndexBimap, ModelMapping)
             -> (Barcode, Attractor)
             -> (StdGen, (Barcode, ScanPrep))
 runScanPrep lInfo scanEx gen (bc, att) = case scanKind scanEx of
-  IntEnvSc intEnv -> (newGen, (bc, SPREnv (mconcat res)))
+  IntEnvSc intEnv inptName spread ->
+    (newGen, (bc, SPREnv (mconcat res) inptName spread))
     where            
       res = paraDSMap1 (uncurry rVarF) seedVPs
       (newGen, seedVPs) = L.mapAccumL genPair gen envVars
       envVars = mkEnvVars intEnv
-  IntKDOESc intKDOE -> (newGen, (bc, SPRKDOE (mconcat res)))
+  IntKDOESc intKDOE _ _ -> (newGen, (bc, SPRKDOE (mconcat res)))
     where
       res = paraDSMap1 (uncurry rVarF) seedVPs
       (newGen, seedVPs) = L.mapAccumL genPair gen kdoeVars
       kdoeVars = mkKDOEVars intKDOE
-  IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SPREnvKDOE concatRuns))
+  IntEnvKDOEScan intEnv _ _ intKDOE _ _ xAx ->
+    (newGen, (bc, SPREnvKDOE concatRuns))
     where
       concatRuns = mconcat <$> res
       res = paraDSMap2 (uncurry rVarF) seedVPs
@@ -542,14 +580,14 @@ runScanPrep lInfo scanEx gen (bc, att) = case scanKind scanEx of
       variations = case xAx of
         EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
         KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
-  IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
+  IntTwoDEnvScan intEnv1 _ _ intEnv2 _ _ Nothing ->
     (newGen, (bc, SPRTwoEnvWithoutKDOE (mconcat <$> res)))
     where
         res = paraDSMap2 (uncurry rVarF) seedVPs
         (newGen, seedVPs) = (L.mapAccumL . L.mapAccumL)
             genPair gen variations
         variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
-  IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
+  IntTwoDEnvScan intEnv1 _ _ intEnv2 _ _ (Just (intKDOE, _, _)) ->
     (newGen, (bc, SPRTwoEnvWithKDOE (mconcat <<$>> res)))
     where
         res = paraDSMap3 (uncurry rVarF) seedVPs
@@ -558,7 +596,7 @@ runScanPrep lInfo scanEx gen (bc, att) = case scanKind scanEx of
         vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
         tier2 = fmap (envSpread intEnv1) tier1
         tier1 = mkEnvVars intEnv2
-  IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
+  IntThreeDEnvScan intEnv1 _ _ intEnv2 _ _ intEnv3 _ _ intNAlts _ ->
     (newGen, (bc, SPRThreeEnv (force concatRes) (force concatResWMutations)))
     where
         concatResWMutations = (fmap . fmap . fmap) mconcat resWMutations
@@ -817,131 +855,132 @@ scanNodeStats lniBMap trSCRun = M.fromList statPairs
         bareStateVs :: B.Vector (U.Vector NodeState)
         bareStateVs = (B.map (fst . U.unzip . fst) . B.concat) trSCRun
 
+
 -- Run a Scan, but do not prep the data for figures
-runScanRaw :: (LayerNameIndexBimap, [[Phenotype]])
-           -> DMScan
-           -> StdGen
-           -> (Barcode, Attractor)
-           -> (StdGen, (Barcode, ScanResult))
-runScanRaw lInfo scanEx gen (bc, att) = case scanKind scanEx of
-  IntEnvSc intEnv -> (newGen, (bc, SKREnv res))
-    where            
-      (newGen, res) = L.mapAccumL rVarF gen envVars
-      envVars = mkEnvVars intEnv
-  IntKDOESc intKDOE -> (newGen, (bc, SKRKDOE res))
-    where
-      (newGen, res) = L.mapAccumL rVarF gen kdoeVars
-      kdoeVars = mkKDOEVars intKDOE
-  IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
-    where
-      (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
-      variations = case xAx of
-        EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
-        KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
-  IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
-    (newGen, (bc, SKRTwoEnvWithoutKDOE res))
-    where
-        (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
-        variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
-  IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
-    (newGen, (bc, SKRTwoEnvWithKDOE res))
-    where
-        (newGen, res) =
-            (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
-        vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
-        tier2 = fmap (envSpread intEnv1) tier1
-        tier1 = mkEnvVars intEnv2
-  IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
-    (newGen, (bc, SKRThreeEnv (res, resWMutations)))
-    where
-        (newGen, resWMutations)
-            | L.null intNAlts = (resWMutationsGen, Nothing)
-            | otherwise = fmap Just $
-                (L.mapAccumL . L.mapAccumL . L.mapAccumL)
-                  rVarF resWMutationsGen varsWMutations
---         res = (fmap . fmap . fmap) (uncurry rVarF) seedVPs
-        (resWMutationsGen, res) =
-            (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
---         seedVPs :: [[[(StdGen, ScanVariation)]]]
---         (tGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
---             genPair gen vars
-        varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
-        vars = (fmap . fmap) (envSpread intEnv1) tier2
-        tier2 = fmap (envSpread intEnv2) tier1
-        tier1 = mkEnvVars intEnv3
-  where
-    rVarF = runVariationRaw lInfo scanEx att
+-- runScanRaw :: (LayerNameIndexBimap, [[Phenotype]])
+--            -> DMScan
+--            -> StdGen
+--            -> (Barcode, Attractor)
+--            -> (StdGen, (Barcode, ScanResult))
+-- runScanRaw lInfo scanEx gen (bc, att) = case scanKind scanEx of
+--   IntEnvSc intEnv -> (newGen, (bc, SKREnv res))
+--     where            
+--       (newGen, res) = L.mapAccumL rVarF gen envVars
+--       envVars = mkEnvVars intEnv
+--   IntKDOESc intKDOE -> (newGen, (bc, SKRKDOE res))
+--     where
+--       (newGen, res) = L.mapAccumL rVarF gen kdoeVars
+--       kdoeVars = mkKDOEVars intKDOE
+--   IntEnvKDOEScan intEnv intKDOE xAx -> (newGen, (bc, SKREnvKDOE res))
+--     where
+--       (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+--       variations = case xAx of
+--         EnvX -> fmap (kdoeSpread intKDOE) (mkEnvVars intEnv)
+--         KDOEX -> fmap (envSpread intEnv) (mkKDOEVars intKDOE)
+--   IntTwoDEnvScan intEnv1 intEnv2 Nothing ->
+--     (newGen, (bc, SKRTwoEnvWithoutKDOE res))
+--     where
+--         (newGen, res) = (L.mapAccumL . L.mapAccumL) rVarF gen variations
+--         variations = fmap (envSpread intEnv1) (mkEnvVars intEnv2)
+--   IntTwoDEnvScan intEnv1 intEnv2 (Just intKDOE) ->
+--     (newGen, (bc, SKRTwoEnvWithKDOE res))
+--     where
+--         (newGen, res) =
+--             (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+--         vars = (fmap . fmap) (kdoeSpread intKDOE) tier2
+--         tier2 = fmap (envSpread intEnv1) tier1
+--         tier1 = mkEnvVars intEnv2
+--   IntThreeDEnvScan intEnv1 intEnv2 intEnv3 intNAlts ->
+--     (newGen, (bc, SKRThreeEnv (res, resWMutations)))
+--     where
+--         (newGen, resWMutations)
+--             | L.null intNAlts = (resWMutationsGen, Nothing)
+--             | otherwise = fmap Just $
+--                 (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+--                   rVarF resWMutationsGen varsWMutations
+-- --         res = (fmap . fmap . fmap) (uncurry rVarF) seedVPs
+--         (resWMutationsGen, res) =
+--             (L.mapAccumL . L.mapAccumL . L.mapAccumL) rVarF gen vars
+-- --         seedVPs :: [[[(StdGen, ScanVariation)]]]
+-- --         (tGen, seedVPs) = (L.mapAccumL . L.mapAccumL . L.mapAccumL)
+-- --             genPair gen vars
+--         varsWMutations = (fmap . fmap . fmap) (insertNAlts intNAlts) vars
+--         vars = (fmap . fmap) (envSpread intEnv1) tier2
+--         tier2 = fmap (envSpread intEnv2) tier1
+--         tier1 = mkEnvVars intEnv3
+--   where
+--     rVarF = runVariationRaw lInfo scanEx att
 
 -- Run an ScanVariation, but do not prep for figures. 
-runVariationRaw :: (LayerNameIndexBimap, [[Phenotype]])
-                -> DMScan
-                -> Attractor
-                -> StdGen
-                -> ScanVariation
-                -> (StdGen, [Timeline])
-runVariationRaw (lniBMap, phss) scanEx att gen (SCVar rIC actNAlts) =
-    (newGen, res)
-  where
-    res = L.unfoldr scanResUnfoldF unFSeed
-    unFSeed = (0, expGen)
-    (expGen, newGen) = split gen
-    mRIC = scanInputFix scanEx
-    relN = requiredSteps scanEx
-    maxN = maxRunSteps scanEx
-    scanResUnfoldF (relStAcc, g)
-      | relStAcc >= relN = Nothing
-      | otherwise = Just (tmln, newSeed)
-        where
-          newSeed = (relStAcc + B.length tmln, nG)
-          tmln = B.zip pTmln $ phenotypeMatch lniBMap phss lVecs
-          lVecs = B.map (fst . U.unzip) pTmln
---        We keep the last of a Timeline stopped by a stop Phenotype in order
---        to be able to do stats on it later. 
-          pTmln = case scExpStepper scanEx of
-            (SD stepper) -> B.unfoldr sdUnfoldF tmlnSeed
-              where
-                sdUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
-                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
-                  | isStopPh = Nothing
-                  | otherwise = Just (iALV, nSeed)
-                  where
-                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
-                    nStP = any (isAtStopPH lniBMap lVec)
-                            ((stopPhenotypes . scExpMeta) scanEx)
-                    (nextAnolVec, nGen) =
-                      expStepPrime rIC iNAlts aGen nextVec
-                    nextVec = stepper lVec
-                    lVec = (fst . U.unzip) iALV
-            (SN stepper) -> B.unfoldr snUnfoldF tmlnSeed
-              where
-                snUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
-                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
-                  | isStopPh = Nothing
-                  | otherwise = Just (iALV, nSeed)
-                  where
-                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
-                    nStP = any (isAtStopPH lniBMap lVec)
-                            ((stopPhenotypes . scExpMeta) scanEx)
-                    (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
-                    (nVec, iGen) = (flip stepper aGen) lVec
-                    lVec = (fst . U.unzip) iALV
-            (AD stepper) -> B.unfoldr adUnfoldF tmlnSeed
-              where
-                adUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
-                  | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
-                  | isStopPh = Nothing
-                  | otherwise = Just (iALV, nSeed)
-                  where
-                    nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
-                    nStP = any (isAtStopPH lniBMap lVec)
-                            ((stopPhenotypes . scExpMeta) scanEx)
-                    (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
-                    (nVec, iGen) = (flip stepper aGen) lVec
-                    lVec = (fst . U.unzip) iALV
-          iNAlts = (scanNodeAlts scanEx) <> actNAlts
-          tmlnSeed = (initLVec, relStAcc, 0, tmlnGen, False)
-          (initLVec, nG) = mkInitAnnoLayerVec mRIC att initLVGen
-          (tmlnGen, initLVGen) = split g
+-- runVariationRaw :: (LayerNameIndexBimap, [[Phenotype]])
+--                 -> DMScan
+--                 -> Attractor
+--                 -> StdGen
+--                 -> ScanVariation
+--                 -> (StdGen, [Timeline])
+-- runVariationRaw (lniBMap, phss) scanEx att gen (SCVar rIC actNAlts) =
+--     (newGen, res)
+--   where
+--     res = L.unfoldr scanResUnfoldF unFSeed
+--     unFSeed = (0, expGen)
+--     (expGen, newGen) = split gen
+--     mRIC = scanInputFix scanEx
+--     relN = requiredSteps scanEx
+--     maxN = maxRunSteps scanEx
+--     scanResUnfoldF (relStAcc, g)
+--       | relStAcc >= relN = Nothing
+--       | otherwise = Just (tmln, newSeed)
+--         where
+--           newSeed = (relStAcc + B.length tmln, nG)
+--           tmln = B.zip pTmln $ phenotypeMatch lniBMap phss lVecs
+--           lVecs = B.map (fst . U.unzip) pTmln
+-- --        We keep the last of a Timeline stopped by a stop Phenotype in
+-- --        order to be able to do stats on it later. 
+--           pTmln = case scExpStepper scanEx of
+--             (SD stepper) -> B.unfoldr sdUnfoldF tmlnSeed
+--               where
+--                 sdUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+--                   | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+--                   | isStopPh = Nothing
+--                   | otherwise = Just (iALV, nSeed)
+--                   where
+--                     nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+--                     nStP = any (isAtStopPH lniBMap lVec)
+--                             ((stopPhenotypes . scExpMeta) scanEx)
+--                     (nextAnolVec, nGen) =
+--                       expStepPrime rIC iNAlts aGen nextVec
+--                     nextVec = stepper lVec
+--                     lVec = (fst . U.unzip) iALV
+--             (SN stepper) -> B.unfoldr snUnfoldF tmlnSeed
+--               where
+--                 snUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+--                   | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+--                   | isStopPh = Nothing
+--                   | otherwise = Just (iALV, nSeed)
+--                   where
+--                     nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+--                     nStP = any (isAtStopPH lniBMap lVec)
+--                             ((stopPhenotypes . scExpMeta) scanEx)
+--                     (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
+--                     (nVec, iGen) = (flip stepper aGen) lVec
+--                     lVec = (fst . U.unzip) iALV
+--             (AD stepper) -> B.unfoldr adUnfoldF tmlnSeed
+--               where
+--                 adUnfoldF (iALV, rNAcc, mNAcc, aGen, isStopPh)
+--                   | (rNAcc >= relN) || (mNAcc >= maxN) = Nothing
+--                   | isStopPh = Nothing
+--                   | otherwise = Just (iALV, nSeed)
+--                   where
+--                     nSeed = (nextAnolVec, rNAcc + 1, mNAcc + 1, nGen, nStP)
+--                     nStP = any (isAtStopPH lniBMap lVec)
+--                             ((stopPhenotypes . scExpMeta) scanEx)
+--                     (nextAnolVec, nGen) = expStepPrime rIC iNAlts iGen nVec
+--                     (nVec, iGen) = (flip stepper aGen) lVec
+--                     lVec = (fst . U.unzip) iALV
+--           iNAlts = (scanNodeAlts scanEx) <> actNAlts
+--           tmlnSeed = (initLVec, relStAcc, 0, tmlnGen, False)
+--           (initLVec, nG) = mkInitAnnoLayerVec mRIC att initLVGen
+--           (tmlnGen, initLVGen) = split g
 
 
 -- mkScanPrep :: ModelMapping

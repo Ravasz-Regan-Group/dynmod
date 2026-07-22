@@ -994,13 +994,31 @@ renderScanResult (bc, scPrep) =  body <> "\n\n\n\n\n" <> barcodeInfo
     barcodeInfo = "Barcode: \n" <> (TL.intercalate "\n" . fmap renderBar) bc <>
       "\n"
     body = case scPrep of
-      SPREnv (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <> stopDsBody
-        <> "\n" <> phDistsPreface <> "\n" <> phDistsBody <> "\n" <>
-        nodeStatsPreface <> "\n" <> nodeStatsBody
+      SPREnv (stopDs, phDists, nodeStats) inptName spread -> topRow <> "\n" <>
+        TL.intercalate "\n" (zipWith stitch2 inputRows dataRows)
         where
-          stopDsBody = inCF $ renderStopDistribution <$> stopDs
-          phDistsBody = inCF $ renderPhDistribution <$> phDists
-          nodeStatsBody = inCF $ renderScanNodeStats <$> nodeStats
+          stitch2 inputRow dataRow = inputRow <> ", " <> dataRow
+          dataRows = zipWith3 stitch3 phStopDataRows phDataRows nodeDataRows
+          stitch3 phSDR phDR nDR = phSDR <> ", " <> phDR <> ", " <> nDR
+          phStopDataRows = mkPhStopMapDataRow <$> stopDs
+          mkPhStopMapDataRow (stopDM, noStopFrac) = (showtl noStopFrac) <>
+            ", " <> mkPhMapDataRow stopDM
+          phDataRows = mkPhMapDataRow <$> phDists
+          mkPhMapDataRow = TL.intercalate ", " . fmap showtl . Map.elems
+          nodeDataRows = mkNodeMapDataRow <$> nodeStats
+          mkNodeMapDataRow = TL.intercalate ", " . fmap (showtl . fst) .
+                                                                    Map.elems
+          inputRows = showtl <$> spread
+          topRow :: TL.Text
+          topRow = TL.intercalate ", " $ TL.fromStrict inptName :
+                                    [phStopTopRow, phTopRow, nodeTopRow]
+          phStopTopRow = maybe "" phStopTopRowF (L.uncons stopDs)
+          phStopTopRowF = mapTRF . fst
+          phTopRow = mkMapTopRow phDists
+          nodeTopRow = mkMapTopRow nodeStats
+          mkMapTopRow maps = maybe "" mapTRF (L.uncons maps)
+          mapTRF = TL.intercalate ", " . fmap TL.fromStrict . Map.keys . fst
+            
       SPRKDOE (stopDs, phDists, nodeStats) -> stopDsPreface <> "\n" <>
         stopDsBody <> "\n" <> phDistsPreface <> "\n" <> phDistsBody <> "\n" <>
         nodeStatsPreface <> "\n" <> nodeStatsBody

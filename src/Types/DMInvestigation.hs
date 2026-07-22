@@ -40,8 +40,8 @@ module Types.DMInvestigation
     , Duration
     , ExperimentReps
     , VEXInvestigationInvalid(..)
-    , LayerResult(..)
-    , ExperimentResult(..)
+--     , LayerResult(..)
+--     , ExperimentResult(..)
     , FigKinds(..)
     , defFigKinds
     , DoNodeTimeCourse
@@ -127,16 +127,16 @@ data LayerExpSpec = LayerExpSpec {
     , experiments :: [(DMExperiment, VEXExperiment)]
     }
 
-data LayerResult = LayerResult
-    { layerResultMM :: ModelMapping
-    , layerResultML :: ModelLayer
-    , layerResultERs :: [ExperimentResult]
-    , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
-    } deriving (Eq, Show)
+-- data LayerResult = LayerResult
+--     { layerResultMM :: ModelMapping
+--     , layerResultML :: ModelLayer
+--     , layerResultERs :: [ExperimentResult]
+--     , layerResultIB :: Maybe InputBundle -- Should dynmod create a 5D figure?
+--     } deriving (Eq, Show)
 
-data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
-                      | ScanExpRes (SCExpMeta, [(Barcode, ScanResult)])
-                      deriving (Eq, Show)
+-- data ExperimentResult = TCExpRes (TCExpMeta, [(Barcode, RepResults)])
+--                       | ScanExpRes (SCExpMeta, [(Barcode, ScanResult)])
+--                       deriving (Eq, Show)
 
 
 data ExpMeta = TCEM TCExpMeta
